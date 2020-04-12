@@ -1,0 +1,12 @@
+[package]
+name = "qt3tests"
+version = "0.1.0"
+authors = ["Bart Schuller <bart.schuller@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+roxmltree = "^0.10"
+clap = "^2"
+sxd-xpath = "^0.4"
