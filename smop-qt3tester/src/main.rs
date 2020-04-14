@@ -4,13 +4,25 @@ mod runner;
 mod sxd;
 use sxd::SXDRunner;
 mod driver;
-use driver::Driver;
 use crate::Assertion::*;
+use crate::DependencyType::{
+    Calendar, DefaultLanguage, Feature, FormatIntegerSequence, Language, Limits, Spec,
+    UnicodeNormalizationForm, UnicodeVersion, XmlVersion, XsdVersion,
+};
+use crate::SpecType::{
+    XP20Up, XP30Up, XP31Up, XQ10Up, XQ30Up, XQ31Up, XT30Up, XP20, XP30, XP31, XQ10, XQ30, XQ31,
+};
 use clap::{crate_description, crate_name, crate_version, App, Arg};
+use driver::Driver;
 use roxmltree::Node;
+use std::collections::HashMap;
 use std::path::Path;
 
-struct Environment {}
+#[derive(Debug)]
+struct EnvironmentSpec {
+    name: Option<String>,
+    reference: Option<String>,
+}
 
 #[derive(Debug)]
 pub enum Assertion {
@@ -43,24 +55,62 @@ pub enum Assertion {
 }
 
 #[derive(Debug)]
-struct TestCase {
+pub struct TestCase {
     name: String,
     description: String,
+    environment: Option<EnvironmentSpec>,
+    dependencies: Vec<Dependency>,
     test: String,
     result: Assertion,
 }
-
 #[derive(Debug)]
-struct Dependency {
-
+pub enum SpecType {
+    XP20,
+    XP20Up,
+    XP30,
+    XP30Up,
+    XP31,
+    XP31Up,
+    XQ10,
+    XQ10Up,
+    XQ30,
+    XQ30Up,
+    XQ31,
+    XQ31Up,
+    XT30Up,
 }
+#[derive(Debug)]
+pub enum DependencyType {
+    Calendar,
+    DefaultLanguage,
+    DirectoryAsCollectionUri,
+    Feature,
+    FormatIntegerSequence,
+    Language,
+    Limits,
+    Spec(Vec<SpecType>),
+    UnicodeNormalizationForm,
+    UnicodeVersion,
+    XmlVersion,
+    XsdVersion,
+    //    CollectionStability,
+    //    SchemaAware,
+}
+#[derive(Debug)]
+pub struct Dependency {}
 
-struct TestSet {
+pub struct TestSet {
     name: String,
+    dependencies: Vec<Dependency>,
+    environments: HashMap<String, EnvironmentSpec>,
     test_cases: Vec<TestCase>,
 }
 
-fn parse_environment() {}
+fn parse_environment(node: &Node) -> EnvironmentSpec {
+    let name = node.attribute("name").map(|s| s.to_string());
+    let reference = node.attribute("ref").map(|s| s.to_string());
+    EnvironmentSpec { name, reference }
+}
 
 fn boolean_value(s: &str) -> bool {
     s.eq("true") || s.eq("1")
@@ -119,7 +169,28 @@ fn create_assertion(node: &Node) -> Result<Assertion, String> {
         &_ => Err(format!("Unknown assertion found: {:?}", node)),
     }
 }
-
+fn find_dependencies(node: &Node) -> Vec<Dependency> {
+    node.children()
+        .filter_map(|n| {
+            if n.is_element() && n.has_tag_name("dependency") {
+                Some(create_dependency(&n))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+fn find_environments(node: &Node) -> Vec<EnvironmentSpec> {
+    node.children()
+        .filter_map(|n| {
+            if n.is_element() && n.has_tag_name("environment") {
+                Some(parse_environment(&n))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
 fn create_test_case(node: &Node, file: &Path) -> TestCase {
     let name = node.attribute("name").unwrap().into();
     let description = node
@@ -133,6 +204,10 @@ fn create_test_case(node: &Node, file: &Path) -> TestCase {
         })
         .unwrap_or("")
         .into();
+    let mut environments = find_environments(node);
+    assert!(environments.len() <= 1);
+    let environment = environments.pop();
+    let dependencies: Vec<Dependency> = find_dependencies(node);
     let test = node
         .children()
         .find_map(|n| {
@@ -158,18 +233,68 @@ fn create_test_case(node: &Node, file: &Path) -> TestCase {
     let tc = TestCase {
         name,
         description,
+        environment,
+        dependencies,
         test,
         result,
     };
-    println!("{:?}", tc);
+    //println!("{:?}", tc);
     tc
 }
 
+fn create_dependency(node: &Node) -> Dependency {
+    let typ = node.attribute("type").unwrap_or("");
+    let value = node.attribute("value").unwrap_or("");
+    let satisfied = boolean_value(node.attribute("satisfied").unwrap_or("true"));
+    //println!("{}, {}, {}", typ, value, satisfied);
+    let typ = match typ {
+        "spec" => Spec(
+            value
+                .split_ascii_whitespace()
+                .map(|s| match s {
+                    "XP20" => XP20,
+                    "XP20+" => XP20Up,
+                    "XP30" => XP30,
+                    "XP30+" => XP30Up,
+                    "XP31" => XP31,
+                    "XP31+" => XP31Up,
+                    "XQ10" => XQ10,
+                    "XQ10+" => XQ10Up,
+                    "XQ30" => XQ30,
+                    "XQ30+" => XQ30Up,
+                    "XQ31" => XQ31,
+                    "XQ31+" => XQ31Up,
+                    "XT30+" => XT30Up,
+                    &_ => {
+                        println!("spec value={}", s);
+                        panic!()
+                    }
+                })
+                .collect(),
+        ),
+        "feature" => Feature,
+        "xml-version" => XmlVersion,
+        "xsd-version" => XsdVersion,
+        "default-language" => DefaultLanguage,
+        "language" => Language,
+        "limits" => Limits,
+        "calendar" => Calendar,
+        "format-integer-sequence" => FormatIntegerSequence,
+        "unicode-version" => UnicodeVersion,
+        "unicode-normalization-form" => UnicodeNormalizationForm,
+        &_ => panic!(),
+    };
+    Dependency {}
+}
 fn load_test_set(name: &str, file: &Path) -> TestSet {
     let text = std::fs::read_to_string(file).unwrap();
     let doc = roxmltree::Document::parse(&text).unwrap();
     let test_set = doc.root_element();
-    //let dependency =
+    let dependencies: Vec<Dependency> = find_dependencies(&test_set);
+    let environments: HashMap<String, EnvironmentSpec> = find_environments(&test_set)
+        .into_iter()
+        .map(|env| (env.name.as_deref().unwrap().to_string(), env))
+        .collect();
     let test_cases: Vec<TestCase> = test_set
         .children()
         .filter_map(|n| {
@@ -182,6 +307,8 @@ fn load_test_set(name: &str, file: &Path) -> TestSet {
         .collect();
     TestSet {
         name: name.into(),
+        environments,
+        dependencies,
         test_cases,
     }
 }
@@ -205,6 +332,13 @@ fn main() {
     let (envs, test_sets): (Vec<_>, Vec<_>) = envs_and_sets
         .into_iter()
         .partition(|n| n.has_tag_name("environment"));
+    let environments: HashMap<String, EnvironmentSpec> = envs
+        .iter()
+        .map(|node| {
+            let env = parse_environment(node);
+            (env.name.as_deref().unwrap().to_string(), env)
+        })
+        .collect();
     let test_sets: Vec<TestSet> = test_sets
         .iter()
         .map(|node| {
@@ -221,6 +355,7 @@ fn main() {
 
     println!("{} envs, {} test sets", envs.len(), test_sets.len());
 
-    let sxd_runner = SXDRunner::new();
-    let driver = Driver::new(Box::new(sxd_runner));
+    let sxd_runner = Box::new(SXDRunner::new());
+    let driver = Driver::new(sxd_runner);
+    driver.run_tests(&environments, &test_sets);
 }
