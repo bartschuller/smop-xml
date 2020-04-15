@@ -30,12 +30,10 @@ impl<R: TestRunner> Driver<R> {
                             .unwrap_or(&global_environments[s])
                     },
                 );
-                let mut environment = self.runner.new_environment();
+                //let mut environment = self.runner.new_environment();
                 //...
                 println!("{}: {}", case.name, case.test);
-                let result = self
-                    .runner
-                    .evaluate(environment.as_ref(), case.test.as_str());
+                let result = self.runner.evaluate(case.test.as_str());
             }
         }
     }

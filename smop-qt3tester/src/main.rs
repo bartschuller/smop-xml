@@ -17,6 +17,7 @@ use driver::Driver;
 use roxmltree::Node;
 use std::collections::HashMap;
 use std::path::Path;
+use sxd_document::Package;
 
 #[derive(Debug)]
 struct EnvironmentSpec {
@@ -355,7 +356,8 @@ fn main() {
 
     println!("{} envs, {} test sets", envs.len(), test_sets.len());
 
-    let sxd_runner = Box::new(SXDRunner::new());
+    let package = Package::new();
+    let sxd_runner = Box::new(SXDRunner::new(&package));
     let driver = Driver::new(sxd_runner);
     driver.run_tests(&environments, &test_sets);
 }
