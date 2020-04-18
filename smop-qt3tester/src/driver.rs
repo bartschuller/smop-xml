@@ -1,5 +1,5 @@
+use crate::model::{EnvironmentSpec, TestSet};
 use crate::runner::TestRunner;
-use crate::{EnvironmentSpec, TestSet};
 use std::collections::HashMap;
 
 pub(crate) struct Driver<R: TestRunner> {
