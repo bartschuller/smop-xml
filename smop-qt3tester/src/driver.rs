@@ -1,4 +1,4 @@
-use crate::model::{EnvironmentSpec, TestSet};
+use crate::model::{Dependency, EnvironmentSpec, TestSet};
 use crate::runner::TestRunner;
 use std::collections::HashMap;
 
@@ -16,7 +16,13 @@ impl<R: TestRunner> Driver<R> {
         test_sets: &Vec<TestSet>,
     ) {
         for test_set in test_sets {
+            if !self.dependencies_met(&test_set.dependencies) {
+                continue;
+            }
             for case in &test_set.test_cases {
+                if !self.dependencies_met(&case.dependencies) {
+                    continue;
+                }
                 let environment_spec = case
                     .environment
                     .as_ref()
@@ -27,14 +33,42 @@ impl<R: TestRunner> Driver<R> {
                         test_set
                             .environments
                             .get(s)
-                            .unwrap_or(&global_environments[s])
+                            .unwrap_or_else(|| &global_environments[s])
                     },
                 );
                 //let mut environment = self.runner.new_environment();
                 //...
-                println!("{}: {}", case.name, case.test);
+                print!("{}: {}", case.name, case.test);
                 let result = self.runner.evaluate(case.test.as_str());
+                let result = self
+                    .runner
+                    .check(&result, &case.result)
+                    .map_or("pass".to_string(), |s| format!("fail: {}", s));
+                println!(": {}", result);
             }
+        }
+    }
+    fn dependencies_met(&self, deps: &Vec<Dependency>) -> bool {
+        deps.iter().all(|dep| self.dependency_met(dep))
+    }
+    fn dependency_met(&self, dep: &Dependency) -> bool {
+        //println!("Dep: {:?}", dep);
+        match dep {
+            Dependency::Calendar => false,
+            Dependency::DefaultLanguage => false,
+            Dependency::DirectoryAsCollectionUri => false,
+            Dependency::Feature => false,
+            Dependency::FormatIntegerSequence => false,
+            Dependency::Language => false,
+            Dependency::Limits => false,
+            Dependency::Spec(ref specs) => {
+                specs.iter().any(|spec| self.runner.spec_supported(spec))
+            }
+            Dependency::UnicodeNormalizationForm => false,
+            Dependency::UnicodeVersion => false,
+            Dependency::XmlVersion => false,
+            Dependency::XsdVersion => false,
+            Dependency::Not(inner) => !self.dependency_met(inner),
         }
     }
 }

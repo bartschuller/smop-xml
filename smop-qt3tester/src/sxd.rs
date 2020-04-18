@@ -1,5 +1,6 @@
-use crate::model::SpecType;
+use crate::model::{Assertion, SpecType};
 use crate::runner::{Environment, TestError, TestRunner, XpathValue};
+use itertools::Itertools;
 use sxd_document::Package;
 use sxd_xpath::{Context, ExecutionError, Factory, ParserError, Value};
 
@@ -36,13 +37,31 @@ impl Environment for SXDEnvironment {
     }
 }
 impl XpathValue for Value<'_> {}
+
+fn normalize_whitespace(s: &str) -> String {
+    s.split_whitespace().join(" ")
+}
+
 impl<'a> TestRunner for SXDRunner<'a> {
     type V = Value<'a>;
     type E = SXDEnvironment;
 
-    fn spec_supported(&self, spec: SpecType) -> bool {
-        println!("{:?}", spec);
-        false
+    fn spec_supported(&self, spec: &SpecType) -> bool {
+        match spec {
+            SpecType::XP20 => false,
+            SpecType::XP20Up => false,
+            SpecType::XP30 => false,
+            SpecType::XP30Up => false,
+            SpecType::XP31 => false,
+            SpecType::XP31Up => false,
+            SpecType::XQ10 => false,
+            SpecType::XQ10Up => false,
+            SpecType::XQ30 => false,
+            SpecType::XQ30Up => false,
+            SpecType::XQ31 => false,
+            SpecType::XQ31Up => false,
+            SpecType::XT30Up => false,
+        }
     }
 
     fn new_environment(&self) -> SXDEnvironment {
@@ -56,5 +75,51 @@ impl<'a> TestRunner for SXDRunner<'a> {
         let context = Context::new();
         let value = xpath.evaluate(&context, root)?;
         Ok(value)
+    }
+
+    fn check(&self, result: &Result<Self::V, TestError>, expected: &Assertion) -> Option<String> {
+        match expected {
+            Assertion::Assert(_) => Some("wrong".to_string()),
+            Assertion::AssertEq(_) => Some("wrong".to_string()),
+            Assertion::AssertCount(_) => Some("wrong".to_string()),
+            Assertion::AssertDeepEq(_) => Some("wrong".to_string()),
+            Assertion::AssertPermutation(_) => Some("wrong".to_string()),
+            Assertion::AssertXml { .. } => Some("wrong".to_string()),
+            Assertion::SerializationMatches { .. } => Some("wrong".to_string()),
+            Assertion::AssertSerializationError(_) => Some("wrong".to_string()),
+            Assertion::AssertEmpty => Some("wrong".to_string()),
+            Assertion::AssertType(_) => Some("wrong".to_string()),
+            Assertion::AssertTrue => Some("wrong".to_string()),
+            Assertion::AssertFalse => Some("wrong".to_string()),
+            Assertion::AssertStringValue {
+                string_value,
+                normalize_space,
+            } => match result {
+                Ok(s) => {
+                    let s = s.string();
+                    let s = if *normalize_space {
+                        normalize_whitespace(&s)
+                    } else {
+                        s
+                    };
+                    if s.eq(string_value) {
+                        None
+                    } else {
+                        Some(format!("expected \"{}\", got \"{}\"", string_value, s))
+                    }
+                }
+                Err(e) => Some(e.to_string()),
+            },
+            Assertion::Error(code) => match result {
+                Ok(_) => Some(format!("Expected error code {}", code)),
+                Err(e) => {
+                    println!("Expected error code {}, got {:?}", code, e);
+                    None
+                }
+            },
+            Assertion::AnyOf(_) => Some("wrong".to_string()),
+            Assertion::AllOf(_) => Some("wrong".to_string()),
+            Assertion::Not(_) => Some("wrong".to_string()),
+        }
     }
 }

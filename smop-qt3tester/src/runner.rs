@@ -1,4 +1,4 @@
-use crate::model::SpecType;
+use crate::model::{Assertion, SpecType};
 use std::error::Error;
 use std::fmt;
 
@@ -38,7 +38,8 @@ impl Error for TestError {
 pub trait TestRunner {
     type V: XpathValue;
     type E: Environment;
-    fn spec_supported(&self, spec: SpecType) -> bool;
+    fn spec_supported(&self, spec: &SpecType) -> bool;
     fn new_environment(&self) -> Self::E;
     fn evaluate(&self, xpath: &str) -> Result<Self::V, TestError>;
+    fn check(&self, result: &Result<Self::V, TestError>, expected: &Assertion) -> Option<String>;
 }

@@ -1,8 +1,7 @@
 use roxmltree::Node;
 use std::collections::HashMap;
 use std::path::Path;
-use Assertion::*;
-use DependencyType::{
+use Dependency::{
     Calendar, DefaultLanguage, Feature, FormatIntegerSequence, Language, Limits, Spec,
     UnicodeNormalizationForm, UnicodeVersion, XmlVersion, XsdVersion,
 };
@@ -67,37 +66,39 @@ pub enum Assertion {
 impl Assertion {
     pub(crate) fn new(node: &Node) -> Self {
         match node.tag_name().name() {
-            "all-of" => AllOf(Self::child_assertions(node)),
-            "assert-eq" => AssertEq(node.text().unwrap().into()),
-            "assert-type" => AssertType(node.text().unwrap().into()),
-            "assert-string-value" => AssertStringValue {
+            "all-of" => Assertion::AllOf(Self::child_assertions(node)),
+            "assert-eq" => Assertion::AssertEq(node.text().unwrap().into()),
+            "assert-type" => Assertion::AssertType(node.text().unwrap().into()),
+            "assert-string-value" => Assertion::AssertStringValue {
                 string_value: node.text().unwrap_or("").into(),
                 normalize_space: node
                     .attribute("normalize-space")
                     .map_or(false, boolean_value),
             },
-            "error" => Error(node.attribute("code").unwrap().into()),
-            "assert-true" => AssertTrue,
-            "assert-false" => AssertFalse,
-            "any-of" => AnyOf(Self::child_assertions(node)),
-            "assert-empty" => AssertEmpty,
-            "assert-xml" => AssertXml {
+            "error" => Assertion::Error(node.attribute("code").unwrap().into()),
+            "assert-true" => Assertion::AssertTrue,
+            "assert-false" => Assertion::AssertFalse,
+            "any-of" => Assertion::AnyOf(Self::child_assertions(node)),
+            "assert-empty" => Assertion::AssertEmpty,
+            "assert-xml" => Assertion::AssertXml {
                 xml_source: node.text().unwrap_or("").into(),
                 ignore_prefixes: node
                     .attribute("ignore-prefixes")
                     .map_or(false, boolean_value),
             },
-            "assert-deep-eq" => AssertDeepEq(node.text().unwrap().into()),
-            "assert" => Assert(node.text().unwrap().into()),
-            "assert-permutation" => AssertPermutation(node.text().unwrap().into()),
-            "assert-count" => AssertCount(node.text().unwrap().parse::<usize>().unwrap()),
-            "not" => Not(Box::new(
+            "assert-deep-eq" => Assertion::AssertDeepEq(node.text().unwrap().into()),
+            "assert" => Assertion::Assert(node.text().unwrap().into()),
+            "assert-permutation" => Assertion::AssertPermutation(node.text().unwrap().into()),
+            "assert-count" => {
+                Assertion::AssertCount(node.text().unwrap().parse::<usize>().unwrap())
+            }
+            "not" => Assertion::Not(Box::new(
                 node.first_element_child().map(|n| Self::new(&n)).unwrap(),
             )),
             "assert-serialization-error" => {
-                AssertSerializationError(node.attribute("code").unwrap().into())
+                Assertion::AssertSerializationError(node.attribute("code").unwrap().into())
             }
-            "serialization-matches" => SerializationMatches {
+            "serialization-matches" => Assertion::SerializationMatches {
                 serialization: node.text().unwrap_or("").into(),
                 flags: node.attribute("flags").unwrap_or("").into(),
             },
@@ -126,9 +127,9 @@ pub struct TestCase {
     pub(crate) name: String,
     description: String,
     pub(crate) environment: Option<EnvironmentSpec>,
-    dependencies: Vec<Dependency>,
+    pub(crate) dependencies: Vec<Dependency>,
     pub(crate) test: String,
-    result: Assertion,
+    pub(crate) result: Assertion,
 }
 
 impl TestCase {
@@ -199,7 +200,7 @@ pub enum SpecType {
     XT30Up,
 }
 #[derive(Debug)]
-pub enum DependencyType {
+pub enum Dependency {
     Calendar,
     DefaultLanguage,
     DirectoryAsCollectionUri,
@@ -214,9 +215,8 @@ pub enum DependencyType {
     XsdVersion,
     //    CollectionStability,
     //    SchemaAware,
+    Not(Box<Dependency>),
 }
-#[derive(Debug)]
-pub struct Dependency {}
 
 fn boolean_value(s: &str) -> bool {
     s.eq("true") || s.eq("1")
@@ -228,7 +228,7 @@ impl Dependency {
         let value = node.attribute("value").unwrap_or("");
         let satisfied = boolean_value(node.attribute("satisfied").unwrap_or("true"));
         //println!("{}, {}, {}", typ, value, satisfied);
-        let typ = match typ {
+        let base = match typ {
             "spec" => Spec(
                 value
                     .split_ascii_whitespace()
@@ -265,7 +265,11 @@ impl Dependency {
             "unicode-normalization-form" => UnicodeNormalizationForm,
             &_ => panic!(),
         };
-        Dependency {}
+        if satisfied {
+            base
+        } else {
+            Dependency::Not(Box::new(base))
+        }
     }
 
     pub(crate) fn find_dependencies(node: &Node) -> Vec<Self> {
@@ -281,8 +285,8 @@ impl Dependency {
     }
 }
 pub struct TestSet {
-    name: String,
-    dependencies: Vec<Dependency>,
+    pub(crate) name: String,
+    pub(crate) dependencies: Vec<Dependency>,
     pub(crate) environments: HashMap<String, EnvironmentSpec>,
     pub(crate) test_cases: Vec<TestCase>,
 }
@@ -298,6 +302,7 @@ impl TestSet {
                 .into_iter()
                 .map(|env| (env.name.as_deref().unwrap().to_string(), env))
                 .collect();
+        println!("Envs: {:?}", environments);
         let test_cases: Vec<TestCase> = test_set
             .children()
             .filter_map(|n| {
