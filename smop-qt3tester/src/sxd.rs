@@ -24,6 +24,14 @@ impl<'a> SXDRunner<'a> {
         let mut runner = SXDRunner { package };
         runner
     }
+    fn xpath_equals(&self, v1: &Value<'a>, v2: &Value<'a>) -> bool {
+        match v1 {
+            Value::Boolean(b) => v2.boolean() == *b,
+            Value::Number(n) => v2.number() == *n,
+            Value::String(s) => v2.string() == *s,
+            Value::Nodeset(_) => *v1 == *v2,
+        }
+    }
 }
 pub struct SXDEnvironment {}
 impl SXDEnvironment {
@@ -80,7 +88,21 @@ impl<'a> TestRunner for SXDRunner<'a> {
     fn check(&self, result: &Result<Self::V, TestError>, expected: &Assertion) -> Option<String> {
         match expected {
             Assertion::Assert(_) => Some("wrong".to_string()),
-            Assertion::AssertEq(_) => Some("wrong".to_string()),
+            Assertion::AssertEq(valString) => match result {
+                Ok(v) => {
+                    let val = Value::String(valString.to_string());
+                    if self.xpath_equals(v, &val) {
+                        None
+                    } else {
+                        Some(format!(
+                            "expected \"{}\", got \"{}\"",
+                            valString,
+                            v.string()
+                        ))
+                    }
+                }
+                Err(e) => Some(e.to_string()),
+            },
             Assertion::AssertCount(_) => Some("wrong".to_string()),
             Assertion::AssertDeepEq(_) => Some("wrong".to_string()),
             Assertion::AssertPermutation(_) => Some("wrong".to_string()),
@@ -89,7 +111,16 @@ impl<'a> TestRunner for SXDRunner<'a> {
             Assertion::AssertSerializationError(_) => Some("wrong".to_string()),
             Assertion::AssertEmpty => Some("wrong".to_string()),
             Assertion::AssertType(_) => Some("wrong".to_string()),
-            Assertion::AssertTrue => Some("wrong".to_string()),
+            Assertion::AssertTrue => match result {
+                Ok(v) => {
+                    if v.boolean() {
+                        None
+                    } else {
+                        Some("expected true, got false".to_string())
+                    }
+                }
+                Err(e) => Some(e.to_string()),
+            },
             Assertion::AssertFalse => Some("wrong".to_string()),
             Assertion::AssertStringValue {
                 string_value,
@@ -113,12 +144,35 @@ impl<'a> TestRunner for SXDRunner<'a> {
             Assertion::Error(code) => match result {
                 Ok(_) => Some(format!("Expected error code {}", code)),
                 Err(e) => {
-                    println!("Expected error code {}, got {:?}", code, e);
+                    // TODO println!("Expected error code {}, got {:?}", code, e);
                     None
                 }
             },
-            Assertion::AnyOf(_) => Some("wrong".to_string()),
-            Assertion::AllOf(_) => Some("wrong".to_string()),
+            Assertion::AnyOf(v) => {
+                let all_checks = v.iter().map(|a| self.check(result, a));
+                type B = Vec<Option<String>>;
+                let (failures, successes): (B, B) = all_checks.partition(|o| o.is_some());
+                if !successes.is_empty() {
+                    None
+                } else {
+                    Some(format!(
+                        "all alternatives failed: {}",
+                        failures.iter().map(|o| o.as_ref().unwrap()).join(", ")
+                    ))
+                }
+            }
+            Assertion::AllOf(v) => {
+                let all_checks = v.iter().map(|a| self.check(result, a));
+                let mut failures = all_checks.filter_map(|o| o).peekable();
+                if failures.peek().is_none() {
+                    None
+                } else {
+                    Some(format!(
+                        "one or more alternatives failed: {}",
+                        failures.join(", ")
+                    ))
+                }
+            }
             Assertion::Not(_) => Some("wrong".to_string()),
         }
     }
