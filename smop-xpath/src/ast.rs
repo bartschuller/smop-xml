@@ -5,18 +5,14 @@ trait Expr<'a> {
     fn compile(self) -> CompiledExpr<'a>;
 }
 
-pub enum PrimaryExpr<'a> {
-    Literal(Literal<'a>),
-}
-
-pub enum Literal<'a> {
-    NumericLiteral(NumericLiteral),
-    StringLiteral(&'a str),
+pub enum PrimaryExpr {
+    Literal(Literal),
 }
 
 #[derive(Debug, PartialEq)]
-pub enum NumericLiteral {
-    IntegerLiteral(i64),
-    DecimalLiteral(Decimal),
-    DoubleLiteral(f64),
+pub enum Literal {
+    Integer(i64),
+    Decimal(Decimal),
+    Double(f64),
+    String(String),
 }

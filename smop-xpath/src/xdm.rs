@@ -1,7 +1,7 @@
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 
-trait XdmNode {}
+pub trait XdmNode {}
 
 enum XdmAtomic {
     String(String),
@@ -10,10 +10,10 @@ enum XdmAtomic {
     Double(f64),
 }
 enum XdmItem {
-    XdmAtomic(XdmAtomic),
-    XdmNode(Box<dyn XdmNode>),
-    XdmArray(Vec<XdmSequence>),
-    XdmMap(HashMap<XdmAtomic, XdmSequence>),
+    Atomic(XdmAtomic),
+    Node(Box<dyn XdmNode>),
+    Array(Vec<XdmSequence>),
+    Map(HashMap<XdmAtomic, XdmSequence>),
 }
 
 pub struct XdmSequence(Vec<XdmItem>);

@@ -1,16 +1,16 @@
 use crate::xdm::XdmSequence;
 
-struct Focus<'a> {
+pub struct Focus<'a> {
     context: &'a XdmSequence,
     position: usize,
 }
-struct DynamicContext<'a> {
+pub struct DynamicContext<'a> {
     focus: Option<Focus<'a>>,
 }
 pub struct CompiledExpr<'a>(Box<dyn 'a + Fn(&'a DynamicContext) -> XdmSequence>);
 
 impl<'a> CompiledExpr<'a> {
-    fn new(closure: impl 'a + Fn(&'a DynamicContext) -> XdmSequence) -> Self {
+    pub fn new(closure: impl 'a + Fn(&'a DynamicContext) -> XdmSequence) -> Self {
         CompiledExpr(Box::new(closure))
     }
     pub fn execute(&self, context: &'a DynamicContext) -> XdmSequence {
