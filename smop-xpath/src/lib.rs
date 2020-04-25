@@ -3,23 +3,42 @@ mod parser;
 mod runtime;
 mod xdm;
 
-use xdm::XdmSequence;
+use crate::runtime::{CompiledExpr, DynamicContext};
+use xdm::Xdm;
 
-pub struct XPath {}
+pub struct Xpath<'a>(CompiledExpr<'a>);
+
 #[derive(Debug)]
-enum CompileError {
+pub enum XpathError {
     ParseError(String),
 }
-#[derive(Debug)]
-enum RuntimeError {
-    Oops,
-}
-impl XPath {
-    fn compile(xpath: &str) -> Result<Self, CompileError> {
-        Ok(XPath {})
+impl<'a> Xpath<'a> {
+    pub fn compile(xpath: &str) -> Result<Xpath<'a>, XpathError> {
+        let expr = parser::parse(xpath).map_err(|e| XpathError::ParseError(e))?;
+        Ok(Xpath(expr.compile()))
     }
 
-    fn evaluate(&self) -> Result<XdmSequence, RuntimeError> {
-        Err(RuntimeError::Oops)
+    fn evaluate<'context>(
+        &self,
+        context: &'context DynamicContext<'context>,
+    ) -> Result<Xdm<'context>, XpathError> {
+        Ok(self.0.execute(context))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::runtime::DynamicContext;
+    use crate::xdm::Xdm;
+    use crate::{Xpath, XpathError};
+    use std::mem;
+
+    #[test]
+    fn compile1() -> Result<(), XpathError> {
+        let xpath = Xpath::compile("1")?;
+        let context: DynamicContext = Default::default();
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result, Xdm::Integer(2));
+        Ok(())
     }
 }

@@ -1,18 +1,39 @@
-use crate::ast::{Literal, PrimaryExpr};
+use crate::ast::{Expr, Literal};
 use nom::branch::alt;
 use nom::bytes::complete::{is_not, tag};
 use nom::character::complete::{char, digit0, digit1};
-use nom::combinator::{map, recognize, value};
-use nom::error::ParseError;
-use nom::multi::many0;
+use nom::combinator::{all_consuming, map, recognize, value};
+use nom::error::{convert_error, ParseError, VerboseError};
+use nom::multi::{many0, separated_nonempty_list};
 use nom::sequence::{delimited, tuple};
+use nom::Err::{Error, Failure, Incomplete};
 use nom::IResult;
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
+pub(crate) fn parse(input: &str) -> Result<Expr, String> {
+    let output = expr::<VerboseError<&str>>(input);
+    match output {
+        Ok((_, e)) => Ok(e),
+        Err(Error(e)) | Err(Failure(e)) => Err(convert_error(input, e)),
+        Err(Incomplete(_)) => unreachable!(),
+    }
+}
+
+// 6
+fn expr<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Expr, E> {
+    all_consuming(map(separated_nonempty_list(tag(","), expr_single), |v| {
+        Expr::Sequence(v)
+    }))(input)
+}
+
+// 7
+fn expr_single<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Expr, E> {
+    primary_expr(input)
+}
 // 56
-fn primary_expr<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, PrimaryExpr, E> {
-    map(literal, |l| PrimaryExpr::Literal(l))(input)
+fn primary_expr<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Expr, E> {
+    map(literal, Expr::Literal)(input)
 }
 
 // 57
@@ -64,14 +85,14 @@ fn string_literal<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str
                 tag("'"),
             ),
         )),
-        |s| Literal::String(s),
+        Literal::String,
     )(input)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::Literal;
-    use crate::parser::{decimal_literal, integer_literal, literal, numeric_literal};
+    use crate::ast::{Expr, Literal};
+    use crate::parser::{decimal_literal, expr, integer_literal, literal, numeric_literal};
     use nom::error::ErrorKind::Digit;
     use nom::error::{convert_error, ErrorKind, VerboseError};
     use nom::Err::{Error, Failure};
@@ -169,5 +190,39 @@ mod tests {
         let input = "\"foo''bar\"";
         let output = literal::<(&str, ErrorKind)>(input);
         assert_eq!(output, Ok(("", Literal::String("foo''bar".to_string()))))
+    }
+
+    #[test]
+    fn sequence1() {
+        let input = "1,'two'";
+        let output = expr::<(&str, ErrorKind)>(input);
+        assert_eq!(
+            output,
+            Ok((
+                "",
+                Expr::Sequence(vec![
+                    Expr::Literal(Literal::Integer(1)),
+                    Expr::Literal(Literal::String("two".to_string()))
+                ])
+            ))
+        )
+    }
+
+    #[test]
+    fn error1() {
+        let input = "1,'two";
+        let output = expr::<(&str, ErrorKind)>(input);
+        assert_eq!(output, Err(Error((",'two", ErrorKind::Eof))))
+    }
+
+    #[test]
+    fn error2() {
+        let input = "1,'two";
+        let output = expr::<VerboseError<&str>>(input);
+        let err = match output {
+            Err(Error(e)) | Err(Failure(e)) => convert_error(input, e),
+            _ => unreachable!(),
+        };
+        assert_eq!(err, "0: at line 1, in Eof:\n1,\'two\n ^\n\n")
     }
 }
