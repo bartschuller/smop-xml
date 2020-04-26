@@ -31,14 +31,27 @@ mod tests {
     use crate::runtime::DynamicContext;
     use crate::xdm::Xdm;
     use crate::{Xpath, XpathError};
-    use std::mem;
 
     #[test]
     fn compile1() -> Result<(), XpathError> {
         let xpath = Xpath::compile("1")?;
         let context: DynamicContext = Default::default();
         let result = xpath.evaluate(&context)?;
-        assert_eq!(result, Xdm::Integer(2));
+        assert_eq!(result, Xdm::Integer(1));
+        Ok(())
+    }
+
+    #[test]
+    fn compile2() -> Result<(), XpathError> {
+        let xpath = Xpath::compile("1,'two'")?;
+        let context: DynamicContext = Default::default();
+        let result1 = xpath.evaluate(&context)?;
+        assert_eq!(
+            result1,
+            Xdm::Sequence(vec![Xdm::Integer(1), Xdm::String("two".to_string())])
+        );
+        let result2 = xpath.evaluate(&context)?;
+        assert_eq!(result1, result2);
         Ok(())
     }
 }

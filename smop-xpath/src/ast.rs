@@ -24,7 +24,16 @@ impl<'a> Expr {
     pub(crate) fn compile(self) -> CompiledExpr<'a> {
         match self {
             Expr::Literal(l) => l.compile(),
-            Expr::Sequence(s) => CompiledExpr::new(move |_c| Xdm::Integer(42)),
+            Expr::Sequence(s) => {
+                let mut compiled_vec: Vec<_> = s.into_iter().map(|x| x.compile()).collect();
+                if compiled_vec.len() == 1 {
+                    compiled_vec.remove(0)
+                } else {
+                    CompiledExpr::new(move |c| {
+                        Xdm::Sequence(compiled_vec.iter().map(|e| e.execute(c)).collect())
+                    })
+                }
+            }
         }
     }
 }

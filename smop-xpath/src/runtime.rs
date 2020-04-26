@@ -9,6 +9,7 @@ pub struct Focus<'a> {
 pub struct DynamicContext<'a> {
     focus: Option<Focus<'a>>,
 }
+
 pub struct CompiledExpr<'a>(
     Box<dyn 'a + for<'context> Fn(&'context DynamicContext) -> Xdm<'context>>,
 );
