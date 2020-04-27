@@ -10,6 +10,7 @@ use rust_decimal::Decimal;
 pub enum Expr {
     Literal(Literal),
     Sequence(Vec<Expr>),
+    IfThenElse(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -26,13 +27,12 @@ impl<'a> Expr {
             Expr::Literal(l) => l.compile(),
             Expr::Sequence(s) => {
                 let mut compiled_vec: Vec<_> = s.into_iter().map(|x| x.compile()).collect();
-                if compiled_vec.len() == 1 {
-                    compiled_vec.remove(0)
-                } else {
-                    CompiledExpr::new(move |c| {
-                        Xdm::Sequence(compiled_vec.iter().map(|e| e.execute(c)).collect())
-                    })
-                }
+                CompiledExpr::new(move |c| {
+                    Xdm::Sequence(compiled_vec.iter().map(|e| e.execute(c)).collect())
+                })
+            }
+            Expr::IfThenElse(condition_expr, if_expr, else_expr) => {
+                CompiledExpr::new(move |_c| Xdm::Integer(53))
             }
         }
     }

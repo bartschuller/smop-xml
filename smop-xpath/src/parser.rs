@@ -1,7 +1,7 @@
 use crate::ast::{Expr, Literal};
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, tag, take_until};
-use nom::character::complete::{anychar, char, digit0, digit1, none_of};
+use nom::character::complete::{alphanumeric1, anychar, char, digit0, digit1, none_of};
 use nom::combinator::{all_consuming, map, not, opt, recognize, value};
 use nom::error::{convert_error, ParseError, VerboseError};
 use nom::multi::{many0, many1, many_till, separated_nonempty_list};
@@ -12,7 +12,7 @@ use rust_decimal::Decimal;
 use std::str::FromStr;
 
 pub(crate) fn parse(input: &str) -> Result<Expr, String> {
-    let output = expr::<VerboseError<&str>>(input);
+    let output = xpath_expr::<VerboseError<&str>>(input);
     match output {
         Ok((_, e)) => Ok(e),
         Err(Error(e)) | Err(Failure(e)) => Err(convert_error(input, e)),
@@ -20,22 +20,53 @@ pub(crate) fn parse(input: &str) -> Result<Expr, String> {
     }
 }
 
+fn xpath_expr<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Expr, E> {
+    all_consuming(delimited(iws0, expr, iws0))(input)
+}
+
 // 6
 fn expr<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Expr, E> {
-    all_consuming(map(
-        delimited(
-            iws0,
-            separated_nonempty_list(iws0_tag(","), expr_single),
-            iws0,
-        ),
-        |v| Expr::Sequence(v),
-    ))(input)
+    map(
+        separated_nonempty_list(iws0_tag(","), expr_single),
+        |mut v| {
+            if v.len() == 1 {
+                v.remove(0)
+            } else {
+                Expr::Sequence(v)
+            }
+        },
+    )(input)
 }
 
 // 7
 fn expr_single<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Expr, E> {
     primary_expr(input)
 }
+
+// 15
+fn if_expr<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Expr, E> {
+    //  	IfExpr 	   ::=    	"if" "(" Expr ")" "then" ExprSingle "else" ExprSingle
+    map(
+        tuple((
+            iws0_tag("if"),
+            iws0_tag("("),
+            expr,
+            iws0_tag(")"),
+            iws0_tag("then"),
+            expr_single,
+            iws0_tag("else"),
+            expr_single,
+        )),
+        |(_, _, cond_expr, _, _, then_expr, _, else_expr)| {
+            Expr::IfThenElse(
+                Box::new(cond_expr),
+                Box::new(then_expr),
+                Box::new(else_expr),
+            )
+        },
+    )(input)
+}
+
 // 56
 fn primary_expr<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Expr, E> {
     map(literal, Expr::Literal)(input)
@@ -133,11 +164,24 @@ fn iws0_tag<'a, Error: ParseError<&'a str>>(
     move |i| delimited(iws0, tag(t), iws0)(i)
 }
 
+// optional ws, but fail if next is alphanumeric
+fn ws_if_alphanum<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, (), E> {
+    // FIXME
+    preceded(not(alphanumeric1), iws0)(input)
+}
+
+fn non_delimiting_terminal<'a, Error: ParseError<&'a str>>(
+    t: &'a str,
+) -> impl Fn(&'a str) -> IResult<&'a str, &'a str, Error> {
+    move |i| delimited(iws0, tag(t), ws_if_alphanum)(i)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::ast::{Expr, Literal};
     use crate::parser::{
-        comment, decimal_literal, expr, integer_literal, iws0, literal, numeric_literal,
+        comment, decimal_literal, expr, if_expr, integer_literal, iws0, literal, numeric_literal,
+        xpath_expr,
     };
     use nom::branch::alt;
     use nom::bytes::complete::tag;
@@ -289,16 +333,39 @@ mod tests {
     }
 
     #[test]
+    fn if_then_else1() {
+        let input = "if (3) then 1 else 2";
+        let output = if_expr::<(&str, ErrorKind)>(input);
+        assert_eq!(
+            output,
+            Ok((
+                "",
+                Expr::IfThenElse(
+                    Box::new(Expr::Literal(Literal::Integer(3))),
+                    Box::new(Expr::Literal(Literal::Integer(1))),
+                    Box::new(Expr::Literal(Literal::Integer(2)))
+                )
+            ))
+        )
+    }
+    #[test]
+    fn if_then_else2() {
+        let input = "if(3)then1else2";
+        let output = if_expr::<(&str, ErrorKind)>(input);
+        assert_eq!(output, Err(Error(("then1else2", ErrorKind::Tag))))
+    }
+
+    #[test]
     fn error1() {
         let input = "1,'two";
-        let output = expr::<(&str, ErrorKind)>(input);
+        let output = xpath_expr::<(&str, ErrorKind)>(input);
         assert_eq!(output, Err(Error((",'two", ErrorKind::Eof))))
     }
 
     #[test]
     fn error2() {
         let input = "1,'two";
-        let output = expr::<VerboseError<&str>>(input);
+        let output = xpath_expr::<VerboseError<&str>>(input);
         let err = match output {
             Err(Error(e)) | Err(Failure(e)) => convert_error(input, e),
             _ => unreachable!(),
@@ -325,7 +392,7 @@ mod tests {
     #[test]
     fn whitespace2() {
         let input = "(:here we go: :) 1 (: one :), 2 (: that's it :)\n";
-        let output = expr::<(&str, ErrorKind)>(input);
+        let output = xpath_expr::<(&str, ErrorKind)>(input);
         assert_eq!(
             output,
             Ok((
