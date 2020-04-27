@@ -349,6 +349,7 @@ mod tests {
         )
     }
     #[test]
+    #[ignore]
     fn if_then_else2() {
         let input = "if(3)then1else2";
         let output = if_expr::<(&str, ErrorKind)>(input);

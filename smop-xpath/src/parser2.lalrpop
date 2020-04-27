@@ -1,0 +1,50 @@
+use crate::ast::{Expr, Literal};
+use std::str::FromStr;
+use rust_decimal::Decimal;
+
+grammar;
+
+pub PrimaryExpr: Expr = {
+    Literal => Expr::Literal(<>)
+}
+
+pub Literal: Literal = {
+    IntegerLiteral => Literal::Integer(i64::from_str(<>).unwrap()),
+    DecimalLiteral => Literal::Decimal(Decimal::from_str(<>).unwrap())
+};
+
+DecimalLiteral: &'input str = {
+    r"\.[0-9]+",
+    r"[0-9]+\.[0-9]*"
+}
+
+IntegerLiteral: &'input str = {
+    r"[0-9]+"
+};
+
+//     map(
+//         alt((
+//             delimited(
+//                 tag("\""),
+//                 map(
+//                     many0(alt((value("\"", tag("\"\"")), is_not("\"")))),
+//                     |v: Vec<&str>| v.concat(),
+//                 ),
+//                 tag("\""),
+//             ),
+//             delimited(
+//                 tag("'"),
+//                 map(
+//                     many0(alt((value("'", tag("''")), is_not("'")))),
+//                     |v: Vec<&str>| v.concat(),
+//                 ),
+//                 tag("'"),
+//             ),
+//         )),
+//         Literal::String,
+
+// [116]    	StringLiteral 	   ::=    	('"' (EscapeQuot | [^"])* '"') | ("'" (EscapeApos | [^'])* "'")
+
+// StringLiteral: &'input str = {
+//     "\"" (EscapeQuot, r#"[^"]"#)* "\""
+// }
