@@ -1,28 +1,29 @@
 use crate::runtime::CompiledExpr;
 use crate::xdm::*;
 use rust_decimal::Decimal;
+use std::borrow::Cow;
 
 // trait XPathExpr<'a> {
 //     fn compile(self) -> CompiledExpr<'a>;
 // }
 
 #[derive(Debug, PartialEq)]
-pub enum Expr {
-    Literal(Literal),
-    Sequence(Vec<Expr>),
-    IfThenElse(Box<Expr>, Box<Expr>, Box<Expr>),
+pub enum Expr<'input> {
+    Literal(Literal<'input>),
+    Sequence(Vec<Expr<'input>>),
+    IfThenElse(Box<Expr<'input>>, Box<Expr<'input>>, Box<Expr<'input>>),
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Literal {
+pub enum Literal<'input> {
     Integer(i64),
     Decimal(Decimal),
     Double(f64),
-    String(String),
+    String(Cow<'input, str>),
 }
 
-impl<'a> Expr {
-    pub(crate) fn compile(self) -> CompiledExpr<'a> {
+impl<'input> Expr<'input> {
+    pub(crate) fn compile(self) -> CompiledExpr<'input> {
         match self {
             Expr::Literal(l) => l.compile(),
             Expr::Sequence(s) => {
@@ -38,13 +39,16 @@ impl<'a> Expr {
     }
 }
 
-impl<'a> Literal {
-    fn compile(self) -> CompiledExpr<'a> {
+impl<'input> Literal<'input> {
+    fn compile(self) -> CompiledExpr<'input> {
         match self {
             Literal::Integer(i) => CompiledExpr::new(move |_c| Xdm::Integer(i)),
             Literal::Decimal(d) => CompiledExpr::new(move |_c| Xdm::Decimal(d)),
             Literal::Double(d) => CompiledExpr::new(move |_c| Xdm::Double(d)),
-            Literal::String(s) => CompiledExpr::new(move |_c| Xdm::String(s.clone())),
+            Literal::String(s) => {
+                let s = s.into_owned();
+                CompiledExpr::new(move |_c| Xdm::String(s.clone()))
+            }
         }
     }
 }

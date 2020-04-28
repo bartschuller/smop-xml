@@ -17,8 +17,8 @@ pub struct Xpath<'a>(CompiledExpr<'a>);
 pub enum XpathError {
     ParseError(String),
 }
-impl<'a> Xpath<'a> {
-    pub fn compile(xpath: &str) -> Result<Xpath<'a>, XpathError> {
+impl<'input> Xpath<'input> {
+    pub fn compile(xpath: &'input str) -> Result<Xpath<'input>, XpathError> {
         let expr = parser::parse(xpath).map_err(|e| XpathError::ParseError(e))?;
         Ok(Xpath(expr.compile()))
     }

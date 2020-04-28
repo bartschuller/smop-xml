@@ -3,6 +3,7 @@ use pest_consume::match_nodes;
 use pest_consume::Error;
 use pest_consume::Parser;
 use rust_decimal::Decimal;
+use std::borrow::Cow;
 use std::str::FromStr;
 
 type Result<T> = std::result::Result<T, Error<Rule>>;
@@ -62,9 +63,9 @@ impl Parser3 {
         two_quotes.push(qchar);
         let inner = &str[1..last];
         let unescaped = if inner.contains(quote) {
-            inner.replace(two_quotes.as_str(), quote)
+            Cow::Owned(inner.replace(two_quotes.as_str(), quote))
         } else {
-            inner.to_string()
+            Cow::Borrowed(inner)
         };
         Ok(Literal::String(unescaped))
     }

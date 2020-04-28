@@ -9,6 +9,7 @@ use nom::sequence::{delimited, preceded, tuple};
 use nom::Err::{Error, Failure, Incomplete};
 use nom::{Compare, IResult, InputLength, InputTake};
 use rust_decimal::Decimal;
+use std::borrow::Cow;
 use std::str::FromStr;
 
 pub(crate) fn parse(input: &str) -> Result<Expr, String> {
@@ -121,7 +122,7 @@ fn string_literal<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str
                 tag("'"),
             ),
         )),
-        Literal::String,
+        |s| Literal::String(Cow::Owned(s)),
     )(input)
 }
 
@@ -193,6 +194,7 @@ mod tests {
     use nom::sequence::preceded;
     use nom::Err::{Error, Failure};
     use rust_decimal::Decimal;
+    use std::borrow::Cow;
     use std::str::FromStr;
 
     #[test]
@@ -257,35 +259,35 @@ mod tests {
     fn string_literal1() {
         let input = "'foo'";
         let output = literal::<(&str, ErrorKind)>(input);
-        assert_eq!(output, Ok(("", Literal::String("foo".to_string()))))
+        assert_eq!(output, Ok(("", Literal::String(Cow::Borrowed("foo")))))
     }
 
     #[test]
     fn string_literal2() {
         let input = "\"foo\"";
         let output = literal::<(&str, ErrorKind)>(input);
-        assert_eq!(output, Ok(("", Literal::String("foo".to_string()))))
+        assert_eq!(output, Ok(("", Literal::String(Cow::Borrowed("foo")))))
     }
 
     #[test]
     fn string_literal3() {
         let input = "'foo''bar'";
         let output = literal::<(&str, ErrorKind)>(input);
-        assert_eq!(output, Ok(("", Literal::String("foo'bar".to_string()))))
+        assert_eq!(output, Ok(("", Literal::String(Cow::Borrowed("foo'bar")))))
     }
 
     #[test]
     fn string_literal4() {
         let input = "\"foo\"\"bar\"";
         let output = literal::<(&str, ErrorKind)>(input);
-        assert_eq!(output, Ok(("", Literal::String("foo\"bar".to_string()))))
+        assert_eq!(output, Ok(("", Literal::String(Cow::Borrowed("foo\"bar")))))
     }
 
     #[test]
     fn string_literal5() {
         let input = "\"foo''bar\"";
         let output = literal::<(&str, ErrorKind)>(input);
-        assert_eq!(output, Ok(("", Literal::String("foo''bar".to_string()))))
+        assert_eq!(output, Ok(("", Literal::String(Cow::Borrowed("foo''bar")))))
     }
 
     #[test]
@@ -326,7 +328,7 @@ mod tests {
                 "",
                 Expr::Sequence(vec![
                     Expr::Literal(Literal::Integer(1)),
-                    Expr::Literal(Literal::String("two".to_string()))
+                    Expr::Literal(Literal::String(Cow::Borrowed("two")))
                 ])
             ))
         )
