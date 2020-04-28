@@ -1,30 +1,26 @@
 
-//  	Literal 	   ::=    	NumericLiteral | StringLiteral
-   // [58]    	NumericLiteral 	   ::=    	IntegerLiteral | DecimalLiteral | DoubleLiteral
-   // [113]    	IntegerLiteral 	   ::=    	Digits
-   // [114]    	DecimalLiteral 	   ::=    	("." Digits) | (Digits "." [0-9]*) 	/* ws: explicit */
-   // [115]    	DoubleLiteral 	   ::=    	(("." Digits) | (Digits ("." [0-9]*)?)) [eE] [+-]? Digits 	/* ws: explicit */
-   // [116]    	StringLiteral 	   ::=    	('"' (EscapeQuot | [^"])* '"') | ("'" (EscapeApos | [^'])* "'") 	/* ws: explicit */
-   // [119]    	EscapeQuot 	   ::=    	'""'
-   // [120]    	EscapeApos 	   ::=    	"''"
-   // [125]    	Digits 	   ::=    	[0-9]+
 
 // 1
-Xpath = _{ SOI ~ Expr ~ EOI }
+Xpath = { SOI ~ Expr ~ EOI }
 // 6
 Expr = { ExprSingle ~ ("," ~ ExprSingle)* }
 // 7
-ExprSingle = _{ PrimaryExpr }
+ExprSingle = { PrimaryExpr }
+// [15]    	IfExpr 	   ::=    	"if" "(" Expr ")" "then" ExprSingle "else" ExprSingle
+// 15
+IfExpr = { "if" ~ "(" ~ Expr ~ ")" ~ "then" ~ ExprSingle ~ "else" ~ ExprSingle }
 // 56
 PrimaryExpr = _{ Literal }
 // 57
-Literal = _{ DecimalLiteral | IntegerLiteral | StringLiteral }
+Literal = { DoubleLiteral | DecimalLiteral | IntegerLiteral | StringLiteral }
 // 113
 IntegerLiteral = @{ Digits }
 // 114
 DecimalLiteral = @{ ("." ~ Digits ) | (Digits ~ "." ~ ASCII_DIGIT*) }
+// 115
+DoubleLiteral = @{ (("." ~ Digits) | (Digits ~ ("." ~ ASCII_DIGIT*)?)) ~ ^"e" ~ ("+"|"-")? ~ Digits }
 // 116
-StringLiteral = ${ (Quot ~ (EscapeQuot | !Quot ~ ANY)* ~ Quot) | (Apos ~ (EscapeApos | !Apos ~ ANY)* ~ Apos) }
+StringLiteral = @{ (Quot ~ (EscapeQuot | !Quot ~ ANY)* ~ Quot) | (Apos ~ (EscapeApos | !Apos ~ ANY)* ~ Apos) }
 // 119
 EscapeQuot = { "\"\"" }
 Quot = { "\"" }

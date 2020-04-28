@@ -4,10 +4,6 @@ pub mod parser3;
 mod runtime;
 mod xdm;
 
-#[macro_use]
-extern crate lalrpop_util;
-lalrpop_mod!(pub parser2);
-
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
