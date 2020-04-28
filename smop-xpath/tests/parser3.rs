@@ -5,7 +5,7 @@ use xpath::parser3::Rule;
 
 #[test]
 fn integer_literal() {
-    let parse = p3_parse("0.5, 1.4e-3, 23, 'you''ll ''never''', \"''weird''\"");
+    let parse = p3_parse("0.5, 1.4e-3,(: yess! (: 7 :):)23, 'you''ll ''never''', \"''weird''\"");
     match parse {
         Ok(expr) => println!("{:?}", expr),
         Err(e) => {

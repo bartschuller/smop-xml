@@ -72,7 +72,8 @@ impl Parser3 {
 }
 
 pub fn p3_parse(input: &str) -> Result<Expr> {
-    let root = Parser3::parse(Rule::Xpath, input)?;
-    let root = root.single()?;
+    let root = Parser3::parse(Rule::Xpath, input);
+    pest_ascii_tree::print_ascii_tree(root.clone().map(|n| n.as_pairs().to_owned()));
+    let root = root?.single()?;
     Parser3::Xpath(root)
 }

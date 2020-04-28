@@ -31,3 +31,10 @@ Apos = { "'" }
 Digits = @{ ASCII_DIGIT+ }
 
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+// [121]    	Comment 	   ::=    	"(:" (CommentContents | Comment)* ":)" 	/* ws: explicit */
+   // 				/* gn: comments */
+   // [126]    	CommentContents 	   ::=    	(Char+ - (Char* ('(:' | ':)') Char*))
+// 121
+COMMENT = _{ "(:" ~ (CommentContents | COMMENT)* ~ ":)" }
+// 126
+CommentContents = { ( !("(:" | ":)") ~ ANY)+ }
