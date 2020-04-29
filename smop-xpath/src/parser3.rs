@@ -25,12 +25,20 @@ impl Parser3 {
     }
     fn Expr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
-            [ExprSingle(expr)..] => Expr::Sequence(expr.collect()),
+            [ExprSingle(expr)..] => {
+                let mut v: Vec<Expr> = expr.collect();
+                if v.len() == 1 {
+                    v.remove(0)
+                } else {
+                    Expr::Sequence(v)
+                }
+            }
         ))
     }
     fn ExprSingle(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
             [Literal(lit)] => Expr::Literal(lit),
+            [IfExpr(e)] => e,
         ))
     }
     fn Literal(input: Node) -> Result<Literal> {
@@ -69,11 +77,29 @@ impl Parser3 {
         };
         Ok(Literal::String(unescaped))
     }
+    fn IfExpr(input: Node) -> Result<Expr> {
+        Ok(match_nodes!(input.into_children();
+            [Expr(i), ExprSingle(t), ExprSingle(e)] => Expr::IfThenElse(Box::new(i), Box::new(t), Box::new(e)),
+        ))
+    }
 }
 
 pub fn p3_parse(input: &str) -> Result<Expr> {
     let root = Parser3::parse(Rule::Xpath, input);
     pest_ascii_tree::print_ascii_tree(root.clone().map(|n| n.as_pairs().to_owned()));
     let root = root?.single()?;
-    Parser3::Xpath(root)
+    let parse = Parser3::Xpath(root);
+    parse.map_err(|e| {
+        e.with_path("literal string").renamed_rules(|rule| {
+            match *rule {
+                Rule::EOI => "end of input",
+                Rule::Literal => "a literal",
+                _ => {
+                    println!("unhandled grammar prettifier: {:?}", rule);
+                    "UNHANDLED"
+                }
+            }
+            .to_owned()
+        })
+    })
 }

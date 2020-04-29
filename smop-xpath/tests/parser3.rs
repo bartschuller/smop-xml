@@ -6,22 +6,19 @@ use xpath::parser3::Rule;
 #[test]
 fn integer_literal() {
     let parse = p3_parse("0.5, 1.4e-3,(: yess! (: 7 :):)23, 'you''ll ''never''', \"''weird''\"");
+    println!("{:?}", parse);
+    //assert_eq!("54", parse)
+}
+
+#[test]
+fn ifthen1() {
+    let parse = p3_parse("if (1) then 3 else 0.5");
     match parse {
-        Ok(expr) => println!("{:?}", expr),
+        Ok(e) => {
+            println!("{:?}", e);
+        }
         Err(e) => {
-            let e = e.with_path("literal string").renamed_rules(|rule| {
-                match *rule {
-                    Rule::EOI => "end of input",
-                    Rule::Literal => "a literal",
-                    _ => {
-                        println!("unhandled grammar prettifier: {:?}", rule);
-                        "UNHANDLED"
-                    }
-                }
-                .to_owned()
-            });
             println!("{}", e);
         }
     }
-    //assert_eq!("54", parse)
 }

@@ -10,7 +10,7 @@ edition = "2018"
 nom = "^5"
 # nom-unicode = "^0.1"
 rust_decimal = "^1.4"
-roxmltree = "^0.10"
+roxmltree = "^0.11"
 # itertools = "^0.9"
 
 pest = "^2.1"

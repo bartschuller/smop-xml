@@ -5,7 +5,7 @@ Xpath = { SOI ~ Expr ~ EOI }
 // 6
 Expr = { ExprSingle ~ ("," ~ ExprSingle)* }
 // 7
-ExprSingle = { PrimaryExpr }
+ExprSingle = { PrimaryExpr | IfExpr }
 // [15]    	IfExpr 	   ::=    	"if" "(" Expr ")" "then" ExprSingle "else" ExprSingle
 // 15
 IfExpr = { "if" ~ "(" ~ Expr ~ ")" ~ "then" ~ ExprSingle ~ "else" ~ ExprSingle }

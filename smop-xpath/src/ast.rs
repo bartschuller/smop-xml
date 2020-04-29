@@ -29,11 +29,21 @@ impl<'input> Expr<'input> {
             Expr::Sequence(s) => {
                 let mut compiled_vec: Vec<_> = s.into_iter().map(|x| x.compile()).collect();
                 CompiledExpr::new(move |c| {
-                    Xdm::Sequence(compiled_vec.iter().map(|e| e.execute(c)).collect())
+                    let v: XdmResult<Vec<_>> = compiled_vec.iter().map(|e| e.execute(c)).collect();
+                    v.map(|x| Xdm::Sequence(x))
                 })
             }
             Expr::IfThenElse(condition_expr, if_expr, else_expr) => {
-                CompiledExpr::new(move |_c| Xdm::Integer(53))
+                let condition = condition_expr.compile();
+                let if_branch = if_expr.compile();
+                let else_branch = else_expr.compile();
+                CompiledExpr::new(move |c| {
+                    if condition.execute(c)?.boolean()? {
+                        if_branch.execute(c)
+                    } else {
+                        else_branch.execute(c)
+                    }
+                })
             }
         }
     }
@@ -42,12 +52,12 @@ impl<'input> Expr<'input> {
 impl<'input> Literal<'input> {
     fn compile(self) -> CompiledExpr<'input> {
         match self {
-            Literal::Integer(i) => CompiledExpr::new(move |_c| Xdm::Integer(i)),
-            Literal::Decimal(d) => CompiledExpr::new(move |_c| Xdm::Decimal(d)),
-            Literal::Double(d) => CompiledExpr::new(move |_c| Xdm::Double(d)),
+            Literal::Integer(i) => CompiledExpr::new(move |_c| Ok(Xdm::Integer(i))),
+            Literal::Decimal(d) => CompiledExpr::new(move |_c| Ok(Xdm::Decimal(d))),
+            Literal::Double(d) => CompiledExpr::new(move |_c| Ok(Xdm::Double(d))),
             Literal::String(s) => {
                 let s = s.into_owned();
-                CompiledExpr::new(move |_c| Xdm::String(s.clone()))
+                CompiledExpr::new(move |_c| Ok(Xdm::String(s.clone())))
             }
         }
     }
