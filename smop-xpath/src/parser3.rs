@@ -39,6 +39,13 @@ impl Parser3 {
         Ok(match_nodes!(input.into_children();
             [Literal(lit)] => Expr::Literal(lit),
             [IfExpr(e)] => e,
+            [ParenthesizedExpr(e)] => e,
+        ))
+    }
+    fn ParenthesizedExpr(input: Node) -> Result<Expr> {
+        Ok(match_nodes!(input.into_children();
+            [Expr(e)] => e,
+            [] => Expr::Sequence(vec![])
         ))
     }
     fn Literal(input: Node) -> Result<Literal> {

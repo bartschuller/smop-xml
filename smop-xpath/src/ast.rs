@@ -30,7 +30,16 @@ impl<'input> Expr<'input> {
                 let mut compiled_vec: Vec<_> = s.into_iter().map(|x| x.compile()).collect();
                 CompiledExpr::new(move |c| {
                     let v: XdmResult<Vec<_>> = compiled_vec.iter().map(|e| e.execute(c)).collect();
-                    v.map(|x| Xdm::Sequence(x))
+                    v.map(|vecx| {
+                        Xdm::Sequence(
+                            vecx.into_iter()
+                                .flat_map(|x| match x {
+                                    Xdm::Sequence(v) => v,
+                                    _ => vec![x],
+                                })
+                                .collect(),
+                        )
+                    })
                 })
             }
             Expr::IfThenElse(condition_expr, if_expr, else_expr) => {

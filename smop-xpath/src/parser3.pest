@@ -10,9 +10,12 @@ ExprSingle = { PrimaryExpr | IfExpr }
 // 15
 IfExpr = { "if" ~ "(" ~ Expr ~ ")" ~ "then" ~ ExprSingle ~ "else" ~ ExprSingle }
 // 56
-PrimaryExpr = _{ Literal }
+PrimaryExpr = _{ Literal | ParenthesizedExpr }
 // 57
 Literal = { DoubleLiteral | DecimalLiteral | IntegerLiteral | StringLiteral }
+// [61]    	ParenthesizedExpr 	   ::=    	"(" Expr? ")"
+// 61
+ParenthesizedExpr = { "(" ~ Expr? ~ ")" }
 // 113
 IntegerLiteral = @{ Digits }
 // 114

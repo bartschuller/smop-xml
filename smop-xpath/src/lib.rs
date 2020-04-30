@@ -65,17 +65,58 @@ mod tests {
         let context: DynamicContext = Default::default();
         let result = xpath.evaluate(&context)?;
         assert_eq!(result, Xdm::String("hello".to_string()));
+        let xpath = Xpath::compile("if (0) then 'hello' else 42")?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result, Xdm::Integer(42));
         Ok(())
     }
     #[test]
     fn bool1() -> XdmResult<()> {
+        let xpath = Xpath::compile("0")?;
+        let context: DynamicContext = Default::default();
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result.boolean()?, false);
+        let xpath = Xpath::compile("1")?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result.boolean()?, true);
+        Ok(())
+    }
+    #[test]
+    fn bool2() -> XdmResult<()> {
         let xpath = Xpath::compile("1, 2")?;
         let context: DynamicContext = Default::default();
         let result = xpath.evaluate(&context)?;
-        println!("{:?}", result);
         assert_eq!(
             result.boolean().expect_err("expected an error").code,
             "FORG0006"
+        );
+        Ok(())
+    }
+    #[test]
+    fn parens1() -> XdmResult<()> {
+        let xpath = Xpath::compile("()")?;
+        let context: DynamicContext = Default::default();
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result, Xdm::Sequence(vec![]));
+        let xpath = Xpath::compile("(3)")?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result, Xdm::Integer(3));
+        let xpath = Xpath::compile("(1, 2)")?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(
+            result,
+            Xdm::Sequence(vec![Xdm::Integer(1), Xdm::Integer(2)])
+        );
+        let xpath = Xpath::compile("(1, 2, (3, 4))")?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(
+            result,
+            Xdm::Sequence(vec![
+                Xdm::Integer(1),
+                Xdm::Integer(2),
+                Xdm::Integer(3),
+                Xdm::Integer(4)
+            ])
         );
         Ok(())
     }
