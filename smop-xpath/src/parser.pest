@@ -1,5 +1,4 @@
 
-
 // 1
 Xpath = { SOI ~ Expr ~ EOI }
 // 6
@@ -9,13 +8,30 @@ ExprSingle = { PrimaryExpr | IfExpr }
 // [15]    	IfExpr 	   ::=    	"if" "(" Expr ")" "then" ExprSingle "else" ExprSingle
 // 15
 IfExpr = { "if" ~ "(" ~ Expr ~ ")" ~ "then" ~ ExprSingle ~ "else" ~ ExprSingle }
+// 50
+ArgumentList = { "(" ~ (Argument ~ ("," ~ Argument)*)? ~ ")" }
 // 56
-PrimaryExpr = _{ Literal | ParenthesizedExpr }
+PrimaryExpr = _{ Literal | ParenthesizedExpr | ContextItemExpr }
 // 57
 Literal = { DoubleLiteral | DecimalLiteral | IntegerLiteral | StringLiteral }
-// [61]    	ParenthesizedExpr 	   ::=    	"(" Expr? ")"
 // 61
 ParenthesizedExpr = { "(" ~ Expr? ~ ")" }
+// 62
+ContextItemExpr = { "." }
+// 63
+FunctionCall = { EQName ~ ArgumentList }
+// 64
+Argument = { ExprSingle | ArgumentPlaceholder }
+// 65
+ArgumentPlaceholder = { "?" }
+
+// [112]    	EQName 	   ::=    	QName | URIQualifiedName
+   // [122]    	QName 	   ::=    	[http://www.w3.org/TR/REC-xml-names/#NT-QName]Names 	/* xgc: xml-version */
+   // [123]    	NCName 	   ::=    	[http://www.w3.org/TR/REC-xml-names/#NT-NCName]Names 	/* xgc: xml-version */
+   // [117]    	URIQualifiedName 	   ::=    	BracedURILiteral NCName 	/* ws: explicit */
+   // [118]    	BracedURILiteral 	   ::=    	"Q" "{" [^{}]* "}"
+// 112
+EQName = { QName | URIQualifiedName }
 // 113
 IntegerLiteral = @{ Digits }
 // 114
@@ -24,12 +40,20 @@ DecimalLiteral = @{ ("." ~ Digits ) | (Digits ~ "." ~ ASCII_DIGIT*) }
 DoubleLiteral = @{ (("." ~ Digits) | (Digits ~ ("." ~ ASCII_DIGIT*)?)) ~ ^"e" ~ ("+"|"-")? ~ Digits }
 // 116
 StringLiteral = @{ (Quot ~ (EscapeQuot | !Quot ~ ANY)* ~ Quot) | (Apos ~ (EscapeApos | !Apos ~ ANY)* ~ Apos) }
+// 117
+URIQualifiedName = ${ BracedURILiteral ~ NCName }
+// 118
+BracedURILiteral = { "Q" ~ "{" ~ !("{"|"}")* ~ "}" }
 // 119
 EscapeQuot = { "\"\"" }
 Quot = { "\"" }
 // 120
 EscapeApos = { "''" }
 Apos = { "'" }
+// 122
+QName = { "???" }
+// 123
+NCName = { "???" }
 // 125
 Digits = @{ ASCII_DIGIT+ }
 

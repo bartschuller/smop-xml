@@ -11,6 +11,7 @@ use std::borrow::Cow;
 pub enum Expr<'input> {
     Literal(Literal<'input>),
     Sequence(Vec<Expr<'input>>),
+    ContextItem,
     IfThenElse(Box<Expr<'input>>, Box<Expr<'input>>, Box<Expr<'input>>),
 }
 
@@ -27,7 +28,7 @@ impl<'input> Expr<'input> {
         match self {
             Expr::Literal(l) => l.compile(),
             Expr::Sequence(s) => {
-                let mut compiled_vec: Vec<_> = s.into_iter().map(|x| x.compile()).collect();
+                let compiled_vec: Vec<_> = s.into_iter().map(|x| x.compile()).collect();
                 CompiledExpr::new(move |c| {
                     let v: XdmResult<Vec<_>> = compiled_vec.iter().map(|e| e.execute(c)).collect();
                     v.map(|vecx| {
@@ -54,6 +55,13 @@ impl<'input> Expr<'input> {
                     }
                 })
             }
+            Expr::ContextItem => CompiledExpr::new(move |c| {
+                if c.focus.is_none() {
+                    Err(XdmError::xqtm("XPDY0002", "context item is undefined"))
+                } else {
+                    todo!("implement context/focus")
+                }
+            }),
         }
     }
 }

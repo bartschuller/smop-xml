@@ -1,23 +1,17 @@
 pub mod ast;
-mod parser;
-pub mod parser3;
+pub mod parser;
 mod runtime;
 mod xdm;
 
-extern crate pest;
-#[macro_use]
-extern crate pest_derive;
-
 use crate::runtime::{CompiledExpr, DynamicContext};
 use crate::xdm::{XdmError, XdmResult};
-use std::error::Error;
 use xdm::Xdm;
 
 pub struct Xpath<'a>(CompiledExpr<'a>);
 
 impl<'input> Xpath<'input> {
     pub fn compile(xpath: &'input str) -> XdmResult<Xpath<'input>> {
-        let expr = parser3::p3_parse(xpath)
+        let expr = parser::p3_parse(xpath)
             .map_err(|e| XdmError::xqtm("XPST0003", e.to_string().as_str()))?;
         Ok(Xpath(expr.compile()))
     }
@@ -118,6 +112,15 @@ mod tests {
                 Xdm::Integer(4)
             ])
         );
+        Ok(())
+    }
+    #[test]
+    #[ignore]
+    fn context1() -> XdmResult<()> {
+        let xpath = Xpath::compile(".")?;
+        let context: DynamicContext = Default::default();
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result, Xdm::Sequence(vec![]));
         Ok(())
     }
 }

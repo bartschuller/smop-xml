@@ -1,12 +1,10 @@
-use core::fmt;
-use nom::lib::std::fmt::Formatter;
-use nom::lib::std::hash::Hash;
 use rust_decimal::prelude::Zero;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::error::Error;
-use std::fmt::{Debug, Display};
-use std::hash::Hasher;
+use std::fmt;
+use std::fmt::{Debug, Display, Formatter};
+use std::hash::{Hash, Hasher};
 use std::result::Result;
 
 #[derive(Debug, Clone, PartialEq)]

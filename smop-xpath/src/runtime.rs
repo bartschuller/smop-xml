@@ -7,7 +7,7 @@ pub struct Focus<'a> {
 
 #[derive(Default)]
 pub struct DynamicContext<'a> {
-    focus: Option<Focus<'a>>,
+    pub focus: Option<Focus<'a>>,
 }
 
 pub struct CompiledExpr<'a>(
