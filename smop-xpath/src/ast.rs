@@ -11,6 +11,15 @@ pub enum Expr<'input> {
     ContextItem,
     IfThenElse(Box<Expr<'input>>, Box<Expr<'input>>, Box<Expr<'input>>),
     FunctionCall(QName<'input>, Vec<Expr<'input>>),
+    Or(Vec<Expr<'input>>),
+    And(Vec<Expr<'input>>),
+    Arithmetic(Box<Expr<'input>>, ArithmeticOp, Box<Expr<'input>>),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ArithmeticOp {
+    Plus,
+    Minus,
 }
 
 #[derive(Debug, PartialEq)]
@@ -66,6 +75,9 @@ impl<'input> Expr<'input> {
                 }
             }),
             Expr::FunctionCall(_, _) => todo!("implement FunctionCall"),
+            Expr::Or(_) => todo!("implement Or"),
+            Expr::And(_) => todo!("implement And"),
+            Expr::Arithmetic(_, _, _) => todo!("implement Arithmetic"),
         }
     }
     pub(crate) fn typer() -> XdmResult<SimpleType<'input>> {

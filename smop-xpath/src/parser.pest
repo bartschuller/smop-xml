@@ -5,9 +5,31 @@ Xpath = { SOI ~ Expr ~ EOI }
 // 6
 Expr = { ExprSingle ~ ("," ~ ExprSingle)* }
 // 7
-ExprSingle = { IfExpr | PrimaryExpr  }
+ExprSingle = { IfExpr | OrExpr }
 // 15
 IfExpr = { "if" ~ "(" ~ Expr ~ ")" ~ "then" ~ ExprSingle ~ "else" ~ ExprSingle }
+// 16
+OrExpr = { AndExpr ~ ( "or" ~ AndExpr )* }
+// 17
+AndExpr = { ComparisonExpr ~ ( "and" ~ ComparisonExpr )* }
+// 18
+ComparisonExpr = { StringConcatExpr ~ ( (ValueComp
+                                       | GeneralComp
+                                       | NodeComp) ~ StringConcatExpr )? }
+// 19
+StringConcatExpr = { RangeExpr ~ ( "||" ~ RangeExpr )* }
+// 20
+RangeExpr = { AdditiveExpr ~ ( "to" ~ AdditiveExpr )? }
+// 21
+AdditiveExpr = { MultiplicativeExpr ~ AdditiveExpr1* }
+AdditiveExpr1 = { AdditiveOp ~ MultiplicativeExpr }
+AdditiveOp = { ("+" | "-") }
+// 22
+MultiplicativeExpr = { UnionExpr ~ ( ("*" | "div" | "idiv" | "mod") ~ UnionExpr )* }
+// 23
+UnionExpr = { IntersectExceptExpr ~ ( ("union" | "|") ~ IntersectExceptExpr )* }
+// 24
+IntersectExceptExpr = { InstanceofExpr ~ ( ("intersect" | "except") ~ InstanceofExpr )* }
 // 25
 InstanceofExpr = { TreatExpr ~ ( "instance" ~ "of" ~ SequenceType )? }
 // 26
@@ -21,7 +43,13 @@ ArrowExpr = { UnaryExpr ~ ( "=>" ~ ArrowFunctionSpecifier ~ ArgumentList )* }
 // 30
 UnaryExpr = { ("-" | "+")* ~ ValueExpr }
 // 31
-ValueExpr = { SimpleMapExpr }
+ValueExpr = _{ SimpleMapExpr }
+// 32
+GeneralComp = { "=" | "!=" | "<" | "<=" | ">" | ">=" }
+// 33
+ValueComp = { "eq" | "ne" | "lt" | "le" | "gt" | "ge" }
+// 34
+NodeComp = { "is" | "<<" | ">>" }
 // 35
 SimpleMapExpr = { PathExpr ~ ( "!" ~ PathExpr )* }
 // 36
@@ -79,7 +107,7 @@ KeySpecifier = { NCName | IntegerLiteral | ParenthesizedExpr | "*" }
 // 55
 ArrowFunctionSpecifier = { EQName | VarRef | ParenthesizedExpr }
 // 56
-PrimaryExpr = _{ Literal | ParenthesizedExpr | ContextItemExpr | FunctionCall }
+PrimaryExpr = { Literal | ParenthesizedExpr | ContextItemExpr | FunctionCall }
 // 57
 Literal = { DoubleLiteral | DecimalLiteral | IntegerLiteral | StringLiteral }
 // 59
@@ -93,7 +121,7 @@ ContextItemExpr = { "." }
 // 63
 FunctionCall = { EQName ~ ArgumentList }
 // 64
-Argument = { ExprSingle | ArgumentPlaceholder }
+Argument = _{ ExprSingle | ArgumentPlaceholder }
 // 65
 ArgumentPlaceholder = { "?" }
 // 77
