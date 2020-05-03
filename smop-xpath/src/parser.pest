@@ -127,17 +127,19 @@ ArgumentPlaceholder = { "?" }
 // 77
 SingleType = { SimpleTypeName ~ "?"? }
 // 79
-SequenceType = { ( "empty-sequence" ~ "(" ~ ")" ) | (ItemType ~ OccurrenceIndicator?) }
+SequenceType = { EmptySequence | (ItemType ~ OccurrenceIndicator?) }
+EmptySequence = { ( "empty-sequence" ~ "(" ~ ")" ) }
 // 80
 OccurrenceIndicator = { "?" | "*" | "+" }
 // 81
 ItemType = { KindTest
-           | ("item" ~ "(" ~ ")")
+           | Item
            | FunctionTest
            | MapTest
            | ArrayTest
            | AtomicOrUnionType
            | ParenthesizedItemType }
+Item = { ("item" ~ "(" ~ ")") }
 // 82
 AtomicOrUnionType = { EQName }
 // 83

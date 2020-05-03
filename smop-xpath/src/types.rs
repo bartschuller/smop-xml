@@ -1,7 +1,29 @@
+use crate::xdm::QName;
+
+#[derive(Debug, PartialEq)]
+pub enum SequenceType<'a> {
+    EmptySequence,
+    Item(Item<'a>, Occurrence),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Item<'a> {
+    Item,
+    AtomicOrUnion(QName<'a>),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Occurrence {
+    One,
+    Optional,
+    ZeroOrMore,
+    OneOrMore,
+}
+
 // reference: https://www.w3.org/TR/xmlschema-2/
 // and https://www.w3.org/TR/xmlschema-1/#Simple_Type_Definition_details
 
-const xs: &str = "http://www.w3.org/2001/XMLSchema";
+const XS: &str = "http://www.w3.org/2001/XMLSchema";
 
 pub enum SchemaType<'a> {
     Simple(SimpleType<'a>),

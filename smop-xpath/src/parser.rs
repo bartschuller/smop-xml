@@ -1,4 +1,5 @@
 use crate::ast::{ArithmeticOp, Expr, Literal};
+use crate::types::{Item, Occurrence, SequenceType};
 use crate::xdm::QName;
 use pest_consume::match_nodes;
 use pest_consume::Error;
@@ -7,8 +8,38 @@ use rust_decimal::Decimal;
 use std::borrow::Cow;
 use std::str::FromStr;
 
-type Result<T> = std::result::Result<T, Error<Rule>>;
-type Node<'i> = pest_consume::Node<'i, Rule, ()>;
+pub type Result<T> = std::result::Result<T, Error<Rule>>;
+type Node<'i> = pest_consume::Node<'i, Rule, &'i StaticContext<'i>>;
+
+#[derive(Default)]
+pub struct StaticContext<'a> {
+    pub _dummy: &'a str,
+}
+impl<'a, 'i> StaticContext<'a>
+where
+    'i: 'a,
+{
+    pub fn parse(&self, input: &'i str) -> Result<Expr> {
+        let root = XpathParser::parse_with_userdata(Rule::Xpath, input, self);
+        let root2 = root.clone();
+        pest_ascii_tree::print_ascii_tree(root2.map(|n| n.as_pairs().to_owned()));
+        let root = root?.single()?;
+        let parse = XpathParser::Xpath(root);
+        parse.map_err(|e| {
+            e.with_path("literal string").renamed_rules(|rule| {
+                match *rule {
+                    Rule::EOI => "end of input",
+                    Rule::Literal => "a literal",
+                    _ => {
+                        println!("unhandled grammar prettifier: {:?}", rule);
+                        "UNHANDLED"
+                    }
+                }
+                .to_owned()
+            })
+        })
+    }
+}
 
 #[derive(Parser)]
 #[grammar = "parser.pest"]
@@ -16,7 +47,7 @@ pub struct XpathParser;
 
 #[pest_consume::parser]
 impl XpathParser {
-    fn Xpath(input: Node) -> Result<Expr> {
+    pub fn Xpath(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
             [Expr(expr), EOI(_)] => expr,
         ))
@@ -109,7 +140,8 @@ impl XpathParser {
     }
     fn InstanceofExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
-            [TreatExpr(e)] => e, // FIXME
+            [TreatExpr(e)] => e,
+            [TreatExpr(e), SequenceType(t)] => Expr::InstanceOf(Box::new(e), t),
         ))
     }
     fn TreatExpr(input: Node) -> Result<Expr> {
@@ -160,13 +192,55 @@ impl XpathParser {
     }
     fn AxisStep(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
-            [] => todo!("handle AxisStep"), // FIXME
+            [ReverseStep(r), PredicateList(p)] => todo!("handle AxisStep"), // FIXME
+            [ForwardStep(f), PredicateList(p)] => todo!("handle AxisStep"), // FIXME
         ))
+    }
+    fn ReverseStep(_input: Node) -> Result<()> {
+        todo!("handle ReverseStep")
+    }
+    fn ForwardStep(_input: Node) -> Result<()> {
+        todo!("handle ForwardStep")
+    }
+    fn PredicateList(_input: Node) -> Result<()> {
+        todo!("handle PredicateList")
     }
     fn PostfixExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
             [PrimaryExpr(e)] => e, // FIXME
         ))
+    }
+    fn SequenceType(input: Node) -> Result<SequenceType> {
+        Ok(match_nodes!(input.into_children();
+            [EmptySequence(st)] => st,
+            [ItemType(it)] => SequenceType::Item(it, Occurrence::One),
+            [ItemType(it), OccurrenceIndicator(oi)] => SequenceType::Item(it, oi),
+        ))
+    }
+    fn EmptySequence(_input: Node) -> Result<SequenceType> {
+        Ok(SequenceType::EmptySequence)
+    }
+    fn ItemType(input: Node) -> Result<Item> {
+        Ok(match_nodes!(input.into_children();
+            [Item(it)] => it,
+            [AtomicOrUnionType(it)] => it,
+        ))
+    }
+    fn Item(_input: Node) -> Result<Item> {
+        Ok(Item::Item)
+    }
+    fn AtomicOrUnionType(input: Node) -> Result<Item> {
+        Ok(match_nodes!(input.into_children();
+            [EQName(qname)] => Item::Item,
+        ))
+    }
+    fn OccurrenceIndicator(input: Node) -> Result<Occurrence> {
+        Ok(match input.as_str() {
+            "?" => Occurrence::Optional,
+            "*" => Occurrence::ZeroOrMore,
+            "+" => Occurrence::OneOrMore,
+            &_ => unreachable!(),
+        })
     }
     fn ParenthesizedExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
@@ -201,8 +275,20 @@ impl XpathParser {
     }
     fn QName(input: Node) -> Result<QName> {
         Ok(match_nodes!(input.into_children();
+            [PrefixedName(q)] => q,
             [UnprefixedName(q)] => q,
         ))
+    }
+    fn PrefixedName(input: Node) -> Result<QName> {
+        Ok(match_nodes!(input.into_children();
+            [Prefix(p), LocalPart(l)] => QName::new(l, None, Some(p)),
+        ))
+    }
+    fn Prefix(input: Node) -> Result<&str> {
+        Ok(input.as_str())
+    }
+    fn LocalPart(input: Node) -> Result<&str> {
+        Ok(input.as_str())
     }
     fn UnprefixedName(input: Node) -> Result<QName> {
         Ok(QName::new(input.as_str(), None, None))
@@ -258,32 +344,11 @@ impl XpathParser {
     }
 }
 
-pub fn p3_parse(input: &str) -> Result<Expr> {
-    let root = XpathParser::parse(Rule::Xpath, input);
-    let root2 = root.clone();
-    pest_ascii_tree::print_ascii_tree(root2.map(|n| n.as_pairs().to_owned()));
-
-    let root = root?.single()?;
-    let parse = XpathParser::Xpath(root);
-    parse.map_err(|e| {
-        e.with_path("literal string").renamed_rules(|rule| {
-            match *rule {
-                Rule::EOI => "end of input",
-                Rule::Literal => "a literal",
-                _ => {
-                    println!("unhandled grammar prettifier: {:?}", rule);
-                    "UNHANDLED"
-                }
-            }
-            .to_owned()
-        })
-    })
-}
-
 #[cfg(test)]
 mod tests {
+    use super::StaticContext;
     use crate::ast::{ArithmeticOp, Expr, Literal};
-    use crate::parser::p3_parse;
+    use crate::types::SequenceType;
     use crate::xdm::QName;
     use rust_decimal::Decimal;
     use std::borrow::Cow;
@@ -291,13 +356,15 @@ mod tests {
 
     #[test]
     fn int_literal1() {
-        let output = p3_parse("1234");
+        let context: StaticContext = Default::default();
+        let output = context.parse("1234");
         assert_eq!(output, Ok(Expr::Literal(Literal::Integer(1234))))
     }
 
     #[test]
     fn decimal_literal1() {
-        let output = p3_parse("1234.56789");
+        let context: StaticContext = Default::default();
+        let output = context.parse("1234.56789");
         assert_eq!(
             output,
             Ok(Expr::Literal(Literal::Decimal(
@@ -308,7 +375,8 @@ mod tests {
 
     #[test]
     fn string_literal1() {
-        let output = p3_parse("'foo'");
+        let context: StaticContext = Default::default();
+        let output = context.parse("'foo'");
         assert_eq!(
             output,
             Ok(Expr::Literal(Literal::String(Cow::Borrowed("foo"))))
@@ -317,7 +385,8 @@ mod tests {
 
     #[test]
     fn string_literal2() {
-        let output = p3_parse("\"foo\"");
+        let context: StaticContext = Default::default();
+        let output = context.parse("\"foo\"");
         assert_eq!(
             output,
             Ok(Expr::Literal(Literal::String(Cow::Borrowed("foo"))))
@@ -326,7 +395,8 @@ mod tests {
 
     #[test]
     fn string_literal3() {
-        let output = p3_parse("'foo''bar'");
+        let context: StaticContext = Default::default();
+        let output = context.parse("'foo''bar'");
         assert_eq!(
             output,
             Ok(Expr::Literal(Literal::String(Cow::Borrowed("foo'bar"))))
@@ -335,7 +405,8 @@ mod tests {
 
     #[test]
     fn string_literal4() {
-        let output = p3_parse("\"foo\"\"bar\"");
+        let context: StaticContext = Default::default();
+        let output = context.parse("\"foo\"\"bar\"");
         assert_eq!(
             output,
             Ok(Expr::Literal(Literal::String(Cow::Borrowed("foo\"bar"))))
@@ -344,7 +415,8 @@ mod tests {
 
     #[test]
     fn string_literal5() {
-        let output = p3_parse("\"foo''bar\"");
+        let context: StaticContext = Default::default();
+        let output = context.parse("\"foo''bar\"");
         assert_eq!(
             output,
             Ok(Expr::Literal(Literal::String(Cow::Borrowed("foo''bar"))))
@@ -353,27 +425,32 @@ mod tests {
 
     #[test]
     fn comment1() {
-        let output = p3_parse("(::)()");
+        let context: StaticContext = Default::default();
+        let output = context.parse("(::)()");
         assert_eq!(output, Ok(Expr::Sequence(vec![])))
     }
     #[test]
     fn comment2() {
-        let output = p3_parse("(: foobar :)()");
+        let context: StaticContext = Default::default();
+        let output = context.parse("(: foobar :)()");
         assert_eq!(output, Ok(Expr::Sequence(vec![])))
     }
     #[test]
     fn comment3() {
-        let output = p3_parse("(: (: :)");
+        let context: StaticContext = Default::default();
+        let output = context.parse("(: (: :)");
         assert!(output.is_err())
     }
     #[test]
     fn iws1() {
-        let output = p3_parse(" \n\n(: FIXME :)\r\n (: \n :)\n()");
+        let context: StaticContext = Default::default();
+        let output = context.parse(" \n\n(: FIXME :)\r\n (: \n :)\n()");
         assert_eq!(output, Ok(Expr::Sequence(vec![])))
     }
     #[test]
     fn sequence1() {
-        let output = p3_parse("1,'two'");
+        let context: StaticContext = Default::default();
+        let output = context.parse("1,'two'");
         assert_eq!(
             output,
             Ok(Expr::Sequence(vec![
@@ -385,7 +462,8 @@ mod tests {
 
     #[test]
     fn if_then_else1() {
-        let output = p3_parse("if (3) then 1 else 2");
+        let context: StaticContext = Default::default();
+        let output = context.parse("if (3) then 1 else 2");
         assert_eq!(
             output,
             Ok(Expr::IfThenElse(
@@ -398,19 +476,22 @@ mod tests {
     #[test]
     #[ignore]
     fn if_then_else2() {
-        let output = p3_parse("if(3)then1else2");
+        let context: StaticContext = Default::default();
+        let output = context.parse("if(3)then1else2");
         assert!(output.is_err())
     }
 
     #[test]
     fn error1() {
-        let output = p3_parse("1,'two");
+        let context: StaticContext = Default::default();
+        let output = context.parse("1,'two");
         assert!(output.is_err())
     }
 
     #[test]
     fn whitespace1() {
-        let output = p3_parse("1, 2");
+        let context: StaticContext = Default::default();
+        let output = context.parse("1, 2");
         assert_eq!(
             output,
             Ok(Expr::Sequence(vec![
@@ -422,7 +503,8 @@ mod tests {
 
     #[test]
     fn whitespace2() {
-        let output = p3_parse("(:here we go: :) 1 (: one :), 2 (: that's it :)\n");
+        let context: StaticContext = Default::default();
+        let output = context.parse("(:here we go: :) 1 (: one :), 2 (: that's it :)\n");
         assert_eq!(
             output,
             Ok(Expr::Sequence(vec![
@@ -434,13 +516,15 @@ mod tests {
 
     #[test]
     fn bool1() {
-        let output = p3_parse("true()");
+        let context: StaticContext = Default::default();
+        let output = context.parse("true()");
         assert!(!output.is_err())
     }
 
     #[test]
     fn fn1() {
-        let output = p3_parse("Q{http://example.com/}myfunc(., 1)");
+        let context: StaticContext = Default::default();
+        let output = context.parse("Q{http://example.com/}myfunc(., 1)");
         assert_eq!(
             output,
             Ok(Expr::FunctionCall(
@@ -452,7 +536,8 @@ mod tests {
 
     #[test]
     fn or1() {
-        let output = p3_parse("1 or 0");
+        let context: StaticContext = Default::default();
+        let output = context.parse("1 or 0");
         assert_eq!(
             output,
             Ok(Expr::Or(vec![
@@ -463,7 +548,8 @@ mod tests {
     }
     #[test]
     fn and1() {
-        let output = p3_parse("1 and 0");
+        let context: StaticContext = Default::default();
+        let output = context.parse("1 and 0");
         assert_eq!(
             output,
             Ok(Expr::And(vec![
@@ -474,7 +560,8 @@ mod tests {
     }
     #[test]
     fn or_and1() {
-        let output = p3_parse("1 or 2 and 0");
+        let context: StaticContext = Default::default();
+        let output = context.parse("1 or 2 and 0");
         assert_eq!(
             output,
             Ok(Expr::Or(vec![
@@ -488,10 +575,11 @@ mod tests {
     }
     #[test]
     fn arith1() {
+        let context: StaticContext = Default::default();
         use ArithmeticOp::{Minus, Plus};
         use Expr::{Arithmetic, Literal as Lit};
         use Literal::Integer;
-        let output = p3_parse("1 - 2 + 3 - 4");
+        let output = context.parse("1 - 2 + 3 - 4");
         assert_eq!(
             output,
             Ok(Arithmetic(
@@ -509,5 +597,10 @@ mod tests {
             ))
         )
     }
-    //
+    #[test]
+    fn instance_of1() {
+        let context: StaticContext = Default::default();
+        let output = context.parse(". instance of xs:integer");
+        assert_eq!(output, Ok(Expr::ContextItem))
+    }
 }

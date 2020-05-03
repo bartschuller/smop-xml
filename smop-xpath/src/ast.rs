@@ -1,5 +1,5 @@
 use crate::runtime::CompiledExpr;
-use crate::types::SimpleType;
+use crate::types::SequenceType;
 use crate::xdm::*;
 use rust_decimal::Decimal;
 use std::borrow::Cow;
@@ -14,6 +14,7 @@ pub enum Expr<'input> {
     Or(Vec<Expr<'input>>),
     And(Vec<Expr<'input>>),
     Arithmetic(Box<Expr<'input>>, ArithmeticOp, Box<Expr<'input>>),
+    InstanceOf(Box<Expr<'input>>, SequenceType<'input>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -28,11 +29,6 @@ pub enum Literal<'input> {
     Decimal(Decimal),
     Double(f64),
     String(Cow<'input, str>),
-}
-
-#[derive(Debug, PartialEq)]
-pub enum SequenceType {
-    EmptySequence,
 }
 
 impl<'input> Expr<'input> {
@@ -78,9 +74,10 @@ impl<'input> Expr<'input> {
             Expr::Or(_) => todo!("implement Or"),
             Expr::And(_) => todo!("implement And"),
             Expr::Arithmetic(_, _, _) => todo!("implement Arithmetic"),
+            Expr::InstanceOf(_, _) => todo!("implement instance of"),
         }
     }
-    pub(crate) fn typer() -> XdmResult<SimpleType<'input>> {
+    pub(crate) fn typer() -> XdmResult<SequenceType<'input>> {
         todo!("implement typer")
     }
 }
