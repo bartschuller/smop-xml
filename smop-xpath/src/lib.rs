@@ -1,11 +1,23 @@
+#[macro_use]
+extern crate pest_derive;
+
 pub mod ast;
+mod debugparser;
+mod functions;
 pub mod parser;
 mod runtime;
-mod xdm;
+mod types;
+pub mod xdm;
+mod xpath_functions_31;
 
 use crate::runtime::{CompiledExpr, DynamicContext};
 use crate::xdm::{XdmError, XdmResult};
 use xdm::Xdm;
+
+#[derive(Default)]
+pub struct StaticContext<'a> {
+    _dummy: &'a str,
+}
 
 pub struct Xpath<'a>(CompiledExpr<'a>);
 

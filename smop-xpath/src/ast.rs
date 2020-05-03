@@ -1,11 +1,8 @@
 use crate::runtime::CompiledExpr;
+use crate::types::SimpleType;
 use crate::xdm::*;
 use rust_decimal::Decimal;
 use std::borrow::Cow;
-
-// trait XPathExpr<'a> {
-//     fn compile(self) -> CompiledExpr<'a>;
-// }
 
 #[derive(Debug, PartialEq)]
 pub enum Expr<'input> {
@@ -13,6 +10,7 @@ pub enum Expr<'input> {
     Sequence(Vec<Expr<'input>>),
     ContextItem,
     IfThenElse(Box<Expr<'input>>, Box<Expr<'input>>, Box<Expr<'input>>),
+    FunctionCall(QName<'input>, Vec<Expr<'input>>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -21,6 +19,11 @@ pub enum Literal<'input> {
     Decimal(Decimal),
     Double(f64),
     String(Cow<'input, str>),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SequenceType {
+    EmptySequence,
 }
 
 impl<'input> Expr<'input> {
@@ -62,7 +65,11 @@ impl<'input> Expr<'input> {
                     todo!("implement context/focus")
                 }
             }),
+            Expr::FunctionCall(_, _) => todo!("implement FunctionCall"),
         }
+    }
+    pub(crate) fn typer() -> XdmResult<SimpleType<'input>> {
+        todo!("implement typer")
     }
 }
 

@@ -1,4 +1,5 @@
 use crate::ast::{Expr, Literal};
+use crate::xdm::QName;
 use pest_consume::match_nodes;
 use pest_consume::Error;
 use pest_consume::Parser;
@@ -40,7 +41,8 @@ impl XpathParser {
             [Literal(lit)] => Expr::Literal(lit),
             [IfExpr(e)] => e,
             [ParenthesizedExpr(e)] => e,
-            [ContextItemExpr(e)] => e
+            [ContextItemExpr(e)] => e,
+            [FunctionCall(e)] => e,
         ))
     }
     fn ParenthesizedExpr(input: Node) -> Result<Expr> {
@@ -51,6 +53,36 @@ impl XpathParser {
     }
     fn ContextItemExpr(_input: Node) -> Result<Expr> {
         Ok(Expr::ContextItem)
+    }
+    fn FunctionCall(input: Node) -> Result<Expr> {
+        Ok(match_nodes!(input.into_children();
+            [EQName(f), ExprSingle(a)..] => Expr::FunctionCall(f, a.collect()),
+        ))
+    }
+    fn EQName(input: Node) -> Result<QName> {
+        Ok(match_nodes!(input.into_children();
+            [URIQualifiedName(q)] => q,
+            [QName(q)] => q,
+        ))
+    }
+    fn URIQualifiedName(input: Node) -> Result<QName> {
+        Ok(match_nodes!(input.into_children();
+            [BracedURILiteralContent(ns), NCName(name)] => QName::new(name, Some(ns), None),
+        ))
+    }
+    fn BracedURILiteralContent(input: Node) -> Result<&str> {
+        Ok(input.as_str())
+    }
+    fn NCName(input: Node) -> Result<&str> {
+        Ok(input.as_str())
+    }
+    fn QName(input: Node) -> Result<QName> {
+        Ok(match_nodes!(input.into_children();
+            [UnprefixedName(q)] => q,
+        ))
+    }
+    fn UnprefixedName(input: Node) -> Result<QName> {
+        Ok(QName::new(input.as_str(), None, None))
     }
     fn Literal(input: Node) -> Result<Literal> {
         Ok(match_nodes!(input.into_children();
@@ -97,7 +129,9 @@ impl XpathParser {
 
 pub fn p3_parse(input: &str) -> Result<Expr> {
     let root = XpathParser::parse(Rule::Xpath, input);
-    pest_ascii_tree::print_ascii_tree(root.clone().map(|n| n.as_pairs().to_owned()));
+    let root2 = root.clone();
+    pest_ascii_tree::print_ascii_tree(root2.map(|n| n.as_pairs().to_owned()));
+
     let root = root?.single()?;
     let parse = XpathParser::Xpath(root);
     parse.map_err(|e| {
@@ -270,5 +304,17 @@ mod tests {
                 Expr::Literal(Literal::Integer(2))
             ]))
         )
+    }
+
+    #[test]
+    fn bool1() {
+        let output = p3_parse("true()");
+        assert!(!output.is_err())
+    }
+
+    #[test]
+    fn fn1() {
+        let output = p3_parse("Q{http://example.com/}myfunc()");
+        assert!(!output.is_err())
     }
 }

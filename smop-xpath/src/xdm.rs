@@ -7,6 +7,42 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::result::Result;
 
+// https://www.w3.org/TR/xpath-datamodel-31/#qnames-and-notations
+#[derive(Debug, Clone)]
+pub struct QName<'a> {
+    name: &'a str,
+    ns: Option<&'a str>,
+    prefix: Option<&'a str>,
+}
+impl<'a> QName<'a> {
+    /// Note that a prefix is only allowed when a namespace is also provided. The following panics:
+    /// ```should_panic
+    /// # use xpath::xdm::QName;
+    /// let wrong = QName::new("foo", None, Some("wrong"));
+    /// ```
+    pub fn new(name: &'a str, ns: Option<&'a str>, prefix: Option<&'a str>) -> Self {
+        assert!(!(prefix.is_some() && ns.is_none()));
+        QName { name, ns, prefix }
+    }
+}
+impl PartialEq for QName<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.name.eq(other.name) && self.ns.eq(&other.ns)
+    }
+}
+impl Display for QName<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if self.ns.is_some() {
+            if self.prefix.is_some() {
+                write!(f, "{}:{}", self.prefix.unwrap(), self.name)
+            } else {
+                write!(f, "Q{{{}}}{}", self.ns.unwrap(), self.name)
+            }
+        } else {
+            write!(f, "{}", self.name)
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node<'a> {
     RoXml(roxmltree::Node<'a, 'a>),
@@ -95,3 +131,30 @@ impl Hash for Xdm<'_> {
 }
 
 impl Eq for Xdm<'_> {}
+
+#[cfg(test)]
+mod tests {
+    use crate::xdm::QName;
+
+    #[test]
+    fn qname1() {
+        let qname1 = QName::new("local", None, None);
+        let qname2 = QName::new("local", Some(""), None);
+        let qname3 = QName::new("local", Some("http://example.com/"), None);
+        let qname4 = QName::new("local", Some("http://example.com/"), Some("ex"));
+        let qname5 = QName::new("local", Some("http://example.com/"), Some("ex2"));
+        let qname6 = QName::new("other", None, None);
+        assert_ne!(qname1, qname2);
+        assert_ne!(qname2, qname3);
+        assert_ne!(qname1, qname6);
+
+        assert_eq!(qname3, qname4);
+        assert_eq!(qname4, qname5);
+        assert_eq!(qname5, qname3);
+
+        assert_eq!(format!("{}", qname1), "local");
+        assert_eq!(format!("{}", qname2), "Q{}local");
+        assert_eq!(format!("{}", qname3), "Q{http://example.com/}local");
+        assert_eq!(format!("{}", qname4), "ex:local");
+    }
+}

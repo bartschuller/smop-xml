@@ -1,19 +1,91 @@
 
+// Numbers refer to the XPath 3.1 grammar
 // 1
 Xpath = { SOI ~ Expr ~ EOI }
 // 6
 Expr = { ExprSingle ~ ("," ~ ExprSingle)* }
 // 7
-ExprSingle = { PrimaryExpr | IfExpr }
-// [15]    	IfExpr 	   ::=    	"if" "(" Expr ")" "then" ExprSingle "else" ExprSingle
+ExprSingle = { IfExpr | PrimaryExpr  }
 // 15
 IfExpr = { "if" ~ "(" ~ Expr ~ ")" ~ "then" ~ ExprSingle ~ "else" ~ ExprSingle }
+// 25
+InstanceofExpr = { TreatExpr ~ ( "instance" ~ "of" ~ SequenceType )? }
+// 26
+TreatExpr = { CastableExpr ~ ( "treat" ~ "as" ~ SequenceType )? }
+// 27
+CastableExpr = { CastExpr ~ ( "castable" ~ "as" ~ SingleType )? }
+// 28
+CastExpr = { ArrowExpr ~ ( "cast" ~ "as" ~ SingleType )? }
+// 29
+ArrowExpr = { UnaryExpr ~ ( "=>" ~ ArrowFunctionSpecifier ~ ArgumentList )* }
+// 30
+UnaryExpr = { ("-" | "+")* ~ ValueExpr }
+// 31
+ValueExpr = { SimpleMapExpr }
+// 35
+SimpleMapExpr = { PathExpr ~ ( "!" ~ PathExpr )* }
+// 36
+PathExpr = { ("/" ~ RelativePathExpr?) | ("//" ~ RelativePathExpr) | RelativePathExpr }
+// 37
+RelativePathExpr = { StepExpr ~ (("/" | "//") ~ StepExpr)* }
+// 38
+StepExpr = { PostfixExpr | AxisStep }
+// 39
+AxisStep = { (ReverseStep | ForwardStep) ~ PredicateList }
+// 40
+ForwardStep = { (ForwardAxis ~ NodeTest) | AbbrevForwardStep }
+// 41
+ForwardAxis = { ("child" ~ "::")
+              | ("descendant" ~ "::")
+              | ("attribute" ~ "::")
+              | ("self" ~ "::")
+              | ("descendant-or-self" ~ "::")
+              | ("following-sibling" ~ "::")
+              | ("following" ~ "::")
+              | ("namespace" ~ "::") }
+// 42
+AbbrevForwardStep = { "@"? ~ NodeTest }
+// 43
+ReverseStep = { (ReverseAxis ~ NodeTest) | AbbrevReverseStep }
+// 44
+ReverseAxis = { ("parent" ~ "::")
+              | ("ancestor" ~ "::")
+              | ("preceding-sibling" ~ "::")
+              | ("preceding" ~ "::")
+              | ("ancestor-or-self" ~ "::") }
+// 45
+AbbrevReverseStep = { ".." }
+// 46
+NodeTest = { KindTest | NameTest }
+// 47
+NameTest = { EQName | Wildcard }
+// 48
+Wildcard = { "*"
+           | (NCName ~ ":*")
+           | ("*:" ~ NCName)
+           | (BracedURILiteral ~ "*") }
+// 49
+PostfixExpr = { PrimaryExpr ~ (Predicate | ArgumentList | Lookup)* }
 // 50
-ArgumentList = { "(" ~ (Argument ~ ("," ~ Argument)*)? ~ ")" }
+ArgumentList = _{ "(" ~ (Argument ~ ("," ~ Argument)*)? ~ ")" }
+// 51
+PredicateList = { Predicate* }
+// 52
+Predicate = { "[" ~ Expr ~ "]" }
+// 53
+Lookup = { "?" ~ KeySpecifier }
+// 54
+KeySpecifier = { NCName | IntegerLiteral | ParenthesizedExpr | "*" }
+// 55
+ArrowFunctionSpecifier = { EQName | VarRef | ParenthesizedExpr }
 // 56
-PrimaryExpr = _{ Literal | ParenthesizedExpr | ContextItemExpr }
+PrimaryExpr = _{ Literal | ParenthesizedExpr | ContextItemExpr | FunctionCall }
 // 57
 Literal = { DoubleLiteral | DecimalLiteral | IntegerLiteral | StringLiteral }
+// 59
+VarRef = { "$" ~ VarName }
+// 60
+VarName = { EQName }
 // 61
 ParenthesizedExpr = { "(" ~ Expr? ~ ")" }
 // 62
@@ -24,14 +96,91 @@ FunctionCall = { EQName ~ ArgumentList }
 Argument = { ExprSingle | ArgumentPlaceholder }
 // 65
 ArgumentPlaceholder = { "?" }
-
-// [112]    	EQName 	   ::=    	QName | URIQualifiedName
-   // [122]    	QName 	   ::=    	[http://www.w3.org/TR/REC-xml-names/#NT-QName]Names 	/* xgc: xml-version */
-   // [123]    	NCName 	   ::=    	[http://www.w3.org/TR/REC-xml-names/#NT-NCName]Names 	/* xgc: xml-version */
-   // [117]    	URIQualifiedName 	   ::=    	BracedURILiteral NCName 	/* ws: explicit */
-   // [118]    	BracedURILiteral 	   ::=    	"Q" "{" [^{}]* "}"
+// 77
+SingleType = { SimpleTypeName ~ "?"? }
+// 79
+SequenceType = { ( "empty-sequence" ~ "(" ~ ")" ) | (ItemType ~ OccurrenceIndicator?) }
+// 80
+OccurrenceIndicator = { "?" | "*" | "+" }
+// 81
+ItemType = { KindTest
+           | ("item" ~ "(" ~ ")")
+           | FunctionTest
+           | MapTest
+           | ArrayTest
+           | AtomicOrUnionType
+           | ParenthesizedItemType }
+// 82
+AtomicOrUnionType = { EQName }
+// 83
+KindTest = { DocumentTest
+           | ElementTest
+           | AttributeTest
+           | SchemaElementTest
+           | SchemaAttributeTest
+           | PITest
+           | CommentTest
+           | TextTest
+           | NamespaceNodeTest
+           | AnyKindTest }
+// 84
+AnyKindTest = { "node" ~ "(" ~ ")" }
+// 85
+DocumentTest = { "document-node" ~ "(" ~ (ElementTest | SchemaElementTest)? ~ ")" }
+// 86
+TextTest = { "text" ~ "(" ~ ")" }
+// 87
+CommentTest = { "comment" ~ "(" ~ ")" }
+// 88
+NamespaceNodeTest = { "namespace-node" ~ "(" ~ ")" }
+// 89
+PITest = { "processing-instruction" ~ "(" ~ (NCName | StringLiteral)? ~ ")" }
+// 90
+AttributeTest = { "attribute" ~ "(" ~ (AttribNameOrWildcard ~ ("," ~ TypeName)?)? ~ ")" }
+// 91
+AttribNameOrWildcard = { AttributeName | "*" }
+// 92
+SchemaAttributeTest = { "schema-attribute" ~ "(" ~ AttributeDeclaration ~ ")" }
+// 93
+AttributeDeclaration = { AttributeName }
+// 94
+ElementTest = { "element" ~ "(" ~ (ElementNameOrWildcard ~ ("," ~ TypeName ~ "?"?)?)? ~ ")" }
+// 95
+ElementNameOrWildcard = { ElementName | "*" }
+// 96
+SchemaElementTest = { "schema-element" ~ "(" ~ ElementDeclaration ~ ")" }
+// 97
+ElementDeclaration = { ElementName }
+// 98
+AttributeName = { EQName }
+// 99
+ElementName = { EQName }
+// 100
+SimpleTypeName = { TypeName }
+// 101
+TypeName = { EQName }
+// 102
+FunctionTest = { AnyFunctionTest | TypedFunctionTest }
+// 103
+AnyFunctionTest = { "function" ~ "(" ~ "*" ~ ")" }
+// 104
+TypedFunctionTest = { "function" ~ "(" ~ (SequenceType ~ ("," ~ SequenceType)*)? ~ ")" ~ "as" ~ SequenceType }
+// 105
+MapTest = { AnyMapTest | TypedMapTest }
+// 106
+AnyMapTest = { "map" ~ "(" ~ "*" ~ ")" }
+// 107
+TypedMapTest = {"map" ~ "(" ~ AtomicOrUnionType ~ "," ~ SequenceType ~ ")" }
+// 108
+ArrayTest = { AnyArrayTest | TypedArrayTest }
+// 109
+AnyArrayTest = { "array" ~ "(" ~ "*" ~ ")" }
+// 110
+TypedArrayTest = { "array" ~ "(" ~ SequenceType ~ ")" }
+// 111
+ParenthesizedItemType = { "(" ~ ItemType ~ ")" }
 // 112
-EQName = { QName | URIQualifiedName }
+EQName = { URIQualifiedName | QName }
 // 113
 IntegerLiteral = @{ Digits }
 // 114
@@ -43,7 +192,8 @@ StringLiteral = @{ (Quot ~ (EscapeQuot | !Quot ~ ANY)* ~ Quot) | (Apos ~ (Escape
 // 117
 URIQualifiedName = ${ BracedURILiteral ~ NCName }
 // 118
-BracedURILiteral = { "Q" ~ "{" ~ !("{"|"}")* ~ "}" }
+BracedURILiteral = _{ "Q" ~ "{" ~ BracedURILiteralContent ~ "}" }
+BracedURILiteralContent = @{ (!("{"|"}") ~ ANY)* }
 // 119
 EscapeQuot = { "\"\"" }
 Quot = { "\"" }
@@ -51,9 +201,9 @@ Quot = { "\"" }
 EscapeApos = { "''" }
 Apos = { "'" }
 // 122
-QName = { "???" }
+QName = { PrefixedName | UnprefixedName }
 // 123
-NCName = { "???" }
+NCName = @{ NameStartChar ~ NameChar* }
 // 125
 Digits = @{ ASCII_DIGIT+ }
 
@@ -65,3 +215,23 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "(:" ~ (CommentContents | COMMENT)* ~ ":)" }
 // 126
 CommentContents = { ( !("(:" | ":)") ~ ANY)+ }
+
+// Numbers refer to the grammar in REC-xml-names
+// 8
+PrefixedName = { Prefix ~ ":" ~ LocalPart }
+// 9
+UnprefixedName = @{ LocalPart }
+// 10
+Prefix = @{ NCName }
+// 11
+LocalPart = @{ NCName }
+
+// Numbers refer to the grammar in REC-xml
+// 4 (modified to disallow ":")
+NameStartChar = @{ 'A'..'Z' | "_" | 'a'..'z' | '\u{C0}'..'\u{D6}' | '\u{D8}'..'\u{F6}' | '\u{F8}'..'\u{2FF}' |
+                  '\u{370}'..'\u{37D}' | '\u{37F}'..'\u{1FFF}' | '\u{200C}'..'\u{200D}' | '\u{2070}'..'\u{218F}' |
+                  '\u{2C00}'..'\u{2FEF}' | '\u{3001}'..'\u{D7FF}' | '\u{F900}'..'\u{FDCF}' | '\u{FDF0}'..'\u{FFFD}' |
+                  '\u{10000}'..'\u{EFFFF}' }
+// 4a
+NameChar = @{ NameStartChar | "-" | "." | '0'..'9' | '\u{b7}'..'\u{b7}' | '\u{300}'..'\u{36f}' |
+                              '\u{203f}'..'\u{2040}' }
