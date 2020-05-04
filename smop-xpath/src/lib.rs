@@ -16,13 +16,13 @@ use crate::runtime::{CompiledExpr, DynamicContext};
 use crate::xdm::{XdmError, XdmResult};
 use xdm::Xdm;
 
-pub struct Xpath<'a>(CompiledExpr<'a>);
+pub struct Xpath(CompiledExpr);
 
-impl<'input> Xpath<'input> {
-    pub fn compile(
-        context: &'input StaticContext<'input>,
-        xpath: &'input str,
-    ) -> XdmResult<Xpath<'input>> {
+impl<'input, 's_ctx> Xpath
+where
+    's_ctx: 'input,
+{
+    pub fn compile(context: &'s_ctx StaticContext, xpath: &'input str) -> XdmResult<Xpath> {
         let expr = context
             .parse(xpath)
             .map_err(|e| XdmError::xqtm("XPST0003", e.to_string().as_str()))?;

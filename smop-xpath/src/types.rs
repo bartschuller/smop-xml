@@ -1,15 +1,15 @@
 use crate::xdm::QName;
 
 #[derive(Debug, PartialEq)]
-pub enum SequenceType<'a> {
+pub enum SequenceType {
     EmptySequence,
-    Item(Item<'a>, Occurrence),
+    Item(Item, Occurrence),
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Item<'a> {
+pub enum Item {
     Item,
-    AtomicOrUnion(QName<'a>),
+    AtomicOrUnion(QName),
 }
 
 #[derive(Debug, PartialEq)]

@@ -9,34 +9,34 @@ use std::result::Result;
 
 // https://www.w3.org/TR/xpath-datamodel-31/#qnames-and-notations
 #[derive(Debug, Clone)]
-pub struct QName<'a> {
-    name: &'a str,
-    ns: Option<&'a str>,
-    prefix: Option<&'a str>,
+pub struct QName {
+    name: String,
+    ns: Option<String>,
+    prefix: Option<String>,
 }
-impl<'a> QName<'a> {
+impl QName {
     /// Note that a prefix is only allowed when a namespace is also provided. The following panics:
     /// ```should_panic
     /// # use xpath::xdm::QName;
     /// let wrong = QName::new("foo", None, Some("wrong"));
     /// ```
-    pub fn new(name: &'a str, ns: Option<&'a str>, prefix: Option<&'a str>) -> Self {
+    pub fn new(name: String, ns: Option<String>, prefix: Option<String>) -> Self {
         assert!(!(prefix.is_some() && ns.is_none()));
         QName { name, ns, prefix }
     }
 }
-impl PartialEq for QName<'_> {
+impl PartialEq for QName {
     fn eq(&self, other: &Self) -> bool {
-        self.name.eq(other.name) && self.ns.eq(&other.ns)
+        self.name.eq(&other.name) && self.ns.eq(&other.ns)
     }
 }
-impl Display for QName<'_> {
+impl Display for QName {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if self.ns.is_some() {
             if self.prefix.is_some() {
-                write!(f, "{}:{}", self.prefix.unwrap(), self.name)
+                write!(f, "{}:{}", self.prefix.as_ref().unwrap(), self.name)
             } else {
-                write!(f, "Q{{{}}}{}", self.ns.unwrap(), self.name)
+                write!(f, "Q{{{}}}{}", self.ns.as_ref().unwrap(), self.name)
             }
         } else {
             write!(f, "{}", self.name)
@@ -138,12 +138,24 @@ mod tests {
 
     #[test]
     fn qname1() {
-        let qname1 = QName::new("local", None, None);
-        let qname2 = QName::new("local", Some(""), None);
-        let qname3 = QName::new("local", Some("http://example.com/"), None);
-        let qname4 = QName::new("local", Some("http://example.com/"), Some("ex"));
-        let qname5 = QName::new("local", Some("http://example.com/"), Some("ex2"));
-        let qname6 = QName::new("other", None, None);
+        let qname1 = QName::new("local".to_string(), None, None);
+        let qname2 = QName::new("local".to_string(), Some("".to_string()), None);
+        let qname3 = QName::new(
+            "local".to_string(),
+            Some("http://example.com/".to_string()),
+            None,
+        );
+        let qname4 = QName::new(
+            "local".to_string(),
+            Some("http://example.com/".to_string()),
+            Some("ex".to_string()),
+        );
+        let qname5 = QName::new(
+            "local".to_string(),
+            Some("http://example.com/".to_string()),
+            Some("ex2".to_string()),
+        );
+        let qname6 = QName::new("other".to_string(), None, None);
         assert_ne!(qname1, qname2);
         assert_ne!(qname2, qname3);
         assert_ne!(qname1, qname6);

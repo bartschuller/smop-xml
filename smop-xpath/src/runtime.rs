@@ -10,13 +10,13 @@ pub struct DynamicContext<'a> {
     pub focus: Option<Focus<'a>>,
 }
 
-pub struct CompiledExpr<'a>(
-    Box<dyn 'a + for<'context> Fn(&'context DynamicContext) -> XdmResult<Xdm<'context>>>,
+pub struct CompiledExpr(
+    Box<dyn for<'context> Fn(&'context DynamicContext) -> XdmResult<Xdm<'context>>>,
 );
 
-impl<'a> CompiledExpr<'a> {
+impl<'a> CompiledExpr {
     pub fn new(
-        closure: impl 'a + for<'context> Fn(&'context DynamicContext) -> XdmResult<Xdm<'context>>,
+        closure: impl 'static + for<'context> Fn(&'context DynamicContext) -> XdmResult<Xdm<'context>>,
     ) -> Self {
         CompiledExpr(Box::new(closure))
     }

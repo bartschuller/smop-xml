@@ -2,19 +2,18 @@ use crate::runtime::CompiledExpr;
 use crate::types::SequenceType;
 use crate::xdm::*;
 use rust_decimal::Decimal;
-use std::borrow::Cow;
 
 #[derive(Debug, PartialEq)]
-pub enum Expr<'input> {
-    Literal(Literal<'input>),
-    Sequence(Vec<Expr<'input>>),
+pub enum Expr {
+    Literal(Literal),
+    Sequence(Vec<Expr>),
     ContextItem,
-    IfThenElse(Box<Expr<'input>>, Box<Expr<'input>>, Box<Expr<'input>>),
-    FunctionCall(QName<'input>, Vec<Expr<'input>>),
-    Or(Vec<Expr<'input>>),
-    And(Vec<Expr<'input>>),
-    Arithmetic(Box<Expr<'input>>, ArithmeticOp, Box<Expr<'input>>),
-    InstanceOf(Box<Expr<'input>>, SequenceType<'input>),
+    IfThenElse(Box<Expr>, Box<Expr>, Box<Expr>),
+    FunctionCall(QName, Vec<Expr>),
+    Or(Vec<Expr>),
+    And(Vec<Expr>),
+    Arithmetic(Box<Expr>, ArithmeticOp, Box<Expr>),
+    InstanceOf(Box<Expr>, SequenceType),
 }
 
 #[derive(Debug, PartialEq)]
@@ -24,15 +23,15 @@ pub enum ArithmeticOp {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Literal<'input> {
+pub enum Literal {
     Integer(i64),
     Decimal(Decimal),
     Double(f64),
-    String(Cow<'input, str>),
+    String(String),
 }
 
-impl<'input> Expr<'input> {
-    pub(crate) fn compile(self) -> CompiledExpr<'input> {
+impl Expr {
+    pub(crate) fn compile(self) -> CompiledExpr {
         match self {
             Expr::Literal(l) => l.compile(),
             Expr::Sequence(s) => {
@@ -77,21 +76,18 @@ impl<'input> Expr<'input> {
             Expr::InstanceOf(_, _) => todo!("implement instance of"),
         }
     }
-    pub(crate) fn typer() -> XdmResult<SequenceType<'input>> {
+    pub(crate) fn typer() -> XdmResult<SequenceType> {
         todo!("implement typer")
     }
 }
 
-impl<'input> Literal<'input> {
-    fn compile(self) -> CompiledExpr<'input> {
+impl Literal {
+    fn compile(self) -> CompiledExpr {
         match self {
             Literal::Integer(i) => CompiledExpr::new(move |_c| Ok(Xdm::Integer(i))),
             Literal::Decimal(d) => CompiledExpr::new(move |_c| Ok(Xdm::Decimal(d))),
             Literal::Double(d) => CompiledExpr::new(move |_c| Ok(Xdm::Double(d))),
-            Literal::String(s) => {
-                let s = s.into_owned();
-                CompiledExpr::new(move |_c| Ok(Xdm::String(s.clone())))
-            }
+            Literal::String(s) => CompiledExpr::new(move |_c| Ok(Xdm::String(s.clone()))),
         }
     }
 }

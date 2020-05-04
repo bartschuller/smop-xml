@@ -6,20 +6,18 @@ use pest_consume::Error;
 use pest_consume::Parser;
 use rust_decimal::Decimal;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::str::FromStr;
 
 pub type Result<T> = std::result::Result<T, Error<Rule>>;
-type Node<'i> = pest_consume::Node<'i, Rule, &'i StaticContext<'i>>;
+type Node<'i, 's_ctx> = pest_consume::Node<'i, Rule, &'s_ctx StaticContext>;
 
-#[derive(Default)]
-pub struct StaticContext<'a> {
-    pub _dummy: &'a str,
+pub struct StaticContext {
+    namespaces: HashMap<String, String>,
 }
-impl<'a, 'i> StaticContext<'a>
-where
-    'i: 'a,
-{
-    pub fn parse(&self, input: &'i str) -> Result<Expr> {
+
+impl<'i> StaticContext {
+    pub fn parse(&self, input: &str) -> Result<Expr> {
         let root = XpathParser::parse_with_userdata(Rule::Xpath, input, self);
         let root2 = root.clone();
         pest_ascii_tree::print_ascii_tree(root2.map(|n| n.as_pairs().to_owned()));
@@ -38,6 +36,17 @@ where
                 .to_owned()
             })
         })
+    }
+    fn add_namespace(&mut self, ns: &str, prefix: &str) {
+        self.namespaces.insert(prefix.to_string(), ns.to_string());
+    }
+}
+
+impl Default for StaticContext {
+    fn default() -> Self {
+        StaticContext {
+            namespaces: HashMap::new(),
+        }
     }
 }
 
@@ -267,11 +276,11 @@ impl XpathParser {
             [BracedURILiteralContent(ns), NCName(name)] => QName::new(name, Some(ns), None),
         ))
     }
-    fn BracedURILiteralContent(input: Node) -> Result<&str> {
-        Ok(input.as_str())
+    fn BracedURILiteralContent(input: Node) -> Result<String> {
+        Ok(input.as_str().to_string())
     }
-    fn NCName(input: Node) -> Result<&str> {
-        Ok(input.as_str())
+    fn NCName(input: Node) -> Result<String> {
+        Ok(input.as_str().to_string())
     }
     fn QName(input: Node) -> Result<QName> {
         Ok(match_nodes!(input.into_children();
@@ -284,14 +293,14 @@ impl XpathParser {
             [Prefix(p), LocalPart(l)] => QName::new(l, None, Some(p)),
         ))
     }
-    fn Prefix(input: Node) -> Result<&str> {
-        Ok(input.as_str())
+    fn Prefix(input: Node) -> Result<String> {
+        Ok(input.as_str().to_string())
     }
-    fn LocalPart(input: Node) -> Result<&str> {
-        Ok(input.as_str())
+    fn LocalPart(input: Node) -> Result<String> {
+        Ok(input.as_str().to_string())
     }
     fn UnprefixedName(input: Node) -> Result<QName> {
-        Ok(QName::new(input.as_str(), None, None))
+        Ok(QName::new(input.as_str().to_string(), None, None))
     }
     fn PrimaryExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
@@ -331,9 +340,9 @@ impl XpathParser {
         two_quotes.push(qchar);
         let inner = &str[1..last];
         let unescaped = if inner.contains(quote) {
-            Cow::Owned(inner.replace(two_quotes.as_str(), quote))
+            inner.replace(two_quotes.as_str(), quote)
         } else {
-            Cow::Borrowed(inner)
+            inner.to_string()
         };
         Ok(Literal::String(unescaped))
     }
@@ -379,7 +388,7 @@ mod tests {
         let output = context.parse("'foo'");
         assert_eq!(
             output,
-            Ok(Expr::Literal(Literal::String(Cow::Borrowed("foo"))))
+            Ok(Expr::Literal(Literal::String("foo".to_string())))
         )
     }
 
@@ -389,7 +398,7 @@ mod tests {
         let output = context.parse("\"foo\"");
         assert_eq!(
             output,
-            Ok(Expr::Literal(Literal::String(Cow::Borrowed("foo"))))
+            Ok(Expr::Literal(Literal::String("foo".to_string())))
         )
     }
 
@@ -399,7 +408,7 @@ mod tests {
         let output = context.parse("'foo''bar'");
         assert_eq!(
             output,
-            Ok(Expr::Literal(Literal::String(Cow::Borrowed("foo'bar"))))
+            Ok(Expr::Literal(Literal::String("foo'bar".to_string())))
         )
     }
 
@@ -409,7 +418,7 @@ mod tests {
         let output = context.parse("\"foo\"\"bar\"");
         assert_eq!(
             output,
-            Ok(Expr::Literal(Literal::String(Cow::Borrowed("foo\"bar"))))
+            Ok(Expr::Literal(Literal::String("foo\"bar".to_string())))
         )
     }
 
@@ -419,7 +428,7 @@ mod tests {
         let output = context.parse("\"foo''bar\"");
         assert_eq!(
             output,
-            Ok(Expr::Literal(Literal::String(Cow::Borrowed("foo''bar"))))
+            Ok(Expr::Literal(Literal::String("foo''bar".to_string())))
         )
     }
 
@@ -455,7 +464,7 @@ mod tests {
             output,
             Ok(Expr::Sequence(vec![
                 Expr::Literal(Literal::Integer(1)),
-                Expr::Literal(Literal::String(Cow::Borrowed("two")))
+                Expr::Literal(Literal::String("two".to_string()))
             ]))
         )
     }
@@ -528,7 +537,11 @@ mod tests {
         assert_eq!(
             output,
             Ok(Expr::FunctionCall(
-                QName::new("myfunc", Some("http://example.com/"), None),
+                QName::new(
+                    "myfunc".to_string(),
+                    Some("http://example.com/".to_string()),
+                    None
+                ),
                 vec![Expr::ContextItem, Expr::Literal(Literal::Integer(1))]
             ))
         )
