@@ -23,8 +23,6 @@ pub enum Occurrence {
 // reference: https://www.w3.org/TR/xmlschema-2/
 // and https://www.w3.org/TR/xmlschema-1/#Simple_Type_Definition_details
 
-const XS: &str = "http://www.w3.org/2001/XMLSchema";
-
 pub enum SchemaType<'a> {
     Simple(SimpleType<'a>),
     Complex,
@@ -45,7 +43,7 @@ pub struct SimpleType<'a> {
     variety: Variety<'a>,
 }
 
-const ur: SimpleType = SimpleType {
+const UR: SimpleType = SimpleType {
     name: None,
     ns: None,
     base_type: None,

@@ -5,7 +5,6 @@ use pest_consume::match_nodes;
 use pest_consume::Error;
 use pest_consume::Parser;
 use rust_decimal::Decimal;
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -37,16 +36,19 @@ impl<'i> StaticContext {
             })
         })
     }
-    fn add_namespace(&mut self, ns: &str, prefix: &str) {
+    fn add_prefix_ns(&mut self, prefix: &str, ns: &str) {
         self.namespaces.insert(prefix.to_string(), ns.to_string());
     }
 }
 
 impl Default for StaticContext {
     fn default() -> Self {
-        StaticContext {
+        let mut sc = StaticContext {
             namespaces: HashMap::new(),
-        }
+        };
+
+        sc.add_prefix_ns("xs", "http://www.w3.org/2001/XMLSchema");
+        sc
     }
 }
 
@@ -240,7 +242,7 @@ impl XpathParser {
     }
     fn AtomicOrUnionType(input: Node) -> Result<Item> {
         Ok(match_nodes!(input.into_children();
-            [EQName(qname)] => Item::Item,
+            [EQName(qname)] => Item::AtomicOrUnion(qname),
         ))
     }
     fn OccurrenceIndicator(input: Node) -> Result<Occurrence> {
@@ -289,12 +291,19 @@ impl XpathParser {
         ))
     }
     fn PrefixedName(input: Node) -> Result<QName> {
+        let sc = input.user_data().clone();
         Ok(match_nodes!(input.into_children();
-            [Prefix(p), LocalPart(l)] => QName::new(l, None, Some(p)),
+            [Prefix(p), LocalPart(l)] => QName::new(l, Some(sc.namespaces.get(&p).unwrap().to_string()), Some(p)),
         ))
     }
     fn Prefix(input: Node) -> Result<String> {
-        Ok(input.as_str().to_string())
+        let sc = input.user_data();
+        let prefix = input.as_str();
+        if sc.namespaces.contains_key(prefix) {
+            Ok(prefix.to_string())
+        } else {
+            Err(input.error("prefix not found in static context"))
+        }
     }
     fn LocalPart(input: Node) -> Result<String> {
         Ok(input.as_str().to_string())
@@ -548,6 +557,13 @@ mod tests {
     }
 
     #[test]
+    fn fn2() {
+        let context: StaticContext = Default::default();
+        let output = context.parse("nosuch:myfunc()");
+        assert!(output.is_err())
+    }
+
+    #[test]
     fn or1() {
         let context: StaticContext = Default::default();
         let output = context.parse("1 or 0");
@@ -612,8 +628,23 @@ mod tests {
     }
     #[test]
     fn instance_of1() {
+        use crate::types::{Item, Occurrence, SequenceType};
+        use Expr::{ContextItem, InstanceOf};
         let context: StaticContext = Default::default();
         let output = context.parse(". instance of xs:integer");
-        assert_eq!(output, Ok(Expr::ContextItem))
+        assert_eq!(
+            output,
+            Ok(InstanceOf(
+                Box::new(ContextItem),
+                SequenceType::Item(
+                    Item::AtomicOrUnion(QName::new(
+                        "integer".to_string(),
+                        Some("http://www.w3.org/2001/XMLSchema".to_string()),
+                        Some("xs".to_string())
+                    )),
+                    Occurrence::One
+                )
+            ))
+        )
     }
 }

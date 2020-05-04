@@ -18,7 +18,7 @@ impl QName {
     /// Note that a prefix is only allowed when a namespace is also provided. The following panics:
     /// ```should_panic
     /// # use xpath::xdm::QName;
-    /// let wrong = QName::new("foo", None, Some("wrong"));
+    /// let wrong = QName::new("foo".to_string(), None, Some("wrong".to_string()));
     /// ```
     pub fn new(name: String, ns: Option<String>, prefix: Option<String>) -> Self {
         assert!(!(prefix.is_some() && ns.is_none()));
