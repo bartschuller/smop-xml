@@ -1,55 +1,41 @@
 use crate::ast::{ArithmeticOp, Expr, Literal};
-use crate::types::{Item, Occurrence, SequenceType};
-use crate::xdm::QName;
+use crate::context::StaticContext;
+use crate::types::{Item, Occurrence, SchemaType, SequenceType};
+use crate::xdm::{QName, XdmError, XdmResult};
 use pest_consume::match_nodes;
 use pest_consume::Error;
 use pest_consume::Parser;
 use rust_decimal::Decimal;
-use std::collections::HashMap;
 use std::str::FromStr;
 
 pub type Result<T> = std::result::Result<T, Error<Rule>>;
 type Node<'i, 's_ctx> = pest_consume::Node<'i, Rule, &'s_ctx StaticContext>;
 
-pub struct StaticContext {
-    namespaces: HashMap<String, String>,
+impl<R> From<XdmError> for pest::error::Error<R> {
+    fn from(xe: XdmError) -> Self {
+        unimplemented!()
+    }
 }
 
-impl<'i> StaticContext {
-    pub fn parse(&self, input: &str) -> Result<Expr> {
-        let root = XpathParser::parse_with_userdata(Rule::Xpath, input, self);
-        let root2 = root.clone();
-        pest_ascii_tree::print_ascii_tree(root2.map(|n| n.as_pairs().to_owned()));
-        let root = root?.single()?;
-        let parse = XpathParser::Xpath(root);
-        parse.map_err(|e| {
-            e.with_path("literal string").renamed_rules(|rule| {
-                match *rule {
-                    Rule::EOI => "end of input",
-                    Rule::Literal => "a literal",
-                    _ => {
-                        println!("unhandled grammar prettifier: {:?}", rule);
-                        "UNHANDLED"
-                    }
+pub(crate) fn parse(ctx: &StaticContext, input: &str) -> Result<Expr> {
+    let root = XpathParser::parse_with_userdata(Rule::Xpath, input, ctx);
+    let root2 = root.clone();
+    pest_ascii_tree::print_ascii_tree(root2.map(|n| n.as_pairs().to_owned()));
+    let root = root?.single()?;
+    let parse = XpathParser::Xpath(root);
+    parse.map_err(|e| {
+        e.with_path("literal string").renamed_rules(|rule| {
+            match *rule {
+                Rule::EOI => "end of input",
+                Rule::Literal => "a literal",
+                _ => {
+                    println!("unhandled grammar prettifier: {:?}", rule);
+                    "UNHANDLED"
                 }
-                .to_owned()
-            })
+            }
+            .to_owned()
         })
-    }
-    fn add_prefix_ns(&mut self, prefix: &str, ns: &str) {
-        self.namespaces.insert(prefix.to_string(), ns.to_string());
-    }
-}
-
-impl Default for StaticContext {
-    fn default() -> Self {
-        let mut sc = StaticContext {
-            namespaces: HashMap::new(),
-        };
-
-        sc.add_prefix_ns("xs", "http://www.w3.org/2001/XMLSchema");
-        sc
-    }
+    })
 }
 
 #[derive(Parser)]
@@ -241,8 +227,9 @@ impl XpathParser {
         Ok(Item::Item)
     }
     fn AtomicOrUnionType(input: Node) -> Result<Item> {
-        Ok(match_nodes!(input.into_children();
-            [EQName(qname)] => Item::AtomicOrUnion(qname),
+        let sc = input.user_data();
+        Ok(match_nodes!(input.children();
+            [EQName(qname)] => Item::AtomicOrUnion(sc.schema_type(&qname).map_err(|e|input.error(e.message))?),
         ))
     }
     fn OccurrenceIndicator(input: Node) -> Result<Occurrence> {
@@ -293,13 +280,13 @@ impl XpathParser {
     fn PrefixedName(input: Node) -> Result<QName> {
         let sc = input.user_data().clone();
         Ok(match_nodes!(input.into_children();
-            [Prefix(p), LocalPart(l)] => QName::new(l, Some(sc.namespaces.get(&p).unwrap().to_string()), Some(p)),
+            [Prefix(p), LocalPart(l)] => QName::new(l, Some(sc.namespace(&p).unwrap()), Some(p)),
         ))
     }
     fn Prefix(input: Node) -> Result<String> {
         let sc = input.user_data();
         let prefix = input.as_str();
-        if sc.namespaces.contains_key(prefix) {
+        if sc.prefix_defined(prefix) {
             Ok(prefix.to_string())
         } else {
             Err(input.error("prefix not found in static context"))
@@ -424,11 +411,13 @@ mod tests {
     #[test]
     fn string_literal4() {
         let context: StaticContext = Default::default();
-        let output = context.parse("\"foo\"\"bar\"");
+        let input = "\"foo\"\"bar\"";
+        let output = context.parse(input);
         assert_eq!(
             output,
             Ok(Expr::Literal(Literal::String("foo\"bar".to_string())))
-        )
+        );
+        assert_eq!(input, format!("{}", output.unwrap()))
     }
 
     #[test]
@@ -522,16 +511,17 @@ mod tests {
     #[test]
     fn whitespace2() {
         let context: StaticContext = Default::default();
-        let output = context.parse("(:here we go: :) 1 (: one :), 2 (: that's it :)\n");
+        let input = "(:here we go: :) 1 (: one :), 2 (: that's it :)\n";
+        let output = context.parse(input);
         assert_eq!(
             output,
             Ok(Expr::Sequence(vec![
                 Expr::Literal(Literal::Integer(1)),
                 Expr::Literal(Literal::Integer(2))
             ]))
-        )
+        );
+        assert_eq!("(1, 2)", format!("{}", output.unwrap()))
     }
-
     #[test]
     fn bool1() {
         let context: StaticContext = Default::default();
@@ -542,7 +532,8 @@ mod tests {
     #[test]
     fn fn1() {
         let context: StaticContext = Default::default();
-        let output = context.parse("Q{http://example.com/}myfunc(., 1)");
+        let input = "Q{http://example.com/}myfunc(., 1)";
+        let output = context.parse(input);
         assert_eq!(
             output,
             Ok(Expr::FunctionCall(
@@ -553,7 +544,8 @@ mod tests {
                 ),
                 vec![Expr::ContextItem, Expr::Literal(Literal::Integer(1))]
             ))
-        )
+        );
+        assert_eq!(input, format!("{}", output.unwrap()))
     }
 
     #[test]
@@ -608,7 +600,8 @@ mod tests {
         use ArithmeticOp::{Minus, Plus};
         use Expr::{Arithmetic, Literal as Lit};
         use Literal::Integer;
-        let output = context.parse("1 - 2 + 3 - 4");
+        let input = "1 - 2 + 3 - 4";
+        let output = context.parse(input);
         assert_eq!(
             output,
             Ok(Arithmetic(
@@ -624,27 +617,16 @@ mod tests {
                 Minus,
                 Box::new(Lit(Integer(4)))
             ))
-        )
+        );
+        assert_eq!(input, format!("{}", output.unwrap()))
     }
     #[test]
     fn instance_of1() {
         use crate::types::{Item, Occurrence, SequenceType};
         use Expr::{ContextItem, InstanceOf};
         let context: StaticContext = Default::default();
-        let output = context.parse(". instance of xs:integer");
-        assert_eq!(
-            output,
-            Ok(InstanceOf(
-                Box::new(ContextItem),
-                SequenceType::Item(
-                    Item::AtomicOrUnion(QName::new(
-                        "integer".to_string(),
-                        Some("http://www.w3.org/2001/XMLSchema".to_string()),
-                        Some("xs".to_string())
-                    )),
-                    Occurrence::One
-                )
-            ))
-        )
+        let input = ". instance of xs:integer";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
     }
 }

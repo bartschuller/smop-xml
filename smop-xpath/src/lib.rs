@@ -4,6 +4,7 @@
 extern crate pest_derive;
 
 pub mod ast;
+pub mod context;
 mod debugparser;
 mod functions;
 pub mod parser;
@@ -11,7 +12,7 @@ mod runtime;
 mod types;
 pub mod xdm;
 mod xpath_functions_31;
-pub use crate::parser::StaticContext;
+pub use crate::context::StaticContext;
 use crate::runtime::{CompiledExpr, DynamicContext};
 use crate::xdm::{XdmError, XdmResult};
 use xdm::Xdm;
@@ -26,7 +27,7 @@ where
         let expr = context
             .parse(xpath)
             .map_err(|e| XdmError::xqtm("XPST0003", e.to_string().as_str()))?;
-        Ok(Xpath(expr.compile()))
+        Ok(Xpath(expr.compile(context)))
     }
 
     fn evaluate<'context>(
@@ -131,6 +132,15 @@ mod tests {
                 Xdm::Integer(4)
             ])
         );
+        Ok(())
+    }
+    #[test]
+    fn arith1() -> XdmResult<()> {
+        let static_context: StaticContext = Default::default();
+        let xpath = Xpath::compile(&static_context, "1 + 2")?;
+        let context: DynamicContext = Default::default();
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result, Xdm::Integer(3));
         Ok(())
     }
     #[test]

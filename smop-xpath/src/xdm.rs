@@ -1,4 +1,4 @@
-use rust_decimal::prelude::Zero;
+use rust_decimal::prelude::{ToPrimitive, Zero};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::error::Error;
@@ -10,9 +10,9 @@ use std::result::Result;
 // https://www.w3.org/TR/xpath-datamodel-31/#qnames-and-notations
 #[derive(Debug, Clone)]
 pub struct QName {
-    name: String,
-    ns: Option<String>,
-    prefix: Option<String>,
+    pub name: String,
+    pub ns: Option<String>,
+    pub prefix: Option<String>,
 }
 impl QName {
     /// Note that a prefix is only allowed when a namespace is also provided. The following panics:
@@ -24,10 +24,31 @@ impl QName {
         assert!(!(prefix.is_some() && ns.is_none()));
         QName { name, ns, prefix }
     }
+    pub fn wellknown(s: &str) -> Self {
+        let colon = s.find(':').unwrap();
+        let prefix = &s[..colon];
+        let name = &s[colon + 1..];
+        let ns = match prefix {
+            "xs" => "http://www.w3.org/2001/XMLSchema",
+            &_ => panic!("not so well known prefix: {}", prefix),
+        };
+        QName {
+            name: name.to_string(),
+            ns: Some(ns.to_string()),
+            prefix: Some(prefix.to_string()),
+        }
+    }
 }
 impl PartialEq for QName {
     fn eq(&self, other: &Self) -> bool {
         self.name.eq(&other.name) && self.ns.eq(&other.ns)
+    }
+}
+impl Eq for QName {}
+impl Hash for QName {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.ns.hash(state);
+        self.name.hash(state)
     }
 }
 impl Display for QName {
@@ -113,6 +134,14 @@ impl Xdm<'_> {
                     }
                 }
             }
+        }
+    }
+    pub fn integer(&self) -> XdmResult<i64> {
+        match self {
+            Xdm::Decimal(d) => Ok(d.to_i64().unwrap()),
+            Xdm::Integer(i) => Ok(*i),
+            Xdm::Double(d) => Ok(*d as i64),
+            _ => todo!("finish integer conversion"),
         }
     }
 }
