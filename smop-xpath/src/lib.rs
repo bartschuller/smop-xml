@@ -144,6 +144,14 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn arith2() -> XdmResult<()> {
+        let static_context: StaticContext = Default::default();
+        let expr = static_context.parse("1 + 0.2")?;
+        let result = expr.type_(&static_context)?.to_string();
+        assert_eq!(result, "xs:decimal".to_string());
+        Ok(())
+    }
+    #[test]
     #[ignore]
     fn context1() -> XdmResult<()> {
         let static_context: StaticContext = Default::default();

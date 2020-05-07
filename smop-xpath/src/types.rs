@@ -5,13 +5,13 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum SequenceType {
     EmptySequence,
     Item(Item, Occurrence),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Item {
     KindTest,
     Item,
@@ -22,7 +22,7 @@ pub enum Item {
     ParenthesizedItemType,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum Occurrence {
     Optional,
     ZeroOrMore,
@@ -33,25 +33,41 @@ pub enum Occurrence {
 impl SequenceType {
     pub(crate) fn lub(
         ctx: &StaticContext,
-        st1: SequenceType,
-        st2: SequenceType,
+        st1: &SequenceType,
+        st2: &SequenceType,
+        union_ok: bool,
     ) -> XdmResult<SequenceType> {
         Ok(match (st1, st2) {
-            (SequenceType::EmptySequence, st2) => st2,
-            (st1, SequenceType::EmptySequence) => st1,
+            (SequenceType::EmptySequence, st2) => st2.clone(),
+            (st1, SequenceType::EmptySequence) => st1.clone(),
             (SequenceType::Item(i1, o1), SequenceType::Item(i2, o2)) => {
-                SequenceType::Item(Item::lub(ctx, i1, i2)?, Occurrence::add(o1, o2))
+                SequenceType::Item(Item::lub(ctx, i1, i2, union_ok)?, o1.max(o2).clone())
             }
         })
     }
-    pub(crate) fn lub_vec(ctx: &StaticContext, ts: Vec<SequenceType>) -> XdmResult<SequenceType> {
+    pub(crate) fn add(
+        ctx: &StaticContext,
+        st1: &SequenceType,
+        st2: &SequenceType,
+    ) -> XdmResult<SequenceType> {
+        Ok(match (st1, st2) {
+            (SequenceType::EmptySequence, st2) => st2.clone(),
+            (st1, SequenceType::EmptySequence) => st1.clone(),
+            (SequenceType::Item(i1, o1), SequenceType::Item(i2, o2)) => {
+                SequenceType::Item(Item::lub(ctx, i1, i2, false)?, Occurrence::add(o1, o2))
+            }
+        })
+    }
+    pub(crate) fn add_vec(ctx: &StaticContext, ts: Vec<SequenceType>) -> XdmResult<SequenceType> {
         assert!(
             ts.len() > 1,
-            "lub_vec should only be called with more than one element"
+            "add_vec should only be called with more than one element"
         );
-        let mut iter = ts.into_iter();
+        let mut iter = ts.iter();
         let init = iter.next().unwrap();
-        iter.fold(Ok(init), |st1, st2| SequenceType::lub(ctx, st1?, st2))
+        iter.fold(Ok(init.clone()), |st1, st2| {
+            SequenceType::add(ctx, &st1?, st2)
+        })
     }
 }
 impl Display for SequenceType {
@@ -64,11 +80,11 @@ impl Display for SequenceType {
 }
 
 impl Item {
-    fn lub(ctx: &StaticContext, i1: Item, i2: Item) -> XdmResult<Item> {
+    fn lub(ctx: &StaticContext, i1: &Item, i2: &Item, union_ok: bool) -> XdmResult<Item> {
         Ok(match (i1, i2) {
             (Item::Item, _) | (_, Item::Item) => Item::Item,
             (Item::AtomicOrUnion(t1), Item::AtomicOrUnion(t2)) => {
-                Item::AtomicOrUnion(SchemaType::lub(t1, t2))
+                Item::AtomicOrUnion(SchemaType::lub(t1.clone(), t2.clone(), union_ok))
             }
             (_, _) => unimplemented!("lub for other Item types"),
         })
@@ -85,11 +101,11 @@ impl Display for Item {
 }
 
 impl Occurrence {
-    fn add(o1: Occurrence, o2: Occurrence) -> Occurrence {
-        if o1 >= Occurrence::One && o2 >= Occurrence::One {
+    fn add(o1: &Occurrence, o2: &Occurrence) -> Occurrence {
+        if *o1 >= Occurrence::One && *o2 >= Occurrence::One {
             Occurrence::OneOrMore
         } else {
-            o1.max(o2)
+            o1.max(o2).clone()
         }
     }
 }
@@ -137,11 +153,45 @@ pub struct SimpleType {
 }
 
 impl SchemaType {
-    fn lub(t1: Rc<SchemaType>, t2: Rc<SchemaType>) -> Rc<SchemaType> {
+    fn simple_type(&self) -> Option<Rc<SimpleType>> {
+        match &self.tree {
+            TypeTree::Simple(st) => Some(st.clone()),
+            TypeTree::Complex => None,
+        }
+    }
+    fn lub(t1: Rc<SchemaType>, t2: Rc<SchemaType>, union_ok: bool) -> Rc<SchemaType> {
         if t1 == t2 {
             t1.clone()
         } else {
-            todo!("SchemaType::lub for {} and {}", t1, t2)
+            match (&*t1, &*t2) {
+                (
+                    SchemaType {
+                        qname: _,
+                        tree: TypeTree::Simple(st1),
+                    },
+                    SchemaType {
+                        qname: _,
+                        tree: TypeTree::Simple(st2),
+                    },
+                ) => {
+                    let simple_type = if union_ok {
+                        Rc::new(SimpleType {
+                            name: None,
+                            ns: None,
+                            base_type: None, // FIXME
+                            variety: Variety::Union(vec![st1.clone(), st2.clone()]),
+                        })
+                    } else {
+                        SimpleType::lub(st1, st2)
+                    };
+                    let schema_type = SchemaType {
+                        qname: None,
+                        tree: TypeTree::Simple(simple_type),
+                    };
+                    Rc::new(schema_type)
+                }
+                _ => todo!("SchemaType::lub for {} and {}", t1, t2),
+            }
         }
     }
 }
@@ -152,6 +202,36 @@ impl Display for SchemaType {
         } else {
             write!(f, "{:?}", self)
         }
+    }
+}
+
+impl SimpleType {
+    fn lub(st1: &Rc<SimpleType>, st2: &Rc<SimpleType>) -> Rc<SimpleType> {
+        let succ = |st: &Rc<SimpleType>| {
+            std::iter::successors(Some(st.clone()), |e| {
+                e.base_type
+                    .as_ref()
+                    .map(|s| s.simple_type().clone())
+                    .flatten()
+            })
+        };
+        for base in succ(st1) {
+            print!("{} ", base.name.as_ref().unwrap());
+        }
+        println!();
+        for base in succ(st2) {
+            print!("{} ", base.name.as_ref().unwrap());
+        }
+        println!();
+        println!("SimpleType::lub({:?}, {:?})", st1, st2);
+        for outer in succ(st1) {
+            for inner in succ(st2) {
+                if inner == outer {
+                    return inner.clone();
+                }
+            }
+        }
+        unreachable!()
     }
 }
 
