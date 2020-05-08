@@ -1,6 +1,8 @@
 use num_traits::cast::FromPrimitive;
+use owning_ref::{BoxRef, OwningHandle};
 use rust_decimal::prelude::{ToPrimitive, Zero};
 use rust_decimal::Decimal;
+use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
@@ -65,11 +67,25 @@ impl Display for QName {
         }
     }
 }
-#[derive(Debug, Clone, PartialEq)]
-pub enum Node<'a> {
-    RoXml(roxmltree::Node<'a, 'a>),
-}
 
+pub enum Node<'a> {
+    RoXml(OwningHandle<Box<roxmltree::Document<'a>>, Box<roxmltree::Node<'a, 'a>>>),
+}
+impl Debug for Node<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        unimplemented!()
+    }
+}
+impl Clone for Node<'_> {
+    fn clone(&self) -> Self {
+        unimplemented!()
+    }
+}
+impl PartialEq for Node<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        unimplemented!()
+    }
+}
 #[derive(Debug, Clone, PartialEq)]
 pub enum Xdm<'a> {
     String(String),
@@ -106,6 +122,12 @@ impl XdmError {
     }
 }
 impl Error for XdmError {}
+
+impl From<roxmltree::Error> for XdmError {
+    fn from(re: roxmltree::Error) -> Self {
+        XdmError::xqtm("err:FODC0006", re.to_string().as_str())
+    }
+}
 impl Display for XdmError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {}", self.code, self.message)

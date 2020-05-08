@@ -181,4 +181,33 @@ mod tests {
         assert_eq!(result, Xdm::Sequence(vec![]));
         Ok(())
     }
+    #[test]
+    #[ignore]
+    fn roxml1() -> XdmResult<()> {
+        let static_context: StaticContext = Default::default();
+        let xpath = Xpath::compile(&static_context, "/root/mychild/@numattr")?;
+        let mut context: DynamicContext = Default::default();
+        let doc = r##"<root>
+            <mychild stringattr="foo" numattr="42"/>
+            <mychild>bar bar</mychid>
+        </root>"##;
+        unsafe {
+            println!(
+                "{}",
+                context.set_document(doc).expect_err("expected an error")
+            );
+            let result = xpath.evaluate(&context)?;
+            assert_eq!(result.integer(), Ok(42));
+        }
+        Ok(())
+    }
+    #[test]
+    fn function1() -> XdmResult<()> {
+        let static_context: StaticContext = Default::default();
+        let xpath = Xpath::compile(&static_context, "boolean(1, 2)")?;
+        let context: DynamicContext = Default::default();
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result, Xdm::Boolean(false));
+        Ok(())
+    }
 }

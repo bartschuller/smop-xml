@@ -3,6 +3,7 @@ use crate::runtime::CompiledExpr;
 use crate::types::Item;
 use crate::types::{Occurrence, SequenceType};
 use crate::xdm::*;
+use crate::xpath_functions_31::fn_boolean;
 use itertools::Itertools;
 use rust_decimal::Decimal;
 use std::fmt;
@@ -92,7 +93,16 @@ impl Expr {
                     todo!("implement context/focus")
                 }
             }),
-            Expr::FunctionCall(_, _) => todo!("implement FunctionCall"),
+            Expr::FunctionCall(qname, args) => {
+                let the_function = fn_boolean;
+                let compiled_vec: Vec<_> = args.into_iter().map(|x| x.compile(ctx)).collect();
+                CompiledExpr::new(move |c| {
+                    let v: XdmResult<Vec<Xdm>> =
+                        compiled_vec.iter().map(|e| e.execute(c)).collect();
+                    let v_ok = v?;
+                    the_function(c, v_ok)
+                })
+            }
             Expr::Or(_) => todo!("implement Or"),
             Expr::And(_) => todo!("implement And"),
             Expr::Arithmetic(l, o, r) => match type_ {

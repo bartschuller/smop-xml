@@ -173,8 +173,12 @@ impl XpathParser {
     }
     fn PathExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
+            [InitialSlash(e), RelativePathExpr(e)] => e, // FIXME
             [RelativePathExpr(e)] => e, // FIXME
         ))
+    }
+    fn InitialSlash(_input: Node) -> Result<Expr> {
+        todo!("handle initial slash")
     }
     fn RelativePathExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();

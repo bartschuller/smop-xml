@@ -53,9 +53,13 @@ NodeComp = { "is" | "<<" | ">>" }
 // 35
 SimpleMapExpr = { PathExpr ~ ( "!" ~ PathExpr )* }
 // 36
-PathExpr = { ("/" ~ RelativePathExpr?) | ("//" ~ RelativePathExpr) | RelativePathExpr }
+PathExpr = { (InitialSlash ~ RelativePathExpr?) | (InitialSlashSlash ~ RelativePathExpr) | RelativePathExpr }
+InitialSlash = { "/" }
+InitialSlashSlash = { "//" }
 // 37
-RelativePathExpr = { StepExpr ~ (("/" | "//") ~ StepExpr)* }
+RelativePathExpr = { StepExpr ~ ((Slash | SlashSlash) ~ StepExpr)* }
+Slash = { "/" }
+SlashSlash = { "//" }
 // 38
 StepExpr = { PostfixExpr | AxisStep }
 // 39
