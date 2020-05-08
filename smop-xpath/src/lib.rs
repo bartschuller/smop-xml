@@ -43,6 +43,8 @@ mod tests {
     use crate::runtime::DynamicContext;
     use crate::xdm::{Xdm, XdmResult};
     use crate::{StaticContext, Xpath};
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
 
     #[test]
     fn compile1() -> XdmResult<()> {
@@ -146,9 +148,27 @@ mod tests {
     #[test]
     fn arith2() -> XdmResult<()> {
         let static_context: StaticContext = Default::default();
-        let expr = static_context.parse("1 + 0.2")?;
+        let input = "1 + 0.2";
+        let expr = static_context.parse(input)?;
         let result = expr.type_(&static_context)?.to_string();
         assert_eq!(result, "xs:decimal".to_string());
+        let xpath = Xpath::compile(&static_context, input)?;
+        let context: DynamicContext = Default::default();
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result, Xdm::Decimal(Decimal::from_str("1.2").unwrap()));
+        Ok(())
+    }
+    #[test]
+    fn arith3() -> XdmResult<()> {
+        let static_context: StaticContext = Default::default();
+        let input = "0.2 + 3e-2";
+        let expr = static_context.parse(input)?;
+        let result = expr.type_(&static_context)?.to_string();
+        assert_eq!(result, "xs:anyAtomicType".to_string());
+        let xpath = Xpath::compile(&static_context, input)?;
+        let context: DynamicContext = Default::default();
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result, Xdm::Double(0.23_f64));
         Ok(())
     }
     #[test]

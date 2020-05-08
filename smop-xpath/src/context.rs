@@ -1,12 +1,13 @@
 use crate::ast::Expr;
 use crate::parser::parse;
-use crate::types::{SchemaType, SimpleType, TypeTree, Variety};
+use crate::types::{SchemaType, TypeTree, Variety};
 use crate::xdm::{QName, XdmError, XdmResult};
 use std::collections::HashMap;
 use std::rc::Rc;
 
 pub struct StaticContext {
     namespaces: HashMap<String, String>,
+    prefixes: HashMap<String, String>,
     schema_types: HashMap<QName, Rc<SchemaType>>,
 }
 
@@ -16,12 +17,16 @@ impl<'i> StaticContext {
     }
     fn add_prefix_ns(&mut self, prefix: &str, ns: &str) {
         self.namespaces.insert(prefix.to_string(), ns.to_string());
+        self.prefixes.insert(ns.to_string(), prefix.to_string());
     }
     pub fn prefix_defined(&self, prefix: &str) -> bool {
         self.namespaces.contains_key(prefix)
     }
     pub fn namespace(&self, prefix: &str) -> Option<String> {
         self.namespaces.get(prefix).cloned()
+    }
+    pub fn prefix(&self, ns: &str) -> Option<String> {
+        self.prefixes.get(ns).cloned()
     }
     pub(crate) fn qname<S: AsRef<str>>(&self, prefix: S, local_name: S) -> Option<QName> {
         self.namespaces.get(prefix.as_ref()).map(|ns| {
@@ -33,8 +38,14 @@ impl<'i> StaticContext {
         })
     }
     fn add_schema_type(&mut self, t: Rc<SchemaType>) {
-        self.schema_types
-            .insert(t.qname.as_ref().unwrap().clone(), t);
+        self.schema_types.insert(
+            QName::new(
+                t.name.as_ref().unwrap().clone(),
+                t.ns.clone(),
+                self.prefix(t.ns.as_ref().unwrap()),
+            ),
+            t,
+        );
     }
     pub(crate) fn schema_type(&self, qname: &QName) -> XdmResult<Rc<SchemaType>> {
         self.schema_types.get(qname).cloned().ok_or(XdmError::xqtm(
@@ -48,20 +59,21 @@ fn add_simple_type(sc: &mut StaticContext, qname: &str, base: &str) {
     let qname = QName::wellknown(qname);
     let base = sc.schema_type(&QName::wellknown(base)).unwrap();
     let type_ = SchemaType {
-        qname: Some(qname.clone()),
-        tree: TypeTree::Simple(Rc::new(SimpleType {
-            name: Some(qname.name.clone()),
-            ns: qname.ns.as_ref().cloned(),
-            base_type: Some(base),
-            variety: Variety::Atomic,
-        })),
+        name: Some(qname.name.clone()),
+        ns: qname.ns.as_ref().cloned(),
+        prefix: qname.prefix.as_ref().cloned(),
+        base_type: Some(base),
+        tree: TypeTree::Simple(Variety::Atomic),
     };
     sc.add_schema_type(Rc::new(type_));
 }
 fn add_complex_type(sc: &mut StaticContext, qname: &str) {
     let qname = QName::wellknown(qname);
     let type_ = SchemaType {
-        qname: Some(qname),
+        name: Some(qname.name.clone()),
+        ns: qname.ns.as_ref().cloned(),
+        prefix: qname.prefix.as_ref().cloned(),
+        base_type: None,
         tree: TypeTree::Complex,
     };
     sc.add_schema_type(Rc::new(type_));
@@ -70,6 +82,7 @@ impl Default for StaticContext {
     fn default() -> Self {
         let mut sc = StaticContext {
             namespaces: HashMap::new(),
+            prefixes: HashMap::new(),
             schema_types: HashMap::new(),
         };
 

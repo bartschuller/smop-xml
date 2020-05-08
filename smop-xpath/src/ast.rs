@@ -112,6 +112,16 @@ impl Expr {
                                 l_c.execute(c)?.integer()? + r_c.execute(c)?.integer()?,
                             ))
                         }),
+                        "xs:decimal" => CompiledExpr::new(move |c| {
+                            Ok(Xdm::Decimal(
+                                l_c.execute(c)?.decimal()? + r_c.execute(c)?.decimal()?,
+                            ))
+                        }),
+                        "xs:anyAtomicType" => CompiledExpr::new(move |c| {
+                            Ok(Xdm::Double(
+                                l_c.execute(c)?.double()? + r_c.execute(c)?.double()?,
+                            ))
+                        }),
                         _ => todo!("compile more Arithmetic cases"),
                     }
                 }
@@ -135,7 +145,7 @@ impl Expr {
             Expr::IfThenElse(_, t, e) => {
                 let t_type = t.type_(ctx)?;
                 let e_type = e.type_(ctx)?;
-                SequenceType::lub(ctx, &t_type, &e_type, true)
+                SequenceType::lub(ctx, &t_type, &e_type)
             }
             Expr::FunctionCall(_, _) => todo!("implement type_"),
             Expr::Or(_) => todo!("implement type_"),
@@ -143,28 +153,7 @@ impl Expr {
             Expr::Arithmetic(l, op, r) => {
                 let t1 = l.type_(ctx)?;
                 let t2 = r.type_(ctx)?;
-                SequenceType::lub(ctx, &t1, &t2, false)
-                // match (t1, t2) {
-                //     (SequenceType::EmptySequence, _) | (_, SequenceType::EmptySequence) => {
-                //         Ok(SequenceType::EmptySequence)
-                //     }
-                //     (
-                //         SequenceType::Item(Item::AtomicOrUnion(st1), _),
-                //         SequenceType::Item(Item::AtomicOrUnion(st2), _),
-                //     ) => {
-                //         let q1 = st1.qname.as_ref().unwrap().to_string();
-                //         let q2 = st2.qname.as_ref().unwrap().to_string();
-                //         let q = match (q1.as_str(), q2.as_str()) {
-                //             ("xs:integer", "xs:integer") => ctx.qname("xs", "integer"),
-                //             ("xs:decimal", "xs:decimal") => ctx.qname("xs", "decimal"),
-                //             ("xs:double", "xs:double") => ctx.qname("xs", "double"),
-                //             _ => todo!("Arithmetic type for other combinations of qnames"),
-                //         };
-                //         let i = Item::AtomicOrUnion(ctx.schema_type(&q.unwrap())?);
-                //         Ok(SequenceType::Item(i, Occurrence::One))
-                //     }
-                //     _ => todo!("implement more complex types for Arithmetic"),
-                // }
+                SequenceType::lub(ctx, &t1, &t2)
             }
             Expr::InstanceOf(_, _) => todo!("implement type_"),
         }

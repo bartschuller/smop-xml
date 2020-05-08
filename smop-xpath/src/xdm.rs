@@ -1,3 +1,4 @@
+use num_traits::cast::FromPrimitive;
 use rust_decimal::prelude::{ToPrimitive, Zero};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -138,10 +139,32 @@ impl Xdm<'_> {
     }
     pub fn integer(&self) -> XdmResult<i64> {
         match self {
-            Xdm::Decimal(d) => Ok(d.to_i64().unwrap()),
+            Xdm::Decimal(d) => Ok(d.to_i64().ok_or(XdmError::xqtm(
+                "FOCA0003",
+                "Input value too large for integer",
+            ))?),
             Xdm::Integer(i) => Ok(*i),
             Xdm::Double(d) => Ok(*d as i64),
             _ => todo!("finish integer conversion"),
+        }
+    }
+    pub fn decimal(&self) -> XdmResult<Decimal> {
+        match self {
+            Xdm::Decimal(d) => Ok(d.clone()),
+            Xdm::Integer(i) => Ok(Decimal::new(*i, 0)),
+            Xdm::Double(d) => {
+                Ok(Decimal::from_f64(*d)
+                    .ok_or(XdmError::xqtm("FOCA0002", "Invalid lexical value"))?)
+            }
+            _ => todo!("finish decimal conversion"),
+        }
+    }
+    pub fn double(&self) -> XdmResult<f64> {
+        match self {
+            Xdm::Decimal(d) => Ok(d.to_f64().unwrap()),
+            Xdm::Integer(i) => Ok(*i as f64),
+            Xdm::Double(d) => Ok(*d),
+            _ => todo!("finish decimal conversion"),
         }
     }
 }
