@@ -178,12 +178,16 @@ impl XpathParser {
         ))
     }
     fn InitialSlash(_input: Node) -> Result<Expr> {
+        // (fn:root(self::node()) treat as document-node())
         todo!("handle initial slash")
     }
     fn RelativePathExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
             [StepExpr(e)] => e, // FIXME
         ))
+    }
+    fn Slash(_input: Node) -> Result<Expr> {
+        unimplemented!()
     }
     fn StepExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();

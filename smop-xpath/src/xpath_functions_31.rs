@@ -1,7 +1,7 @@
 use crate::functions::{CompiledFunction, Function};
 use crate::types::Item;
 use crate::types::{Occurrence, SequenceType};
-use crate::xdm::{QName, Xdm, XdmError};
+use crate::xdm::{Node, QName, Xdm, XdmError};
 use crate::StaticContext;
 use num_traits::identities::Zero;
 
@@ -51,6 +51,14 @@ pub(crate) fn register(ctx: &mut StaticContext) {
     };
     let qname = ctx.qname("fn", "false").unwrap();
     ctx.add_function(qname, fn_false_0_meta);
+
+    let fn_root_1_meta = Function {
+        args: vec![SequenceType::Item(Item::KindTest, Occurrence::Optional)],
+        type_: SequenceType::Item(Item::KindTest, Occurrence::Optional),
+        code: fn_root_1,
+    };
+    let qname = ctx.qname("fn", "root").unwrap();
+    ctx.add_function(qname, fn_root_1_meta);
 }
 
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
@@ -89,6 +97,15 @@ pub(crate) fn fn_true_0() -> CompiledFunction {
 }
 pub(crate) fn fn_false_0() -> CompiledFunction {
     CompiledFunction::new(|_ctx, _args| Ok(Xdm::Boolean(false)))
+}
+pub(crate) fn fn_root_1() -> CompiledFunction {
+    CompiledFunction::new(|ctx, args| {
+        if let Some(Xdm::Node(Node::RoXml(oh))) = args.first() {
+            Ok(Xdm::Node(Node::RoXml(oh.document().root())))
+        } else {
+            unreachable!()
+        }
+    })
 }
 
 #[cfg(test)]

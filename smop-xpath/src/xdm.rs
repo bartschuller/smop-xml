@@ -1,5 +1,5 @@
 use num_traits::cast::FromPrimitive;
-use owning_ref::OwningHandle;
+use roxmltree::NodeType;
 use rust_decimal::prelude::{ToPrimitive, Zero};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -68,7 +68,7 @@ impl Display for QName {
 }
 
 pub enum Node<'a> {
-    RoXml(OwningHandle<Box<roxmltree::Document<'a>>, Box<roxmltree::Node<'a, 'a>>>),
+    RoXml(roxmltree::Node<'a, 'a>),
 }
 impl Debug for Node<'_> {
     fn fmt(&self, _f: &mut Formatter<'_>) -> fmt::Result {
@@ -77,12 +77,36 @@ impl Debug for Node<'_> {
 }
 impl Clone for Node<'_> {
     fn clone(&self) -> Self {
-        unimplemented!()
+        match self {
+            Node::RoXml(ro) => Node::RoXml(ro.clone()),
+        }
     }
 }
 impl PartialEq for Node<'_> {
     fn eq(&self, _other: &Self) -> bool {
         unimplemented!()
+    }
+}
+impl Display for Node<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Node::RoXml(n) => {
+                fn string_value(node: &roxmltree::Node, f: &mut Formatter<'_>) -> fmt::Result {
+                    match node.node_type() {
+                        NodeType::Root | NodeType::Element => {
+                            for ref c in node.children() {
+                                string_value(c, f)?
+                            }
+                            Ok(())
+                        }
+                        NodeType::PI => Ok(()),
+                        NodeType::Comment => Ok(()),
+                        NodeType::Text => write!(f, "{}", node.text().unwrap()),
+                    }
+                }
+                string_value(n, f)
+            }
+        }
     }
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -185,7 +209,39 @@ impl Xdm<'_> {
             Xdm::Decimal(d) => Ok(d.to_f64().unwrap()),
             Xdm::Integer(i) => Ok(*i as f64),
             Xdm::Double(d) => Ok(*d),
-            _ => todo!("finish decimal conversion"),
+            _ => todo!("finish double conversion"),
+        }
+    }
+    pub fn string(&self) -> XdmResult<String> {
+        match self {
+            Xdm::String(s) => Ok(s.clone()),
+            Xdm::Boolean(b) => Ok(if *b {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }),
+            Xdm::Decimal(d) => Ok(d.to_string()),
+            Xdm::Integer(i) => Ok(i.to_string()),
+            Xdm::Double(d) => Ok(d.to_string()),
+            Xdm::Node(n) => Ok(n.to_string()),
+            Xdm::Array(_) => Err(XdmError::xqtm(
+                "err:FOTY0014",
+                "can't convert an array to a string",
+            )),
+            Xdm::Map(_) => Err(XdmError::xqtm(
+                "err:FOTY0014",
+                "can't convert a map to a string",
+            )),
+            Xdm::Sequence(v) => {
+                if v.is_empty() {
+                    Ok("".to_string())
+                } else {
+                    Err(XdmError::xqtm(
+                        "XPTY0004",
+                        "can't convert a sequence to a string",
+                    ))
+                }
+            }
         }
     }
 }

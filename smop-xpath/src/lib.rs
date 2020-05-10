@@ -38,8 +38,9 @@ impl<'input> Xpath {
 #[cfg(test)]
 mod tests {
     use crate::runtime::DynamicContext;
-    use crate::xdm::{Xdm, XdmResult};
+    use crate::xdm::{Node, Xdm, XdmResult};
     use crate::{StaticContext, Xpath};
+    use roxmltree::Document;
     use rust_decimal::Decimal;
     use std::str::FromStr;
 
@@ -179,23 +180,23 @@ mod tests {
         Ok(())
     }
     #[test]
-    #[ignore]
     fn roxml1() -> XdmResult<()> {
         let static_context: StaticContext = Default::default();
-        let xpath = Xpath::compile(&static_context, "/root/mychild/@numattr")?;
         let mut context: DynamicContext = Default::default();
         let doc = r##"<root>
             <mychild stringattr="foo" numattr="42"/>
-            <mychild>bar bar</mychid>
+            <mychild>bar bar</mychild>
         </root>"##;
-        unsafe {
-            println!(
-                "{}",
-                context.set_document(doc).expect_err("expected an error")
-            );
-            let result = xpath.evaluate(&context)?;
-            assert_eq!(result.integer(), Ok(42));
-        }
+        let rodoc = Document::parse(doc)?;
+        let xdm = Xdm::Node(Node::RoXml(rodoc.root()));
+        context.set_context_sequence(xdm, 0);
+        //let xpath = Xpath::compile(&static_context, "/root/mychild/@numattr")?;
+        let xpath = Xpath::compile(&static_context, "root(.)/root")?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(
+            result.string(),
+            Ok("\n            \n            bar bar\n        ".to_string())
+        );
         Ok(())
     }
     #[test]
@@ -211,7 +212,7 @@ mod tests {
         let xpath = Xpath::compile(&static_context, "not(not(boolean('foo')))")?;
         let context: DynamicContext = Default::default();
         let result = xpath.evaluate(&context)?;
-        assert_eq!(result, Xdm::Boolean(true));
+        assert!(result.boolean()?);
         Ok(())
     }
 }

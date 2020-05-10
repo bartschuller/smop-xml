@@ -90,10 +90,17 @@ impl Expr {
                 }))
             }
             Expr::ContextItem => Ok(CompiledExpr::new(move |c| {
-                if c.focus.is_none() {
-                    Err(XdmError::xqtm("XPDY0002", "context item is undefined"))
+                if let Some(ref focus) = c.focus {
+                    match &focus.sequence {
+                        Xdm::Sequence(v) => v
+                            .get(focus.position)
+                            .map(|x| x.clone())
+                            .ok_or(XdmError::xqtm("XPDY0002", "context item is undefined")),
+                        x if focus.position == 0 => Ok(x.clone()),
+                        _ => Err(XdmError::xqtm("XPDY0002", "context item is undefined")),
+                    }
                 } else {
-                    todo!("implement context/focus")
+                    Err(XdmError::xqtm("XPDY0002", "context item is undefined"))
                 }
             })),
             Expr::FunctionCall(qname, args) => {
@@ -157,7 +164,7 @@ impl Expr {
                     SequenceType::add_vec(ctx, child_types?)
                 }
             }
-            Expr::ContextItem => todo!("implement type_"),
+            Expr::ContextItem => Ok(SequenceType::EmptySequence),
             Expr::IfThenElse(_, t, e) => {
                 let t_type = t.type_(ctx)?;
                 let e_type = e.type_(ctx)?;
