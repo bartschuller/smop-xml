@@ -1,7 +1,7 @@
 use crate::ast::{ArithmeticOp, Expr, Literal};
 use crate::context::StaticContext;
-use crate::types::{Item, Occurrence, SchemaType, SequenceType};
-use crate::xdm::{QName, XdmError, XdmResult};
+use crate::types::{Item, Occurrence, SequenceType};
+use crate::xdm::{QName, XdmError};
 use pest_consume::match_nodes;
 use pest_consume::Error;
 use pest_consume::Parser;
@@ -12,7 +12,7 @@ pub type Result<T> = std::result::Result<T, Error<Rule>>;
 type Node<'i, 's_ctx> = pest_consume::Node<'i, Rule, &'s_ctx StaticContext>;
 
 impl<R> From<XdmError> for pest::error::Error<R> {
-    fn from(xe: XdmError) -> Self {
+    fn from(_xe: XdmError) -> Self {
         unimplemented!()
     }
 }
@@ -254,9 +254,13 @@ impl XpathParser {
         Ok(Expr::ContextItem)
     }
     fn FunctionCall(input: Node) -> Result<Expr> {
-        Ok(match_nodes!(input.into_children();
-            [EQName(f), ExprSingle(a)..] => Expr::FunctionCall(f, a.collect()),
-        ))
+        // We check whether the function exists in the typing phase
+        match_nodes!(input.clone().into_children();
+            [EQName(f), ExprSingle(a)..] => {
+                let args: Vec<_> = a.collect();
+                Ok(Expr::FunctionCall(f, args))
+            }
+        )
     }
     fn EQName(input: Node) -> Result<QName> {
         Ok(match_nodes!(input.into_children();
@@ -357,10 +361,8 @@ impl XpathParser {
 mod tests {
     use super::StaticContext;
     use crate::ast::{ArithmeticOp, Expr, Literal};
-    use crate::types::SequenceType;
     use crate::xdm::QName;
     use rust_decimal::Decimal;
-    use std::borrow::Cow;
     use std::str::FromStr;
 
     #[test]
@@ -626,8 +628,6 @@ mod tests {
     }
     #[test]
     fn instance_of1() {
-        use crate::types::{Item, Occurrence, SequenceType};
-        use Expr::{ContextItem, InstanceOf};
         let context: StaticContext = Default::default();
         let input = ". instance of xs:integer";
         let output = context.parse(input);

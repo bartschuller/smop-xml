@@ -1,8 +1,7 @@
 use num_traits::cast::FromPrimitive;
-use owning_ref::{BoxRef, OwningHandle};
+use owning_ref::OwningHandle;
 use rust_decimal::prelude::{ToPrimitive, Zero};
 use rust_decimal::Decimal;
-use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
@@ -72,7 +71,7 @@ pub enum Node<'a> {
     RoXml(OwningHandle<Box<roxmltree::Document<'a>>, Box<roxmltree::Node<'a, 'a>>>),
 }
 impl Debug for Node<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, _f: &mut Formatter<'_>) -> fmt::Result {
         unimplemented!()
     }
 }
@@ -82,7 +81,7 @@ impl Clone for Node<'_> {
     }
 }
 impl PartialEq for Node<'_> {
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(&self, _other: &Self) -> bool {
         unimplemented!()
     }
 }

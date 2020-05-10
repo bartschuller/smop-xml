@@ -1,4 +1,5 @@
 use crate::ast::Expr;
+use crate::functions::{Function, FunctionKey};
 use crate::parser::parse;
 use crate::types::{SchemaType, TypeTree, Variety};
 use crate::xdm::{QName, XdmError, XdmResult};
@@ -9,9 +10,11 @@ pub struct StaticContext {
     namespaces: HashMap<String, String>,
     prefixes: HashMap<String, String>,
     schema_types: HashMap<QName, Rc<SchemaType>>,
+    functions: HashMap<FunctionKey, Function>,
+    default_function_namespace: Option<String>,
 }
 
-impl<'i> StaticContext {
+impl StaticContext {
     pub fn parse(&self, input: &str) -> XdmResult<Expr> {
         parse(self, input).map_err(|e| XdmError::xqtm("XPST0003", &e.to_string()))
     }
@@ -53,6 +56,29 @@ impl<'i> StaticContext {
             &format!("no schema definition for {} found", qname),
         ))
     }
+    pub(crate) fn add_function(&mut self, qname: QName, f: Function) {
+        self.functions.insert(
+            FunctionKey {
+                name: qname.name,
+                ns: qname.ns.unwrap(),
+                arity: f.args.len(),
+            },
+            f,
+        );
+    }
+    pub(crate) fn function(&self, qname: &QName, arity: usize) -> Option<&Function> {
+        let ns = qname.ns.as_ref().or(if qname.prefix.is_none() {
+            self.default_function_namespace.as_ref()
+        } else {
+            None
+        });
+        let key = FunctionKey {
+            name: qname.name.clone(),
+            ns: ns?.clone(),
+            arity,
+        };
+        self.functions.get(&key)
+    }
 }
 
 fn add_simple_type(sc: &mut StaticContext, qname: &str, base: &str) {
@@ -84,9 +110,12 @@ impl Default for StaticContext {
             namespaces: HashMap::new(),
             prefixes: HashMap::new(),
             schema_types: HashMap::new(),
+            functions: HashMap::new(),
+            default_function_namespace: Some("http://www.w3.org/2005/xpath-functions".to_string()),
         };
 
         sc.add_prefix_ns("xs", "http://www.w3.org/2001/XMLSchema");
+        sc.add_prefix_ns("fn", "http://www.w3.org/2005/xpath-functions");
         add_complex_type(&mut sc, "xs:anyType");
         add_simple_type(&mut sc, "xs:anySimpleType", "xs:anyType");
         add_simple_type(&mut sc, "xs:error", "xs:anySimpleType");
@@ -96,6 +125,7 @@ impl Default for StaticContext {
         add_simple_type(&mut sc, "xs:decimal", "xs:anyAtomicType");
         add_simple_type(&mut sc, "xs:double", "xs:anyAtomicType");
         add_simple_type(&mut sc, "xs:integer", "xs:decimal");
+        crate::xpath_functions_31::register(&mut sc);
         sc
     }
 }

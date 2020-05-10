@@ -1,7 +1,6 @@
 use crate::xdm::{Node, Xdm, XdmResult};
 use owning_ref::OwningHandle;
 use roxmltree::Document;
-use std::cell::{Ref, RefCell};
 
 pub struct Focus<'a> {
     sequence: Xdm<'a>,

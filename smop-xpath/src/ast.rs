@@ -3,7 +3,6 @@ use crate::runtime::CompiledExpr;
 use crate::types::Item;
 use crate::types::{Occurrence, SequenceType};
 use crate::xdm::*;
-use crate::xpath_functions_31::fn_boolean;
 use itertools::Itertools;
 use rust_decimal::Decimal;
 use std::fmt;
@@ -54,69 +53,76 @@ impl Display for Literal {
     }
 }
 impl Expr {
-    pub(crate) fn compile(self, ctx: &StaticContext) -> CompiledExpr {
-        let type_ = self.type_(ctx).unwrap();
+    pub(crate) fn compile(self, ctx: &StaticContext) -> XdmResult<CompiledExpr> {
+        let type_ = self.type_(ctx)?;
         match self {
             Expr::Literal(l) => l.compile(),
             Expr::Sequence(s) => {
-                let compiled_vec: Vec<_> = s.into_iter().map(|x| x.compile(ctx)).collect();
-                CompiledExpr::new(move |c| {
-                    let v: XdmResult<Vec<_>> = compiled_vec.iter().map(|e| e.execute(c)).collect();
-                    v.map(|vecx| {
-                        Xdm::Sequence(
-                            vecx.into_iter()
-                                .flat_map(|x| match x {
-                                    Xdm::Sequence(v) => v,
-                                    _ => vec![x],
-                                })
-                                .collect(),
-                        )
+                let compiled_vec: XdmResult<Vec<_>> =
+                    s.into_iter().map(|x| x.compile(ctx)).collect();
+                compiled_vec.map(|compiled_vec| {
+                    CompiledExpr::new(move |c| {
+                        let v: XdmResult<Vec<_>> =
+                            compiled_vec.iter().map(|e| e.execute(c)).collect();
+                        v.map(|vecx| {
+                            Xdm::Sequence(
+                                vecx.into_iter()
+                                    .flat_map(|x| match x {
+                                        Xdm::Sequence(v) => v,
+                                        _ => vec![x],
+                                    })
+                                    .collect(),
+                            )
+                        })
                     })
                 })
             }
             Expr::IfThenElse(condition_expr, if_expr, else_expr) => {
-                let condition = condition_expr.compile(ctx);
-                let if_branch = if_expr.compile(ctx);
-                let else_branch = else_expr.compile(ctx);
-                CompiledExpr::new(move |c| {
+                let condition = condition_expr.compile(ctx)?;
+                let if_branch = if_expr.compile(ctx)?;
+                let else_branch = else_expr.compile(ctx)?;
+                Ok(CompiledExpr::new(move |c| {
                     if condition.execute(c)?.boolean()? {
                         if_branch.execute(c)
                     } else {
                         else_branch.execute(c)
                     }
-                })
+                }))
             }
-            Expr::ContextItem => CompiledExpr::new(move |c| {
+            Expr::ContextItem => Ok(CompiledExpr::new(move |c| {
                 if c.focus.is_none() {
                     Err(XdmError::xqtm("XPDY0002", "context item is undefined"))
                 } else {
                     todo!("implement context/focus")
                 }
-            }),
+            })),
             Expr::FunctionCall(qname, args) => {
-                let the_function = fn_boolean;
-                let compiled_vec: Vec<_> = args.into_iter().map(|x| x.compile(ctx)).collect();
-                CompiledExpr::new(move |c| {
-                    let v: XdmResult<Vec<Xdm>> =
-                        compiled_vec.iter().map(|e| e.execute(c)).collect();
-                    let v_ok = v?;
-                    the_function(c, v_ok)
+                let code = (ctx.function(&qname, args.len()).unwrap().code)();
+                let compiled_vec: XdmResult<Vec<_>> =
+                    args.into_iter().map(|x| x.compile(ctx)).collect();
+                compiled_vec.map(|compiled_vec| {
+                    CompiledExpr::new(move |c| {
+                        let v: XdmResult<Vec<Xdm>> =
+                            compiled_vec.iter().map(|e| e.execute(c)).collect();
+                        let v_ok = v?;
+                        code.execute(c, v_ok)
+                    })
                 })
             }
             Expr::Or(_) => todo!("implement Or"),
             Expr::And(_) => todo!("implement And"),
             Expr::Arithmetic(l, o, r) => match type_ {
                 SequenceType::EmptySequence => {
-                    CompiledExpr::new(move |_c| Ok(Xdm::Sequence(vec![])))
+                    Ok(CompiledExpr::new(move |_c| Ok(Xdm::Sequence(vec![]))))
                 }
                 SequenceType::Item(i, _) => {
                     if o != ArithmeticOp::Plus {
                         todo!("operations beside plus")
                     }
-                    let l_c = l.compile(ctx);
-                    let r_c = r.compile(ctx);
+                    let l_c = l.compile(ctx)?;
+                    let r_c = r.compile(ctx)?;
                     let type_string = i.to_string();
-                    match type_string.as_ref() {
+                    Ok(match type_string.as_ref() {
                         "xs:integer" => CompiledExpr::new(move |c| {
                             Ok(Xdm::Integer(
                                 l_c.execute(c)?.integer()? + r_c.execute(c)?.integer()?,
@@ -133,7 +139,7 @@ impl Expr {
                             ))
                         }),
                         _ => todo!("compile more Arithmetic cases"),
-                    }
+                    })
                 }
             },
             Expr::InstanceOf(_, _) => todo!("implement instance of"),
@@ -157,10 +163,16 @@ impl Expr {
                 let e_type = e.type_(ctx)?;
                 SequenceType::lub(ctx, &t_type, &e_type)
             }
-            Expr::FunctionCall(_, _) => todo!("implement type_"),
+            Expr::FunctionCall(qname, args) => ctx
+                .function(qname, args.len())
+                .map(|func| func.type_.clone())
+                .ok_or_else(|| {
+                    let msg = format!("No function {}#{} found", qname, args.len());
+                    XdmError::xqtm("err:XPST0017", msg.as_str())
+                }),
             Expr::Or(_) => todo!("implement type_"),
             Expr::And(_) => todo!("implement type_"),
-            Expr::Arithmetic(l, op, r) => {
+            Expr::Arithmetic(l, _op, r) => {
                 let t1 = l.type_(ctx)?;
                 let t2 = r.type_(ctx)?;
                 SequenceType::lub(ctx, &t1, &t2)
@@ -187,13 +199,13 @@ impl Display for Expr {
 }
 
 impl Literal {
-    fn compile(self) -> CompiledExpr {
-        match self {
+    fn compile(self) -> XdmResult<CompiledExpr> {
+        Ok(match self {
             Literal::Integer(i) => CompiledExpr::new(move |_c| Ok(Xdm::Integer(i))),
             Literal::Decimal(d) => CompiledExpr::new(move |_c| Ok(Xdm::Decimal(d))),
             Literal::Double(d) => CompiledExpr::new(move |_c| Ok(Xdm::Double(d))),
             Literal::String(s) => CompiledExpr::new(move |_c| Ok(Xdm::String(s.clone()))),
-        }
+        })
     }
     fn type_(&self, ctx: &StaticContext) -> SequenceType {
         match self {

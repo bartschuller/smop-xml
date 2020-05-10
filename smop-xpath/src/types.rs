@@ -1,6 +1,5 @@
-use crate::xdm::{QName, XdmResult};
+use crate::xdm::XdmResult;
 use crate::StaticContext;
-use itertools::Itertools;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
@@ -79,7 +78,7 @@ impl Display for SequenceType {
 }
 
 impl Item {
-    fn lub(ctx: &StaticContext, i1: &Item, i2: &Item) -> XdmResult<Item> {
+    fn lub(_ctx: &StaticContext, i1: &Item, i2: &Item) -> XdmResult<Item> {
         Ok(match (i1, i2) {
             (Item::Item, _) | (_, Item::Item) => Item::Item,
             (Item::AtomicOrUnion(t1), Item::AtomicOrUnion(t2)) => {

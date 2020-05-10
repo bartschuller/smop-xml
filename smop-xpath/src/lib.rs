@@ -19,15 +19,12 @@ use xdm::Xdm;
 
 pub struct Xpath(CompiledExpr);
 
-impl<'input, 's_ctx> Xpath
-where
-    's_ctx: 'input,
-{
-    pub fn compile(context: &'s_ctx StaticContext, xpath: &'input str) -> XdmResult<Xpath> {
+impl<'input> Xpath {
+    pub fn compile(context: &StaticContext, xpath: &'input str) -> XdmResult<Xpath> {
         let expr = context
             .parse(xpath)
             .map_err(|e| XdmError::xqtm("XPST0003", e.to_string().as_str()))?;
-        Ok(Xpath(expr.compile(context)))
+        expr.compile(context).map(|compiled| Xpath(compiled))
     }
 
     fn evaluate<'context>(
@@ -204,10 +201,17 @@ mod tests {
     #[test]
     fn function1() -> XdmResult<()> {
         let static_context: StaticContext = Default::default();
-        let xpath = Xpath::compile(&static_context, "boolean(1, 2)")?;
+        let xpath = Xpath::compile(&static_context, "boolean(1, 2)");
+        assert!(xpath.is_err());
+        Ok(())
+    }
+    #[test]
+    fn function2() -> XdmResult<()> {
+        let static_context: StaticContext = Default::default();
+        let xpath = Xpath::compile(&static_context, "not(not(boolean('foo')))")?;
         let context: DynamicContext = Default::default();
         let result = xpath.evaluate(&context)?;
-        assert_eq!(result, Xdm::Boolean(false));
+        assert_eq!(result, Xdm::Boolean(true));
         Ok(())
     }
 }
