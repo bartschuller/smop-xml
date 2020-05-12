@@ -191,7 +191,7 @@ mod tests {
         let xdm = Xdm::Node(Node::RoXml(rodoc.root()));
         context.set_context_sequence(xdm, 0);
         //let xpath = Xpath::compile(&static_context, "/root/mychild/@numattr")?;
-        let xpath = Xpath::compile(&static_context, "root(.)/root")?;
+        let xpath = Xpath::compile(&static_context, "child::root")?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(
             result.string(),

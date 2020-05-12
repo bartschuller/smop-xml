@@ -1,5 +1,5 @@
 use num_traits::cast::FromPrimitive;
-use roxmltree::NodeType;
+use roxmltree::{ExpandedName, NodeType};
 use rust_decimal::prelude::{ToPrimitive, Zero};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -16,6 +16,7 @@ pub struct QName {
     pub ns: Option<String>,
     pub prefix: Option<String>,
 }
+
 impl QName {
     /// Note that a prefix is only allowed when a namespace is also provided. The following panics:
     /// ```should_panic
@@ -67,6 +68,15 @@ impl Display for QName {
     }
 }
 
+impl<'input> From<&'input QName> for ExpandedName<'input> {
+    fn from(qname: &'input QName) -> Self {
+        if let Some(ref ns) = qname.ns {
+            (ns.as_str(), qname.name.as_str()).into()
+        } else {
+            qname.name.as_str().into()
+        }
+    }
+}
 pub enum Node<'a> {
     RoXml(roxmltree::Node<'a, 'a>),
 }

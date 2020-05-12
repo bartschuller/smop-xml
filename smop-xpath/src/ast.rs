@@ -19,6 +19,34 @@ pub enum Expr {
     And(Vec<Expr>),
     Arithmetic(Box<Expr>, ArithmeticOp, Box<Expr>),
     InstanceOf(Box<Expr>, SequenceType),
+    Path(Vec<Expr>),
+    Step(Axis, NodeTest, Vec<Expr>),
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum Axis {
+    // forward
+    Child,
+    Descendant,
+    Attribute,
+    Self_,
+    DescendantOrSelf,
+    FollowingSibling,
+    Following,
+    Namespace,
+    // reverse
+    Parent,
+    Ancestor,
+    PrecedingSibling,
+    Preceding,
+    AncestorOrSelf,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum NodeTest {
+    KindTest,
+    // including wildcards by storing "*" in QName parts
+    NameTest(QName),
 }
 
 #[derive(Debug, PartialEq)]
@@ -150,6 +178,40 @@ impl Expr {
                 }
             },
             Expr::InstanceOf(_, _) => todo!("implement instance of"),
+            Expr::Path(_) => todo!("implement Path"),
+            Expr::Step(axis, ref nt, ref _ps) => {
+                let nt = Box::new(nt.clone());
+                Ok(CompiledExpr::new(move |c| {
+                    let ci = c
+                        .focus
+                        .as_ref()
+                        .ok_or(XdmError::xqtm("err:XPDY0002", "context item is undefined"))?;
+                    let ro_node = match &ci.sequence {
+                        Xdm::Node(Node::RoXml(n)) => Ok(n),
+                        _ => Err(XdmError::xqtm("", "didn't get a roxml node")),
+                    }?;
+                    match (axis, &*nt) {
+                        (Axis::Child, NodeTest::NameTest(ref qn)) => {
+                            let mut children: Vec<_> = ro_node
+                                .children()
+                                .filter_map(|c| {
+                                    if c.is_element() && c.has_tag_name(qn) {
+                                        Some(Xdm::Node(Node::RoXml(c)))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+                            if children.len() == 1 {
+                                Ok(children.remove(0))
+                            } else {
+                                Ok(Xdm::Sequence(children))
+                            }
+                        }
+                        _ => unimplemented!(),
+                    }
+                }))
+            }
         }
     }
     pub(crate) fn type_(&self, ctx: &StaticContext) -> XdmResult<SequenceType> {
@@ -185,10 +247,32 @@ impl Expr {
                 SequenceType::lub(ctx, &t1, &t2)
             }
             Expr::InstanceOf(_, _) => todo!("implement type_"),
+            Expr::Path(_) => todo!("implement Path type_"),
+            Expr::Step(a, _nt, _ps) => a.type_(ctx),
         }
     }
 }
 
+impl Axis {
+    pub(crate) fn type_(&self, ctx: &StaticContext) -> XdmResult<SequenceType> {
+        // match self {
+        //     Axis::Child => {},
+        //     Axis::Descendant => {},
+        //     Axis::Attribute => {},
+        //     Axis::Self_ => {},
+        //     Axis::DescendantOrSelf => {},
+        //     Axis::FollowingSibling => {},
+        //     Axis::Following => {},
+        //     Axis::Namespace => {},
+        //     Axis::Parent => {},
+        //     Axis::Ancestor => {},
+        //     Axis::PrecedingSibling => {},
+        //     Axis::Preceding => {},
+        //     Axis::AncestorOrSelf => {},
+        // }
+        Ok(SequenceType::EmptySequence)
+    }
+}
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -201,6 +285,8 @@ impl Display for Expr {
             Expr::And(v) => write!(f, "{}", v.iter().format(" and ")),
             Expr::Arithmetic(e1, o, e2) => write!(f, "{} {} {}", e1, o, e2),
             Expr::InstanceOf(e, t) => write!(f, "{} instance of {}", e, t),
+            Expr::Path(v) => write!(f, "{}", v.iter().format("/")),
+            Expr::Step(_, _, _) => todo!("implement Display for Step"),
         }
     }
 }

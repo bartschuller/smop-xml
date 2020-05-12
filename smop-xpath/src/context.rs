@@ -12,6 +12,7 @@ pub struct StaticContext {
     schema_types: HashMap<QName, Rc<SchemaType>>,
     functions: HashMap<FunctionKey, Function>,
     default_function_namespace: Option<String>,
+    default_element_namespace: Option<String>,
 }
 
 impl StaticContext {
@@ -39,6 +40,11 @@ impl StaticContext {
                 Some(prefix.as_ref().to_string()),
             )
         })
+    }
+    pub(crate) fn qname_for_element(&self, qname: &mut QName) {
+        if qname.ns.is_none() {
+            qname.ns = self.default_element_namespace.clone();
+        }
     }
     fn add_schema_type(&mut self, t: Rc<SchemaType>) {
         self.schema_types.insert(
@@ -112,6 +118,7 @@ impl Default for StaticContext {
             schema_types: HashMap::new(),
             functions: HashMap::new(),
             default_function_namespace: Some("http://www.w3.org/2005/xpath-functions".to_string()),
+            default_element_namespace: None,
         };
 
         sc.add_prefix_ns("xs", "http://www.w3.org/2001/XMLSchema");

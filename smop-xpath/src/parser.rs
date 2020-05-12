@@ -1,4 +1,4 @@
-use crate::ast::{ArithmeticOp, Expr, Literal};
+use crate::ast::{ArithmeticOp, Axis, Expr, Literal, NodeTest};
 use crate::context::StaticContext;
 use crate::types::{Item, Occurrence, SequenceType};
 use crate::xdm::{QName, XdmError};
@@ -197,18 +197,50 @@ impl XpathParser {
     }
     fn AxisStep(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
-            [ReverseStep(r), PredicateList(p)] => todo!("handle AxisStep"), // FIXME
-            [ForwardStep(f), PredicateList(p)] => todo!("handle AxisStep"), // FIXME
+            [ReverseStep(s), PredicateList(p)] => Expr::Step(s.0, s.1, p),
+            [ForwardStep(s), PredicateList(p)] => Expr::Step(s.0, s.1, p),
         ))
     }
-    fn ReverseStep(_input: Node) -> Result<()> {
-        todo!("handle ReverseStep")
+    fn ReverseStep(input: Node) -> Result<(Axis, NodeTest)> {
+        Ok(match_nodes!(input.into_children();
+            [ReverseAxis(a), NodeTest(t)] => (a, t),
+        ))
     }
-    fn ForwardStep(_input: Node) -> Result<()> {
-        todo!("handle ForwardStep")
+    fn ForwardStep(input: Node) -> Result<(Axis, NodeTest)> {
+        Ok(match_nodes!(input.into_children();
+            [ForwardAxis(a), NodeTest(t)] => (a, t),
+        ))
     }
-    fn PredicateList(_input: Node) -> Result<()> {
-        todo!("handle PredicateList")
+    fn ForwardAxis(input: Node) -> Result<Axis> {
+        Ok(match input.as_str() {
+            "child" => Axis::Child,
+            _ => unreachable!(),
+        })
+    }
+    fn ReverseAxis(input: Node) -> Result<Axis> {
+        Ok(match input.as_str() {
+            "parent" => Axis::Parent,
+            _ => unreachable!(),
+        })
+    }
+    fn NodeTest(input: Node) -> Result<NodeTest> {
+        Ok(match_nodes!(input.into_children();
+            [NameTest(qname)] => NodeTest::NameTest(qname),
+        ))
+    }
+    fn NameTest(input: Node) -> Result<QName> {
+        let sc = input.user_data().clone();
+        Ok(match_nodes!(input.into_children();
+            [EQName(mut qname)] => {
+                sc.qname_for_element(&mut qname);
+                qname
+            }
+        ))
+    }
+    fn PredicateList(input: Node) -> Result<Vec<Expr>> {
+        Ok(match_nodes!(input.into_children();
+            [Expr(expr)..] => expr.collect(),
+        ))
     }
     fn PostfixExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();

@@ -65,20 +65,14 @@ StepExpr = { PostfixExpr | AxisStep }
 // 39
 AxisStep = { (ReverseStep | ForwardStep) ~ PredicateList }
 // 40
-ForwardStep = { (ForwardAxis ~ NodeTest) | AbbrevForwardStep }
+ForwardStep = { (ForwardAxis ~ ColonColon ~ NodeTest) | AbbrevForwardStep }
 // 41
-ForwardAxis = { ("child" ~ "::")
-              | ("descendant" ~ "::")
-              | ("attribute" ~ "::")
-              | ("self" ~ "::")
-              | ("descendant-or-self" ~ "::")
-              | ("following-sibling" ~ "::")
-              | ("following" ~ "::")
-              | ("namespace" ~ "::") }
+ForwardAxis = { "child" | "descendant" | "attribute" | "self" | "descendant-or-self" | "following-sibling" | "following" | "namespace" }
+ColonColon = _{ "::" }
 // 42
 AbbrevForwardStep = { "@"? ~ NodeTest }
 // 43
-ReverseStep = { (ReverseAxis ~ NodeTest) | AbbrevReverseStep }
+ReverseStep = { (ReverseAxis ~ ColonColon ~ NodeTest) | AbbrevReverseStep }
 // 44
 ReverseAxis = { ("parent" ~ "::")
               | ("ancestor" ~ "::")
@@ -92,7 +86,7 @@ NodeTest = { KindTest | NameTest }
 // 47
 NameTest = { EQName | Wildcard }
 // 48
-Wildcard = { "*"
+Wildcard = ${ "*"
            | (NCName ~ ":*")
            | ("*:" ~ NCName)
            | (BracedURILiteral ~ "*") }
