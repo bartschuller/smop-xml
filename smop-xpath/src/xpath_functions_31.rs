@@ -62,23 +62,11 @@ pub(crate) fn register(ctx: &mut StaticContext) {
 }
 
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, mut args| loop {
-        return if let Some(xdm) = args.first() {
-            xdm.boolean().map(Xdm::Boolean)
-        } else {
-            Ok(Xdm::Boolean(false))
-        };
-    })
+    CompiledFunction::new(|_ctx, mut args| args.first().unwrap().boolean().map(Xdm::Boolean))
 }
 pub(crate) fn fn_not_1() -> CompiledFunction {
     let boolean = fn_boolean_1();
-    CompiledFunction::new(|ctx, args| {
-        return if let Some(xdm) = args.first() {
-            xdm.boolean().map(|b| Xdm::Boolean(!b))
-        } else {
-            Ok(Xdm::Boolean(true))
-        };
-    })
+    CompiledFunction::new(|ctx, args| args.first().unwrap().boolean().map(|b| Xdm::Boolean(!b)))
 }
 pub(crate) fn fn_true_0() -> CompiledFunction {
     CompiledFunction::new(|_ctx, _args| Ok(Xdm::Boolean(true)))
@@ -105,9 +93,6 @@ mod tests {
     #[test]
     fn fn_boolean1() -> XdmResult<()> {
         let ctx: DynamicContext = Default::default();
-        let args = vec![];
-        let result = fn_boolean_1().execute(&ctx, args);
-        assert_eq!(result, Ok(Xdm::Boolean(false)));
         let args = vec![Xdm::Integer(0)];
         let result = fn_boolean_1().execute(&ctx, args);
         assert_eq!(result, Ok(Xdm::Boolean(false)));
@@ -125,9 +110,6 @@ mod tests {
     #[test]
     fn fn_not1() -> XdmResult<()> {
         let ctx: DynamicContext = Default::default();
-        let args = vec![];
-        let result = fn_not_1().execute(&ctx, args);
-        assert_eq!(result, Ok(Xdm::Boolean(true)));
         let args = vec![Xdm::Integer(0)];
         let result = fn_not_1().execute(&ctx, args);
         assert_eq!(result, Ok(Xdm::Boolean(true)));
