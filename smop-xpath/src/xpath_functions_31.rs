@@ -1,7 +1,7 @@
 use crate::functions::{CompiledFunction, Function};
 use crate::types::Item;
 use crate::types::{Occurrence, SequenceType};
-use crate::xdm::{Node, QName, Xdm, XdmError};
+use crate::xdm::{NodeSeq, QName, Xdm, XdmError};
 use crate::StaticContext;
 use num_traits::identities::Zero;
 
@@ -64,20 +64,7 @@ pub(crate) fn register(ctx: &mut StaticContext) {
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
     CompiledFunction::new(|_ctx, mut args| loop {
         return if let Some(xdm) = args.first() {
-            match xdm {
-                Xdm::Node(_) => Ok(Xdm::Boolean(true)),
-                _ if args.len() > 1 => Err(XdmError::xqtm("err:FORG0006", "Invalid argument type")),
-                Xdm::Boolean(b) => Ok(Xdm::Boolean(*b)),
-                Xdm::String(s) => Ok(Xdm::Boolean(!s.is_empty())),
-                Xdm::Decimal(d) => Ok(Xdm::Boolean(!d.is_zero())),
-                Xdm::Integer(i) => Ok(Xdm::Boolean(!i.is_zero())),
-                Xdm::Double(d) => Ok(Xdm::Boolean(!(d.is_nan() || d.is_zero()))),
-                Xdm::Sequence(v) => {
-                    args = v.to_vec();
-                    continue;
-                }
-                _ => Err(XdmError::xqtm("err:FORG0006", "Invalid argument type")),
-            }
+            xdm.boolean().map(Xdm::Boolean)
         } else {
             Ok(Xdm::Boolean(false))
         };
@@ -85,11 +72,12 @@ pub(crate) fn fn_boolean_1() -> CompiledFunction {
 }
 pub(crate) fn fn_not_1() -> CompiledFunction {
     let boolean = fn_boolean_1();
-    CompiledFunction::new(move |ctx, args| {
-        Ok(match boolean.execute(ctx, args)? {
-            Xdm::Boolean(b) => Xdm::Boolean(!b),
-            _ => unreachable!(),
-        })
+    CompiledFunction::new(|ctx, args| {
+        return if let Some(xdm) = args.first() {
+            xdm.boolean().map(|b| Xdm::Boolean(!b))
+        } else {
+            Ok(Xdm::Boolean(true))
+        };
     })
 }
 pub(crate) fn fn_true_0() -> CompiledFunction {
@@ -100,8 +88,8 @@ pub(crate) fn fn_false_0() -> CompiledFunction {
 }
 pub(crate) fn fn_root_1() -> CompiledFunction {
     CompiledFunction::new(|ctx, args| {
-        if let Some(Xdm::Node(Node::RoXml(oh))) = args.first() {
-            Ok(Xdm::Node(Node::RoXml(oh.document().root())))
+        if let Some(Xdm::NodeSeq(NodeSeq::RoXml(oh))) = args.first() {
+            Ok(Xdm::NodeSeq(NodeSeq::RoXml(oh.document().root())))
         } else {
             unreachable!()
         }
@@ -112,7 +100,7 @@ pub(crate) fn fn_root_1() -> CompiledFunction {
 mod tests {
     use crate::runtime::DynamicContext;
     use crate::xdm::{Xdm, XdmResult};
-    use crate::xpath_functions_31::fn_boolean_1;
+    use crate::xpath_functions_31::{fn_boolean_1, fn_not_1};
 
     #[test]
     fn fn_boolean1() -> XdmResult<()> {
@@ -120,9 +108,6 @@ mod tests {
         let args = vec![];
         let result = fn_boolean_1().execute(&ctx, args);
         assert_eq!(result, Ok(Xdm::Boolean(false)));
-        let args = vec![Xdm::Boolean(true), Xdm::Boolean(false)];
-        let result = fn_boolean_1().execute(&ctx, args);
-        assert!(result.is_err());
         let args = vec![Xdm::Integer(0)];
         let result = fn_boolean_1().execute(&ctx, args);
         assert_eq!(result, Ok(Xdm::Boolean(false)));
@@ -135,6 +120,26 @@ mod tests {
         let args = vec![Xdm::String("0".to_string())];
         let result = fn_boolean_1().execute(&ctx, args);
         assert_eq!(result, Ok(Xdm::Boolean(true)));
+        Ok(())
+    }
+    #[test]
+    fn fn_not1() -> XdmResult<()> {
+        let ctx: DynamicContext = Default::default();
+        let args = vec![];
+        let result = fn_not_1().execute(&ctx, args);
+        assert_eq!(result, Ok(Xdm::Boolean(true)));
+        let args = vec![Xdm::Integer(0)];
+        let result = fn_not_1().execute(&ctx, args);
+        assert_eq!(result, Ok(Xdm::Boolean(true)));
+        let args = vec![Xdm::Double(0.003)];
+        let result = fn_not_1().execute(&ctx, args);
+        assert_eq!(result, Ok(Xdm::Boolean(false)));
+        let args = vec![Xdm::String("".to_string())];
+        let result = fn_not_1().execute(&ctx, args);
+        assert_eq!(result, Ok(Xdm::Boolean(true)));
+        let args = vec![Xdm::String("0".to_string())];
+        let result = fn_not_1().execute(&ctx, args);
+        assert_eq!(result, Ok(Xdm::Boolean(false)));
         Ok(())
     }
 }

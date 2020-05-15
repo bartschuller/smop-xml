@@ -17,28 +17,28 @@ pub struct Function {
 
 pub struct CompiledFunction(
     Box<
-        dyn for<'context> Fn(
+        dyn for<'a, 'input, 'context> Fn(
             &'context DynamicContext,
-            Vec<Xdm<'context>>,
-        ) -> XdmResult<Xdm<'context>>,
+            Vec<Xdm<'a, 'input>>,
+        ) -> XdmResult<Xdm<'a, 'input>>,
     >,
 );
 
-impl<'a> CompiledFunction {
+impl CompiledFunction {
     pub fn new(
         closure: impl 'static
-            + for<'context> Fn(
+            + for<'a, 'input, 'context> Fn(
                 &'context DynamicContext,
-                Vec<Xdm<'context>>,
-            ) -> XdmResult<Xdm<'context>>,
+                Vec<Xdm<'a, 'input>>,
+            ) -> XdmResult<Xdm<'a, 'input>>,
     ) -> Self {
         CompiledFunction(Box::new(closure))
     }
-    pub fn execute<'context>(
+    pub fn execute<'a, 'input: 'a, 'context>(
         &self,
-        context: &'context DynamicContext<'context>,
-        args: Vec<Xdm<'context>>,
-    ) -> XdmResult<Xdm<'context>> {
+        context: &'context DynamicContext<'a, 'input>,
+        args: Vec<Xdm<'a, 'input>>,
+    ) -> XdmResult<Xdm<'a, 'input>> {
         self.0(context, args)
     }
 }

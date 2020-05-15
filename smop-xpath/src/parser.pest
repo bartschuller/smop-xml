@@ -57,7 +57,8 @@ PathExpr = { (InitialSlash ~ RelativePathExpr?) | (InitialSlashSlash ~ RelativeP
 InitialSlash = { "/" }
 InitialSlashSlash = { "//" }
 // 37
-RelativePathExpr = { StepExpr ~ ((Slash | SlashSlash) ~ StepExpr)* }
+RelativePathExpr = { StepExpr ~ SlashStep* }
+SlashStep = { (Slash | SlashSlash) ~ StepExpr }
 Slash = { "/" }
 SlashSlash = { "//" }
 // 38

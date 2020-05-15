@@ -178,7 +178,7 @@ impl Expr {
                 }
             },
             Expr::InstanceOf(_, _) => todo!("implement instance of"),
-            Expr::Path(_) => todo!("implement Path"),
+            Expr::Path(_v) => todo!("finish Path"),
             Expr::Step(axis, ref nt, ref _ps) => {
                 let nt = Box::new(nt.clone());
                 Ok(CompiledExpr::new(move |c| {
@@ -187,7 +187,7 @@ impl Expr {
                         .as_ref()
                         .ok_or(XdmError::xqtm("err:XPDY0002", "context item is undefined"))?;
                     let ro_node = match &ci.sequence {
-                        Xdm::Node(Node::RoXml(n)) => Ok(n),
+                        Xdm::NodeSeq(NodeSeq::RoXml(n)) => Ok(n),
                         _ => Err(XdmError::xqtm("", "didn't get a roxml node")),
                     }?;
                     match (axis, &*nt) {
@@ -196,7 +196,7 @@ impl Expr {
                                 .children()
                                 .filter_map(|c| {
                                     if c.is_element() && c.has_tag_name(qn) {
-                                        Some(Xdm::Node(Node::RoXml(c)))
+                                        Some(Xdm::NodeSeq(NodeSeq::RoXml(c)))
                                     } else {
                                         None
                                     }
@@ -247,7 +247,7 @@ impl Expr {
                 SequenceType::lub(ctx, &t1, &t2)
             }
             Expr::InstanceOf(_, _) => todo!("implement type_"),
-            Expr::Path(_) => todo!("implement Path type_"),
+            Expr::Path(v) => v.last().unwrap().type_(ctx),
             Expr::Step(a, _nt, _ps) => a.type_(ctx),
         }
     }

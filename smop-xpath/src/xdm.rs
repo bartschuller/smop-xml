@@ -1,5 +1,6 @@
+use crate::roxml::AxisIter;
 use num_traits::cast::FromPrimitive;
-use roxmltree::{ExpandedName, NodeType};
+use roxmltree::{ExpandedName, Node, NodeType};
 use rust_decimal::prelude::{ToPrimitive, Zero};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -77,59 +78,67 @@ impl<'input> From<&'input QName> for ExpandedName<'input> {
         }
     }
 }
-pub enum Node<'a> {
-    RoXml(roxmltree::Node<'a, 'a>),
+pub enum NodeSeq<'a, 'input: 'a> {
+    RoXml(Node<'a, 'input>),
+    RoXmlIter(AxisIter<'a, 'input>),
 }
-impl Debug for Node<'_> {
+impl<'a, 'input: 'a> NodeSeq<'a, 'input> {}
+impl Debug for NodeSeq<'_, '_> {
     fn fmt(&self, _f: &mut Formatter<'_>) -> fmt::Result {
         unimplemented!()
     }
 }
-impl Clone for Node<'_> {
+impl Clone for NodeSeq<'_, '_> {
     fn clone(&self) -> Self {
         match self {
-            Node::RoXml(ro) => Node::RoXml(ro.clone()),
+            NodeSeq::RoXml(ro) => NodeSeq::RoXml(ro.clone()),
+            NodeSeq::RoXmlIter(iter) => NodeSeq::RoXmlIter(iter.clone()),
         }
     }
 }
-impl PartialEq for Node<'_> {
+impl PartialEq for NodeSeq<'_, '_> {
     fn eq(&self, _other: &Self) -> bool {
         unimplemented!()
     }
 }
-impl Display for Node<'_> {
+impl Display for NodeSeq<'_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Node::RoXml(n) => {
-                fn string_value(node: &roxmltree::Node, f: &mut Formatter<'_>) -> fmt::Result {
-                    match node.node_type() {
-                        NodeType::Root | NodeType::Element => {
-                            for ref c in node.children() {
-                                string_value(c, f)?
-                            }
-                            Ok(())
-                        }
-                        NodeType::PI => Ok(()),
-                        NodeType::Comment => Ok(()),
-                        NodeType::Text => write!(f, "{}", node.text().unwrap()),
+        fn ro_string_value(node: &roxmltree::Node, f: &mut Formatter<'_>) -> fmt::Result {
+            match node.node_type() {
+                NodeType::Root | NodeType::Element => {
+                    for ref c in node.children() {
+                        ro_string_value(c, f)?;
                     }
+                    Ok(())
                 }
-                string_value(n, f)
+                NodeType::PI => Ok(()),
+                NodeType::Comment => Ok(()),
+                NodeType::Text => write!(f, "{}", node.text().unwrap()),
+            }
+        }
+
+        match self {
+            NodeSeq::RoXml(n) => ro_string_value(n, f),
+            NodeSeq::RoXmlIter(iter) => {
+                for n in iter.clone() {
+                    ro_string_value(&n, f)?;
+                }
+                Ok(())
             }
         }
     }
 }
 #[derive(Debug, Clone, PartialEq)]
-pub enum Xdm<'a> {
+pub enum Xdm<'a, 'input> {
     String(String),
     Boolean(bool),
     Decimal(Decimal),
     Integer(i64),
     Double(f64),
-    Node(Node<'a>),
-    Array(Vec<Xdm<'a>>),
-    Map(HashMap<Xdm<'a>, Xdm<'a>>),
-    Sequence(Vec<Xdm<'a>>),
+    NodeSeq(NodeSeq<'a, 'input>),
+    Array(Vec<Xdm<'a, 'input>>),
+    Map(HashMap<Xdm<'a, 'input>, Xdm<'a, 'input>>),
+    Sequence(Vec<Xdm<'a, 'input>>),
 }
 
 pub type XdmResult<T> = Result<T, XdmError>;
@@ -166,7 +175,7 @@ impl Display for XdmError {
         write!(f, "{}: {}", self.code, self.message)
     }
 }
-impl Xdm<'_> {
+impl Xdm<'_, '_> {
     pub fn boolean(&self) -> XdmResult<bool> {
         match self {
             Xdm::String(s) => Ok(s.len() > 0),
@@ -174,7 +183,7 @@ impl Xdm<'_> {
             Xdm::Decimal(d) => Ok(!d.is_zero()),
             Xdm::Integer(i) => Ok(*i != 0_i64),
             Xdm::Double(d) => Ok(!(d.is_nan() || d.is_zero())),
-            Xdm::Node(_) => Ok(true),
+            Xdm::NodeSeq(_) => Ok(true),
             Xdm::Array(_) => Err(XdmError::xqtm("FORG0006", "boolean value of array")),
             Xdm::Map(_) => Err(XdmError::xqtm("FORG0006", "boolean value of map")),
             Xdm::Sequence(v) => {
@@ -182,7 +191,7 @@ impl Xdm<'_> {
                     Ok(false)
                 } else {
                     match v.first().unwrap() {
-                        Xdm::Node(_) => Ok(true),
+                        Xdm::NodeSeq(_) => Ok(true),
                         _ => Err(XdmError::xqtm(
                             "FORG0006",
                             "boolean of sequence of non-node",
@@ -233,7 +242,7 @@ impl Xdm<'_> {
             Xdm::Decimal(d) => Ok(d.to_string()),
             Xdm::Integer(i) => Ok(i.to_string()),
             Xdm::Double(d) => Ok(d.to_string()),
-            Xdm::Node(n) => Ok(n.to_string()),
+            Xdm::NodeSeq(n) => Ok(n.to_string()),
             Xdm::Array(_) => Err(XdmError::xqtm(
                 "err:FOTY0014",
                 "can't convert an array to a string",
@@ -256,7 +265,7 @@ impl Xdm<'_> {
     }
 }
 
-impl Hash for Xdm<'_> {
+impl Hash for Xdm<'_, '_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
             Xdm::String(s) => s.hash(state),
@@ -269,11 +278,12 @@ impl Hash for Xdm<'_> {
     }
 }
 
-impl Eq for Xdm<'_> {}
+impl Eq for Xdm<'_, '_> {}
 
 #[cfg(test)]
 mod tests {
-    use crate::xdm::QName;
+    use crate::xdm::{QName, XdmResult};
+    use roxmltree::Document;
 
     #[test]
     fn qname1() {

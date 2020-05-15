@@ -183,11 +183,24 @@ impl XpathParser {
     }
     fn RelativePathExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
-            [StepExpr(e)] => e, // FIXME
+            [StepExpr(e)] => e,
+            [StepExpr(e), SlashStep(v)..] => {
+                let combined: Vec<_> = std::iter::once(e).chain(v).collect();
+                Expr::Path(combined)
+            }
         ))
     }
-    fn Slash(_input: Node) -> Result<Expr> {
-        unimplemented!()
+    fn SlashStep(input: Node) -> Result<Expr> {
+        Ok(match_nodes!(input.into_children();
+            [Slash(_), StepExpr(e)] => e,
+            [SlashSlash(_), StepExpr(e)] => e, // FIXME
+        ))
+    }
+    fn Slash(_input: Node) -> Result<bool> {
+        Ok(false)
+    }
+    fn SlashSlash(_input: Node) -> Result<bool> {
+        Ok(true)
     }
     fn StepExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();

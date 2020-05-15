@@ -8,6 +8,7 @@ pub mod context;
 mod debugparser;
 mod functions;
 pub mod parser;
+mod roxml;
 mod runtime;
 mod types;
 pub mod xdm;
@@ -19,18 +20,18 @@ use xdm::Xdm;
 
 pub struct Xpath(CompiledExpr);
 
-impl<'input> Xpath {
-    pub fn compile(context: &StaticContext, xpath: &'input str) -> XdmResult<Xpath> {
+impl Xpath {
+    pub fn compile(context: &StaticContext, xpath: &str) -> XdmResult<Xpath> {
         let expr = context
             .parse(xpath)
             .map_err(|e| XdmError::xqtm("XPST0003", e.to_string().as_str()))?;
         expr.compile(context).map(|compiled| Xpath(compiled))
     }
 
-    fn evaluate<'context>(
+    fn evaluate<'a, 'input, 'context>(
         &self,
-        context: &'context DynamicContext<'context>,
-    ) -> XdmResult<Xdm<'context>> {
+        context: &'context DynamicContext<'a, 'input>,
+    ) -> XdmResult<Xdm<'a, 'input>> {
         self.0.execute(context)
     }
 }
@@ -38,7 +39,7 @@ impl<'input> Xpath {
 #[cfg(test)]
 mod tests {
     use crate::runtime::DynamicContext;
-    use crate::xdm::{Node, Xdm, XdmResult};
+    use crate::xdm::{NodeSeq, Xdm, XdmResult};
     use crate::{StaticContext, Xpath};
     use roxmltree::Document;
     use rust_decimal::Decimal;
@@ -188,10 +189,10 @@ mod tests {
             <mychild>bar bar</mychild>
         </root>"##;
         let rodoc = Document::parse(doc)?;
-        let xdm = Xdm::Node(Node::RoXml(rodoc.root()));
+        let xdm = Xdm::NodeSeq(NodeSeq::RoXml(rodoc.root()));
         context.set_context_sequence(xdm, 0);
         //let xpath = Xpath::compile(&static_context, "/root/mychild/@numattr")?;
-        let xpath = Xpath::compile(&static_context, "child::root")?;
+        let xpath = Xpath::compile(&static_context, "child::root/child::mychild")?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(
             result.string(),
