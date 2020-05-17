@@ -19,7 +19,7 @@ pub enum Expr {
     And(Vec<Expr>),
     Arithmetic(Box<Expr>, ArithmeticOp, Box<Expr>),
     InstanceOf(Box<Expr>, SequenceType),
-    Path(Vec<Expr>),
+    Path(Box<Expr>, Box<Expr>),
     Step(Axis, NodeTest, Vec<Expr>),
 }
 
@@ -178,7 +178,37 @@ impl Expr {
                 }
             },
             Expr::InstanceOf(_, _) => todo!("implement instance of"),
-            Expr::Path(_v) => todo!("finish Path"),
+            Expr::Path(s1, s2) => {
+                let e1 = s1.compile(ctx)?;
+                let e2 = s2.compile(ctx)?;
+                Ok(CompiledExpr::new(move |c| {
+                    let x1 = e1.execute(c)?;
+                    match x1 {
+                        Xdm::NodeSeq(NodeSeq::RoXmlIter(mut ai)) => {
+                            let mut result: Vec<Xdm> = Vec::new();
+                            while let Some(ronode) = ai.next() {
+                                let x = Xdm::NodeSeq(NodeSeq::RoXml(ronode));
+                                let context = c.clone_with_focus(x, ai.position);
+                                let res = e2.execute(&context)?;
+                                result.push(res);
+                            }
+                            if result.len() == 1 {
+                                Ok(result.remove(0))
+                            } else {
+                                Ok(Xdm::Sequence(result))
+                            }
+                        }
+                        Xdm::NodeSeq(NodeSeq::RoXml(ronode)) => {
+                            let context = c.clone_with_focus(x1, 0);
+                            e2.execute(&context)
+                        }
+                        _ => Err(XdmError::xqtm(
+                            "internal",
+                            format!("Not a node seq: {:?}", x1).as_ref(),
+                        )),
+                    }
+                }))
+            }
             Expr::Step(axis, ref nt, ref _ps) => {
                 let nt = Box::new(nt.clone());
                 Ok(CompiledExpr::new(move |c| {
@@ -247,7 +277,7 @@ impl Expr {
                 SequenceType::lub(ctx, &t1, &t2)
             }
             Expr::InstanceOf(_, _) => todo!("implement type_"),
-            Expr::Path(v) => v.last().unwrap().type_(ctx),
+            Expr::Path(e1, e2) => e2.type_(ctx),
             Expr::Step(a, _nt, _ps) => a.type_(ctx),
         }
     }
@@ -273,6 +303,26 @@ impl Axis {
         Ok(SequenceType::EmptySequence)
     }
 }
+impl Display for Axis {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Axis::Child => write!(f, "child"),
+            // Axis::Descendant => {},
+            // Axis::Attribute => {},
+            // Axis::Self_ => {},
+            // Axis::DescendantOrSelf => {},
+            // Axis::FollowingSibling => {},
+            // Axis::Following => {},
+            // Axis::Namespace => {},
+            // Axis::Parent => {},
+            // Axis::Ancestor => {},
+            // Axis::PrecedingSibling => {},
+            // Axis::Preceding => {},
+            // Axis::AncestorOrSelf => {},
+            _ => todo!("Display for Axis"),
+        }
+    }
+}
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -285,12 +335,26 @@ impl Display for Expr {
             Expr::And(v) => write!(f, "{}", v.iter().format(" and ")),
             Expr::Arithmetic(e1, o, e2) => write!(f, "{} {} {}", e1, o, e2),
             Expr::InstanceOf(e, t) => write!(f, "{} instance of {}", e, t),
-            Expr::Path(v) => write!(f, "{}", v.iter().format("/")),
-            Expr::Step(_, _, _) => todo!("implement Display for Step"),
+            Expr::Path(e1, e2) => write!(f, "{}/{}", e1, e2),
+            Expr::Step(a, nt, ps) => {
+                write!(f, "{}::{}", a, nt)?;
+                for p in ps {
+                    write!(f, "[{}]", p)?;
+                }
+                Ok(())
+            }
         }
     }
 }
 
+impl Display for NodeTest {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            NodeTest::KindTest => todo!("Display for NodeTest"),
+            NodeTest::NameTest(qname) => write!(f, "{}", qname),
+        }
+    }
+}
 impl Literal {
     fn compile(self) -> XdmResult<CompiledExpr> {
         Ok(match self {

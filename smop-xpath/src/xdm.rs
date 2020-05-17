@@ -156,10 +156,10 @@ impl XdmError {
             message: "".to_string(),
         }
     }
-    pub fn xqtm(code: &str, msg: &str) -> XdmError {
+    pub fn xqtm<S: Into<String>>(code: S, msg: S) -> XdmError {
         XdmError {
-            code: code.to_string(),
-            message: msg.to_string(),
+            code: code.into(),
+            message: msg.into(),
         }
     }
 }
@@ -279,6 +279,26 @@ impl Hash for Xdm<'_, '_> {
 }
 
 impl Eq for Xdm<'_, '_> {}
+
+impl<'a, 'input: 'a> IntoIterator for Xdm<'a, 'input> {
+    type Item = Xdm<'a, 'input>;
+    type IntoIter = Box<dyn Iterator<Item = Xdm<'a, 'input>> + 'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            Xdm::String(_)
+            | Xdm::Boolean(_)
+            | Xdm::Decimal(_)
+            | Xdm::Integer(_)
+            | Xdm::Double(_) => Box::new(std::iter::once(self)),
+
+            // Xdm::NodeSeq(_) => {}
+            // Xdm::Array(_) => {}
+            // Xdm::Map(_) => {}
+            // Xdm::Sequence(_) => {}
+            _ => todo!("IntoIterator for Xdm"),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

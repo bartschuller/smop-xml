@@ -7,7 +7,7 @@ use std::fmt::{Debug, Formatter};
 pub struct AxisIter<'a, 'input: 'a> {
     node: Option<Node<'a, 'input>>,
     next: fn(&Node<'a, 'input>) -> Option<Node<'a, 'input>>,
-    position: usize,
+    pub(crate) position: usize,
     // can be computed lazily only when needed
     last: Option<usize>,
 }

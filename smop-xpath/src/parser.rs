@@ -185,8 +185,7 @@ impl XpathParser {
         Ok(match_nodes!(input.into_children();
             [StepExpr(e)] => e,
             [StepExpr(e), SlashStep(v)..] => {
-                let combined: Vec<_> = std::iter::once(e).chain(v).collect();
-                Expr::Path(combined)
+                v.into_iter().fold(e, |e1, e2|Expr::Path(Box::new(e1), Box::new(e2)))
             }
         ))
     }
@@ -679,6 +678,13 @@ mod tests {
     fn instance_of1() {
         let context: StaticContext = Default::default();
         let input = ". instance of xs:integer";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn path1() {
+        let context: StaticContext = Default::default();
+        let input = "child::a/child::b/child::c";
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }

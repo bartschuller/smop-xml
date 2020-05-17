@@ -3,10 +3,13 @@ use crate::types::Item;
 use crate::types::{Occurrence, SequenceType};
 use crate::xdm::{NodeSeq, QName, Xdm, XdmError};
 use crate::StaticContext;
+use itertools::Itertools;
 use num_traits::identities::Zero;
 
 pub(crate) fn register(ctx: &mut StaticContext) {
     let xs_boolean = QName::wellknown("xs:boolean");
+    let xs_string = QName::wellknown("xs:string");
+    let xs_any_atomic_type = QName::wellknown("xs:anyAtomicType");
 
     let fn_boolean_1_meta = Function {
         args: vec![SequenceType::Item(Item::Item, Occurrence::ZeroOrMore)],
@@ -59,6 +62,20 @@ pub(crate) fn register(ctx: &mut StaticContext) {
     };
     let qname = ctx.qname("fn", "root").unwrap();
     ctx.add_function(qname, fn_root_1_meta);
+
+    let fn_string_join_1_meta = Function {
+        args: vec![SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_any_atomic_type).unwrap()),
+            Occurrence::ZeroOrMore,
+        )],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_string).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_string_join_1,
+    };
+    let qname = ctx.qname("fn", "string-join").unwrap();
+    ctx.add_function(qname, fn_string_join_1_meta);
 }
 
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
@@ -81,6 +98,22 @@ pub(crate) fn fn_root_1() -> CompiledFunction {
         } else {
             unreachable!()
         }
+    })
+}
+pub(crate) fn fn_string_join_1() -> CompiledFunction {
+    CompiledFunction::new(|ctx, mut args| {
+        let x = args.remove(0);
+        Ok(match x {
+            Xdm::Sequence(v) => {
+                let mut res = String::new();
+                for x in v {
+                    let s = x.string()?;
+                    res.push_str(s.as_str());
+                }
+                Xdm::String(res)
+            }
+            _ => Xdm::String(x.string()?),
+        })
     })
 }
 

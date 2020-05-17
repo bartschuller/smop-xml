@@ -185,19 +185,19 @@ mod tests {
         let static_context: StaticContext = Default::default();
         let mut context: DynamicContext = Default::default();
         let doc = r##"<root>
-            <mychild stringattr="foo" numattr="42"/>
+            <other stringattr="foo" numattr="42">foo</other>
             <mychild>bar bar</mychild>
         </root>"##;
         let rodoc = Document::parse(doc)?;
         let xdm = Xdm::NodeSeq(NodeSeq::RoXml(rodoc.root()));
-        context.set_context_sequence(xdm, 0);
+        let context = context.clone_with_focus(xdm, 0);
         //let xpath = Xpath::compile(&static_context, "/root/mychild/@numattr")?;
-        let xpath = Xpath::compile(&static_context, "child::root/child::mychild")?;
+        let xpath = Xpath::compile(&static_context, "string-join(child::root/child::mychild)")?;
         let result = xpath.evaluate(&context)?;
-        assert_eq!(
-            result.string(),
-            Ok("\n            \n            bar bar\n        ".to_string())
-        );
+        assert_eq!(result.string(), Ok("bar bar".to_string()));
+        // let xpath = Xpath::compile(&static_context, "child::root/child::mychild[1]")?;
+        // let result = xpath.evaluate(&context)?;
+        // assert_eq!(result.string(), Ok("bar bar".to_string()));
         Ok(())
     }
     #[test]

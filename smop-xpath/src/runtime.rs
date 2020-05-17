@@ -11,8 +11,10 @@ pub struct DynamicContext<'a, 'input> {
     pub focus: Option<Focus<'a, 'input>>,
 }
 impl<'a, 'input> DynamicContext<'a, 'input> {
-    pub fn set_context_sequence(&mut self, sequence: Xdm<'a, 'input>, position: usize) {
-        self.focus = Some(Focus { sequence, position })
+    pub fn clone_with_focus(&self, sequence: Xdm<'a, 'input>, position: usize) -> Self {
+        DynamicContext {
+            focus: Some(Focus { sequence, position }),
+        }
     }
 }
 pub struct CompiledExpr(
