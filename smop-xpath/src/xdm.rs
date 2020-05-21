@@ -1,6 +1,6 @@
 use crate::roxml::AxisIter;
 use num_traits::cast::FromPrimitive;
-use roxmltree::{ExpandedName, Node, NodeType};
+use roxmltree::{Attribute, ExpandedName, Node, NodeType};
 use rust_decimal::prelude::{ToPrimitive, Zero};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -81,11 +81,16 @@ impl<'input> From<&'input QName> for ExpandedName<'input> {
 pub enum NodeSeq<'a, 'input: 'a> {
     RoXml(Node<'a, 'input>),
     RoXmlIter(AxisIter<'a, 'input>),
+    RoXmlAttr(&'a Attribute<'input>),
 }
 impl<'a, 'input: 'a> NodeSeq<'a, 'input> {}
 impl Debug for NodeSeq<'_, '_> {
-    fn fmt(&self, _f: &mut Formatter<'_>) -> fmt::Result {
-        unimplemented!()
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            NodeSeq::RoXml(n) => write!(f, "{:?}", n),
+            NodeSeq::RoXmlIter(_) => write!(f, "node iterator"),
+            NodeSeq::RoXmlAttr(a) => write!(f, "{:?}", a),
+        }
     }
 }
 impl Clone for NodeSeq<'_, '_> {
@@ -93,6 +98,7 @@ impl Clone for NodeSeq<'_, '_> {
         match self {
             NodeSeq::RoXml(ro) => NodeSeq::RoXml(ro.clone()),
             NodeSeq::RoXmlIter(iter) => NodeSeq::RoXmlIter(iter.clone()),
+            NodeSeq::RoXmlAttr(a) => NodeSeq::RoXmlAttr(a.clone()),
         }
     }
 }
@@ -125,6 +131,7 @@ impl Display for NodeSeq<'_, '_> {
                 }
                 Ok(())
             }
+            NodeSeq::RoXmlAttr(a) => write!(f, "{}", a.value()),
         }
     }
 }
@@ -156,7 +163,7 @@ impl XdmError {
             message: "".to_string(),
         }
     }
-    pub fn xqtm<S: Into<String>>(code: S, msg: S) -> XdmError {
+    pub fn xqtm<S1: Into<String>, S2: Into<String>>(code: S1, msg: S2) -> XdmError {
         XdmError {
             code: code.into(),
             message: msg.into(),
@@ -176,6 +183,47 @@ impl Display for XdmError {
     }
 }
 impl Xdm<'_, '_> {
+    pub fn flatten(v: Vec<Self>) -> Self {
+        let mut res: Vec<Self> = Vec::new();
+
+        fn add<'a, 'input>(dest: &mut Vec<Xdm<'a, 'input>>, v: Vec<Xdm<'a, 'input>>) {
+            for x in v {
+                match x {
+                    Xdm::Sequence(inner) => add(dest, inner),
+                    _ => dest.push(x),
+                }
+            }
+        }
+
+        add(&mut res, v);
+        if res.len() == 1 {
+            res.remove(0)
+        } else {
+            Xdm::Sequence(res)
+        }
+    }
+    pub fn atomize(self) -> XdmResult<Self> {
+        match self {
+            Xdm::String(_)
+            | Xdm::Boolean(_)
+            | Xdm::Decimal(_)
+            | Xdm::Integer(_)
+            | Xdm::Double(_) => Ok(self),
+            Xdm::NodeSeq(ns) => Ok(Xdm::String(ns.to_string())), // FIXME
+            Xdm::Array(v) => {
+                let res: XdmResult<Vec<_>> = v.into_iter().map(|x| x.atomize()).collect();
+                Ok(Xdm::flatten(res?))
+            }
+            Xdm::Map(_) => Err(XdmError::xqtm(
+                "err:FOTY0013",
+                "The argument to fn:data() contains a map.",
+            )),
+            Xdm::Sequence(v) => {
+                let res: XdmResult<Vec<_>> = v.into_iter().map(|x| x.atomize()).collect();
+                Ok(Xdm::flatten(res?))
+            }
+        }
+    }
     pub fn boolean(&self) -> XdmResult<bool> {
         match self {
             Xdm::String(s) => Ok(s.len() > 0),
@@ -202,13 +250,19 @@ impl Xdm<'_, '_> {
         }
     }
     pub fn integer(&self) -> XdmResult<i64> {
-        match self {
+        match self.clone().atomize()? {
             Xdm::Decimal(d) => Ok(d.to_i64().ok_or(XdmError::xqtm(
                 "FOCA0003",
                 "Input value too large for integer",
             ))?),
-            Xdm::Integer(i) => Ok(*i),
-            Xdm::Double(d) => Ok(*d as i64),
+            Xdm::Integer(i) => Ok(i),
+            Xdm::Double(d) => Ok(d as i64),
+            Xdm::String(s) => s.parse::<i64>().map_err(|e| {
+                XdmError::xqtm(
+                    "err:FORG0001",
+                    format!("Can't cast string '{}' to an integer", s),
+                )
+            }),
             _ => todo!("finish integer conversion"),
         }
     }

@@ -48,10 +48,11 @@ mod tests {
         let d = d.next().unwrap();
         assert_eq!(d.tag_name().name(), "d");
         let es = d.children().enumerate();
-
+        let attrs = d.attributes().iter();
         Ok(())
     }
 
+    #[test]
     fn iterators2() -> XdmResult<()> {
         let doc = Document::parse(r#"<d><e>1</e><e>2</e></d>"#)?;
         let root = doc.root();

@@ -171,13 +171,16 @@ mod tests {
         Ok(())
     }
     #[test]
-    #[ignore]
-    fn context1() -> XdmResult<()> {
+    fn value_compare1() -> XdmResult<()> {
         let static_context: StaticContext = Default::default();
-        let xpath = Xpath::compile(&static_context, ".")?;
+        let input = "'a' ge 'b'";
+        let expr = static_context.parse(input)?;
+        let result = expr.type_(&static_context)?.to_string();
+        assert_eq!(result, "xs:boolean?".to_string());
+        let xpath = Xpath::compile(&static_context, input)?;
         let context: DynamicContext = Default::default();
         let result = xpath.evaluate(&context)?;
-        assert_eq!(result, Xdm::Sequence(vec![]));
+        assert!(!result.boolean()?);
         Ok(())
     }
     #[test]
@@ -187,6 +190,7 @@ mod tests {
         let doc = r##"<root>
             <other stringattr="foo" numattr="42">foo</other>
             <mychild>bar bar</mychild>
+            <other stringattr="baz" numattr="0">baz</other>
         </root>"##;
         let rodoc = Document::parse(doc)?;
         let xdm = Xdm::NodeSeq(NodeSeq::RoXml(rodoc.root()));
@@ -195,9 +199,18 @@ mod tests {
         let xpath = Xpath::compile(&static_context, "string-join(child::root/child::mychild)")?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(result.string(), Ok("bar bar".to_string()));
-        // let xpath = Xpath::compile(&static_context, "child::root/child::mychild[1]")?;
-        // let result = xpath.evaluate(&context)?;
-        // assert_eq!(result.string(), Ok("bar bar".to_string()));
+        let xpath = Xpath::compile(
+            &static_context,
+            "child::root/child::other[attribute::stringattr eq 'foo']",
+        )?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result.string(), Ok("foo".to_string()));
+        let xpath = Xpath::compile(
+            &static_context,
+            "child::root/child::other[attribute::stringattr eq 'foo']/attribute::numattr",
+        )?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result.integer(), Ok(42));
         Ok(())
     }
     #[test]

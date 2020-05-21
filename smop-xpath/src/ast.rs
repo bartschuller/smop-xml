@@ -3,6 +3,7 @@ use crate::runtime::CompiledExpr;
 use crate::types::Item;
 use crate::types::{Occurrence, SequenceType};
 use crate::xdm::*;
+use crate::xpath_functions_31::string_compare;
 use itertools::Itertools;
 use rust_decimal::Decimal;
 use std::fmt;
@@ -21,6 +22,8 @@ pub enum Expr {
     InstanceOf(Box<Expr>, SequenceType),
     Path(Box<Expr>, Box<Expr>),
     Step(Axis, NodeTest, Vec<Expr>),
+    ValueComp(Box<Expr>, ValueComp, Box<Expr>),
+    Predicate(Box<Expr>, Box<Expr>),
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -54,14 +57,6 @@ pub enum ArithmeticOp {
     Plus,
     Minus,
 }
-impl Display for ArithmeticOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            ArithmeticOp::Plus => f.write_str("+"),
-            ArithmeticOp::Minus => f.write_str("-"),
-        }
-    }
-}
 
 #[derive(Debug, PartialEq)]
 pub enum Literal {
@@ -69,6 +64,37 @@ pub enum Literal {
     Decimal(Decimal),
     Double(f64),
     String(String),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ValueComp {
+    EQ,
+    NE,
+    LT,
+    LE,
+    GT,
+    GE,
+}
+impl Display for ValueComp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            ValueComp::EQ => "eq",
+            ValueComp::NE => "ne",
+            ValueComp::LT => "lt",
+            ValueComp::LE => "le",
+            ValueComp::GT => "gt",
+            ValueComp::GE => "ge",
+        };
+        write!(f, "{}", s)
+    }
+}
+impl Display for ArithmeticOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            ArithmeticOp::Plus => f.write_str("+"),
+            ArithmeticOp::Minus => f.write_str("-"),
+        }
+    }
 }
 impl Display for Literal {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -124,7 +150,7 @@ impl Expr {
                             .get(focus.position)
                             .map(|x| x.clone())
                             .ok_or(XdmError::xqtm("XPDY0002", "context item is undefined")),
-                        x if focus.position == 0 => Ok(x.clone()),
+                        x if focus.position == 0 => Ok((*x).clone()),
                         _ => Err(XdmError::xqtm("XPDY0002", "context item is undefined")),
                     }
                 } else {
@@ -204,13 +230,16 @@ impl Expr {
                         }
                         _ => Err(XdmError::xqtm(
                             "internal",
-                            format!("Not a node seq: {:?}", x1).as_ref(),
+                            format!("Not a node seq: {:?}", x1),
                         )),
                     }
                 }))
             }
-            Expr::Step(axis, ref nt, ref _ps) => {
-                let nt = Box::new(nt.clone());
+            Expr::Step(axis, nt, ps) => {
+                let nt = Box::new(nt);
+                let predicates: XdmResult<Vec<_>> =
+                    ps.into_iter().map(|x| x.compile(ctx)).collect();
+                let predicates = predicates?;
                 Ok(CompiledExpr::new(move |c| {
                     let ci = c
                         .focus
@@ -224,9 +253,36 @@ impl Expr {
                         (Axis::Child, NodeTest::NameTest(ref qn)) => {
                             let mut children: Vec<_> = ro_node
                                 .children()
-                                .filter_map(|c| {
-                                    if c.is_element() && c.has_tag_name(qn) {
-                                        Some(Xdm::NodeSeq(NodeSeq::RoXml(c)))
+                                .enumerate()
+                                .filter_map(|(pos, child)| {
+                                    if child.is_element() && child.has_tag_name(qn) {
+                                        let mut node = Xdm::NodeSeq(NodeSeq::RoXml(child));
+                                        let mut include = true;
+                                        let context = c.clone_with_focus(node, pos);
+                                        for predicate in &predicates {
+                                            let pred = predicate.execute(&context).unwrap();
+                                            match pred {
+                                                Xdm::Decimal(_)
+                                                | Xdm::Integer(_)
+                                                | Xdm::Double(_) => {
+                                                    if pred.integer().unwrap() as usize != pos {
+                                                        include = false;
+                                                        break;
+                                                    }
+                                                }
+                                                _ => {
+                                                    if !pred.boolean().unwrap() {
+                                                        include = false;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if include {
+                                            Some(context.focus.unwrap().sequence)
+                                        } else {
+                                            None
+                                        }
                                     } else {
                                         None
                                     }
@@ -238,7 +294,81 @@ impl Expr {
                                 Ok(Xdm::Sequence(children))
                             }
                         }
+                        (Axis::Attribute, NodeTest::NameTest(ref qn)) => {
+                            let mut attrs: Vec<_> = ro_node
+                                .attributes()
+                                .iter()
+                                .filter_map(|a| {
+                                    if a.namespace().map(|s| s.to_string()) == qn.ns
+                                        && a.name() == qn.name
+                                    {
+                                        Some(Xdm::NodeSeq(NodeSeq::RoXmlAttr(a)))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+                            if attrs.len() == 1 {
+                                Ok(attrs.remove(0))
+                            } else {
+                                Ok(Xdm::Sequence(attrs))
+                            }
+                        }
                         _ => unimplemented!(),
+                    }
+                }))
+            }
+            Expr::ValueComp(e1, vc, e2) => {
+                let c1 = e1.compile(ctx)?;
+                let c2 = e2.compile(ctx)?;
+                Ok(CompiledExpr::new(move |c| {
+                    let a1 = c1.execute(c)?.atomize()?;
+                    let a2 = c2.execute(c)?.atomize()?;
+                    match (a1, a2) {
+                        (Xdm::Sequence(v), _) | (_, Xdm::Sequence(v)) if v.is_empty() => {
+                            Ok(Xdm::Sequence(vec![]))
+                        }
+                        (Xdm::Sequence(_), _) | (_, Xdm::Sequence(_)) => Err(XdmError::xqtm(
+                            "err:XPTY0004",
+                            "value comparison argument is a sequence",
+                        )),
+                        (Xdm::String(s1), x2) => Ok(Xdm::Boolean(
+                            vc.comparison_true(string_compare(s1.as_str(), x2.string()?.as_str())),
+                        )),
+                        (x1, Xdm::String(s2)) => Ok(Xdm::Boolean(
+                            vc.comparison_true(string_compare(x1.string()?.as_str(), s2.as_str())),
+                        )),
+                        _ => unimplemented!(),
+                    }
+                }))
+            }
+            Expr::Predicate(e, p) => {
+                let ce = e.compile(ctx)?;
+                let cp = p.compile(ctx)?;
+                Ok(CompiledExpr::new(move |c| {
+                    let seq = ce.execute(c)?;
+                    let mut iter = seq.into_iter().enumerate();
+                    let mut result: Vec<Xdm> = Vec::new();
+                    while let Some((pos, x)) = iter.next() {
+                        let context = c.clone_with_focus(x, pos);
+                        let pred = cp.execute(&context)?;
+                        match pred {
+                            Xdm::Decimal(_) | Xdm::Integer(_) | Xdm::Double(_) => {
+                                if pred.integer()? as usize == pos {
+                                    result.push(context.focus.unwrap().sequence);
+                                }
+                            }
+                            _ => {
+                                if pred.boolean()? {
+                                    result.push(context.focus.unwrap().sequence);
+                                }
+                            }
+                        }
+                    }
+                    if result.len() == 1 {
+                        Ok(result.remove(0))
+                    } else {
+                        Ok(Xdm::Sequence(result))
                     }
                 }))
             }
@@ -279,6 +409,11 @@ impl Expr {
             Expr::InstanceOf(_, _) => todo!("implement type_"),
             Expr::Path(e1, e2) => e2.type_(ctx),
             Expr::Step(a, _nt, _ps) => a.type_(ctx),
+            Expr::ValueComp(_, _, _) => Ok(SequenceType::Item(
+                Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:boolean"))?),
+                Occurrence::Optional,
+            )),
+            Expr::Predicate(e, _) => e.type_(ctx),
         }
     }
 }
@@ -343,6 +478,8 @@ impl Display for Expr {
                 }
                 Ok(())
             }
+            Expr::ValueComp(e1, vc, e2) => write!(f, "{} {} {}", e1, vc, e2),
+            Expr::Predicate(e, p) => write!(f, "{}[{}]", e, p),
         }
     }
 }
@@ -382,6 +519,24 @@ impl Literal {
                 Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:string")).unwrap()),
                 Occurrence::One,
             ),
+        }
+    }
+}
+impl ValueComp {
+    fn comparison_true(&self, c: i8) -> bool {
+        match (self, c) {
+            (ValueComp::EQ, 0) => true,
+            (ValueComp::EQ, _) => false,
+            (ValueComp::NE, 0) => false,
+            (ValueComp::NE, _) => true,
+            (ValueComp::LT, -1) => true,
+            (ValueComp::LT, _) => false,
+            (ValueComp::LE, 1) => false,
+            (ValueComp::LE, _) => true,
+            (ValueComp::GT, 1) => true,
+            (ValueComp::GT, _) => false,
+            (ValueComp::GE, -1) => false,
+            (ValueComp::GE, _) => true,
         }
     }
 }

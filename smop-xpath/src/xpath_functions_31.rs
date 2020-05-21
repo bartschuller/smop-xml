@@ -5,6 +5,7 @@ use crate::xdm::{NodeSeq, QName, Xdm, XdmError};
 use crate::StaticContext;
 use itertools::Itertools;
 use num_traits::identities::Zero;
+use std::cmp::Ordering;
 
 pub(crate) fn register(ctx: &mut StaticContext) {
     let xs_boolean = QName::wellknown("xs:boolean");
@@ -115,6 +116,10 @@ pub(crate) fn fn_string_join_1() -> CompiledFunction {
             _ => Xdm::String(x.string()?),
         })
     })
+}
+
+pub(crate) fn string_compare(s1: &str, s2: &str) -> i8 {
+    s1.cmp(s2) as i8
 }
 
 #[cfg(test)]

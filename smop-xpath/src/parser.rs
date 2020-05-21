@@ -1,4 +1,4 @@
-use crate::ast::{ArithmeticOp, Axis, Expr, Literal, NodeTest};
+use crate::ast::{ArithmeticOp, Axis, Expr, Literal, NodeTest, ValueComp};
 use crate::context::StaticContext;
 use crate::types::{Item, Occurrence, SequenceType};
 use crate::xdm::{QName, XdmError};
@@ -85,8 +85,24 @@ impl XpathParser {
     fn ComparisonExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
             [StringConcatExpr(e)] => e, // FIXME
+            [StringConcatExpr(e1), ValueComp(c), StringConcatExpr(e2)] => {
+                Expr::ValueComp(Box::new(e1), c, Box::new(e2))
+            }
+            //[StringConcatExpr(e1), GeneralComp(c), StringConcatExpr(e2)] => , // FIXME
         ))
     }
+    fn ValueComp(input: Node) -> Result<ValueComp> {
+        Ok(match input.as_str() {
+            "eq" => ValueComp::EQ,
+            "ne" => ValueComp::NE,
+            "lt" => ValueComp::LT,
+            "le" => ValueComp::LE,
+            "gt" => ValueComp::GT,
+            "ge" => ValueComp::GE,
+            &_ => unreachable!(),
+        })
+    }
+    //fn GeneralComp(input: Node) -> Result {}
     fn StringConcatExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
             [RangeExpr(e)] => e, // FIXME
@@ -226,7 +242,8 @@ impl XpathParser {
     fn ForwardAxis(input: Node) -> Result<Axis> {
         Ok(match input.as_str() {
             "child" => Axis::Child,
-            _ => unreachable!(),
+            "attribute" => Axis::Attribute,
+            _ => unimplemented!(),
         })
     }
     fn ReverseAxis(input: Node) -> Result<Axis> {
@@ -251,12 +268,18 @@ impl XpathParser {
     }
     fn PredicateList(input: Node) -> Result<Vec<Expr>> {
         Ok(match_nodes!(input.into_children();
-            [Expr(expr)..] => expr.collect(),
+            [Predicate(expr)..] => expr.collect(),
         ))
     }
     fn PostfixExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
             [PrimaryExpr(e)] => e, // FIXME
+            [PrimaryExpr(e), Predicate(pe)] => e, // FIXME
+        ))
+    }
+    fn Predicate(input: Node) -> Result<Expr> {
+        Ok(match_nodes!(input.into_children();
+            [Expr(expr)] => expr,
         ))
     }
     fn SequenceType(input: Node) -> Result<SequenceType> {
@@ -685,6 +708,20 @@ mod tests {
     fn path1() {
         let context: StaticContext = Default::default();
         let input = "child::a/child::b/child::c";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn comparison1() {
+        let context: StaticContext = Default::default();
+        let input = "1 eq 2";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn predicate1() {
+        let context: StaticContext = Default::default();
+        let input = "child::a[2]";
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
