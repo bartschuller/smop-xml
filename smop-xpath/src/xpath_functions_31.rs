@@ -5,6 +5,7 @@ use crate::xdm::{NodeSeq, QName, Xdm, XdmError};
 use crate::StaticContext;
 use itertools::Itertools;
 use num_traits::identities::Zero;
+use rust_decimal::Decimal;
 use std::cmp::Ordering;
 
 pub(crate) fn register(ctx: &mut StaticContext) {
@@ -121,16 +122,25 @@ pub(crate) fn fn_string_join_1() -> CompiledFunction {
 pub(crate) fn string_compare(s1: &str, s2: &str) -> i8 {
     s1.cmp(s2) as i8
 }
+pub(crate) fn double_compare(d1: &f64, d2: &f64) -> i8 {
+    d1.partial_cmp(d2).unwrap() as i8
+}
+pub(crate) fn decimal_compare(d1: &Decimal, d2: &Decimal) -> i8 {
+    d1.cmp(d2) as i8
+}
 
 #[cfg(test)]
 mod tests {
     use crate::runtime::DynamicContext;
     use crate::xdm::{Xdm, XdmResult};
     use crate::xpath_functions_31::{fn_boolean_1, fn_not_1};
+    use crate::StaticContext;
+    use std::rc::Rc;
 
     #[test]
     fn fn_boolean1() -> XdmResult<()> {
-        let ctx: DynamicContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let ctx: DynamicContext = static_context.new_dynamic_context();
         let args = vec![Xdm::Integer(0)];
         let result = fn_boolean_1().execute(&ctx, args);
         assert_eq!(result, Ok(Xdm::Boolean(false)));
@@ -147,7 +157,8 @@ mod tests {
     }
     #[test]
     fn fn_not1() -> XdmResult<()> {
-        let ctx: DynamicContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let ctx: DynamicContext = static_context.new_dynamic_context();
         let args = vec![Xdm::Integer(0)];
         let result = fn_not_1().execute(&ctx, args);
         assert_eq!(result, Ok(Xdm::Boolean(true)));

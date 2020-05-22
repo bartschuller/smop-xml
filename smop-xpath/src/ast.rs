@@ -3,9 +3,10 @@ use crate::runtime::CompiledExpr;
 use crate::types::Item;
 use crate::types::{Occurrence, SequenceType};
 use crate::xdm::*;
-use crate::xpath_functions_31::string_compare;
+use crate::xpath_functions_31::{decimal_compare, double_compare, string_compare};
 use itertools::Itertools;
 use rust_decimal::Decimal;
+use std::borrow::Borrow;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 
@@ -203,7 +204,15 @@ impl Expr {
                     })
                 }
             },
-            Expr::InstanceOf(_, _) => todo!("implement instance of"),
+            Expr::InstanceOf(e, st) => {
+                let ce = e.compile(ctx)?;
+                Ok(CompiledExpr::new(move |c| {
+                    let x = ce.execute(c)?;
+                    let st2 = x.dynamic_type(&c.static_context)?;
+                    let lub = SequenceType::lub(&c.static_context, &st, &st2)?;
+                    Ok(Xdm::Boolean(lub == st))
+                }))
+            }
             Expr::Path(s1, s2) => {
                 let e1 = s1.compile(ctx)?;
                 let e2 = s2.compile(ctx)?;
@@ -338,7 +347,19 @@ impl Expr {
                         (x1, Xdm::String(s2)) => Ok(Xdm::Boolean(
                             vc.comparison_true(string_compare(x1.string()?.as_str(), s2.as_str())),
                         )),
-                        _ => unimplemented!(),
+                        (Xdm::Double(d1), x2) => Ok(Xdm::Boolean(
+                            vc.comparison_true(double_compare(&d1, x2.double()?.borrow())),
+                        )),
+                        (x1, Xdm::Double(d2)) => Ok(Xdm::Boolean(
+                            vc.comparison_true(double_compare(x1.double()?.borrow(), &d2)),
+                        )),
+                        (Xdm::Decimal(d1), x2) => Ok(Xdm::Boolean(
+                            vc.comparison_true(decimal_compare(&d1, x2.decimal()?.borrow())),
+                        )),
+                        (x1, Xdm::Decimal(d2)) => Ok(Xdm::Boolean(
+                            vc.comparison_true(decimal_compare(x1.decimal()?.borrow(), &d2)),
+                        )),
+                        (a1, a2) => unimplemented!("{:?} {} {:?}", a1, vc, a2),
                     }
                 }))
             }
@@ -406,7 +427,10 @@ impl Expr {
                 let t2 = r.type_(ctx)?;
                 SequenceType::lub(ctx, &t1, &t2)
             }
-            Expr::InstanceOf(_, _) => todo!("implement type_"),
+            Expr::InstanceOf(_, _) => Ok(SequenceType::Item(
+                Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:boolean"))?),
+                Occurrence::One,
+            )),
             Expr::Path(e1, e2) => e2.type_(ctx),
             Expr::Step(a, _nt, _ps) => a.type_(ctx),
             Expr::ValueComp(_, _, _) => Ok(SequenceType::Item(

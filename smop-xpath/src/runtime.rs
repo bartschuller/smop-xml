@@ -1,19 +1,22 @@
 use crate::xdm::{NodeSeq, Xdm, XdmResult};
+use crate::StaticContext;
 use roxmltree::Document;
+use std::rc::Rc;
 
 pub struct Focus<'a, 'input> {
     pub sequence: Xdm<'a, 'input>,
     pub position: usize,
 }
 
-#[derive(Default)]
 pub struct DynamicContext<'a, 'input> {
     pub focus: Option<Focus<'a, 'input>>,
+    pub static_context: Rc<StaticContext>,
 }
 impl<'a, 'input> DynamicContext<'a, 'input> {
     pub fn clone_with_focus(&self, sequence: Xdm<'a, 'input>, position: usize) -> Self {
         DynamicContext {
             focus: Some(Focus { sequence, position }),
+            static_context: self.static_context.clone(),
         }
     }
 }

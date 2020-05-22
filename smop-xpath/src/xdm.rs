@@ -1,4 +1,6 @@
 use crate::roxml::AxisIter;
+use crate::types::{Item, Occurrence, SequenceType};
+use crate::StaticContext;
 use num_traits::cast::FromPrimitive;
 use roxmltree::{Attribute, ExpandedName, Node, NodeType};
 use rust_decimal::prelude::{ToPrimitive, Zero};
@@ -313,6 +315,31 @@ impl Xdm<'_, '_> {
                         "XPTY0004",
                         "can't convert a sequence to a string",
                     ))
+                }
+            }
+        }
+    }
+    pub fn dynamic_type(&self, ctx: &StaticContext) -> XdmResult<SequenceType> {
+        fn simple(ctx: &StaticContext, xs: &str) -> XdmResult<SequenceType> {
+            Ok(SequenceType::Item(
+                Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown(xs))?),
+                Occurrence::One,
+            ))
+        }
+        match self {
+            Xdm::String(_) => simple(ctx, "xs:string"),
+            Xdm::Boolean(_) => simple(ctx, "xs:boolean"),
+            Xdm::Decimal(_) => simple(ctx, "xs:decimal"),
+            Xdm::Integer(_) => simple(ctx, "xs:integer"),
+            Xdm::Double(_) => simple(ctx, "xs:double"),
+            Xdm::NodeSeq(_) => unimplemented!(),
+            Xdm::Array(_) => unimplemented!(),
+            Xdm::Map(_) => unimplemented!(),
+            Xdm::Sequence(v) => {
+                if v.is_empty() {
+                    Ok(SequenceType::EmptySequence)
+                } else {
+                    unimplemented!()
                 }
             }
         }

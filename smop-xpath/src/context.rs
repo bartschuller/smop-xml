@@ -1,6 +1,7 @@
 use crate::ast::Expr;
 use crate::functions::{Function, FunctionKey};
 use crate::parser::parse;
+use crate::runtime::DynamicContext;
 use crate::types::{SchemaType, TypeTree, Variety};
 use crate::xdm::{QName, XdmError, XdmResult};
 use std::collections::HashMap;
@@ -84,6 +85,13 @@ impl StaticContext {
             arity,
         };
         self.functions.get(&key)
+    }
+
+    pub fn new_dynamic_context<'a, 'input>(self: &Rc<Self>) -> DynamicContext<'a, 'input> {
+        DynamicContext {
+            focus: None,
+            static_context: self.clone(),
+        }
     }
 }
 

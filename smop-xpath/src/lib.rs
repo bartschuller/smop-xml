@@ -9,7 +9,7 @@ mod debugparser;
 mod functions;
 pub mod parser;
 mod roxml;
-mod runtime;
+pub mod runtime;
 mod types;
 pub mod xdm;
 mod xpath_functions_31;
@@ -28,7 +28,7 @@ impl Xpath {
         expr.compile(context).map(|compiled| Xpath(compiled))
     }
 
-    fn evaluate<'a, 'input, 'context>(
+    pub fn evaluate<'a, 'input, 'context>(
         &self,
         context: &'context DynamicContext<'a, 'input>,
     ) -> XdmResult<Xdm<'a, 'input>> {
@@ -43,13 +43,14 @@ mod tests {
     use crate::{StaticContext, Xpath};
     use roxmltree::Document;
     use rust_decimal::Decimal;
+    use std::rc::Rc;
     use std::str::FromStr;
 
     #[test]
     fn compile1() -> XdmResult<()> {
-        let static_context: StaticContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let xpath = Xpath::compile(&static_context, "1")?;
-        let context: DynamicContext = Default::default();
+        let context: DynamicContext = static_context.new_dynamic_context();
         let result = xpath.evaluate(&context)?;
         assert_eq!(result, Xdm::Integer(1));
         Ok(())
@@ -57,9 +58,9 @@ mod tests {
 
     #[test]
     fn compile2() -> XdmResult<()> {
-        let static_context: StaticContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let xpath = Xpath::compile(&static_context, "1,'two'")?;
-        let context: DynamicContext = Default::default();
+        let context: DynamicContext = static_context.new_dynamic_context();
         let result1 = xpath.evaluate(&context)?;
         assert_eq!(
             result1,
@@ -72,9 +73,9 @@ mod tests {
 
     #[test]
     fn if1() -> XdmResult<()> {
-        let static_context: StaticContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let xpath = Xpath::compile(&static_context, "if (1) then 'hello' else 42")?;
-        let context: DynamicContext = Default::default();
+        let context: DynamicContext = static_context.new_dynamic_context();
         let result = xpath.evaluate(&context)?;
         assert_eq!(result, Xdm::String("hello".to_string()));
         let xpath = Xpath::compile(&static_context, "if (0) then 'hello' else 42")?;
@@ -84,9 +85,9 @@ mod tests {
     }
     #[test]
     fn bool1() -> XdmResult<()> {
-        let static_context: StaticContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let xpath = Xpath::compile(&static_context, "0")?;
-        let context: DynamicContext = Default::default();
+        let context: DynamicContext = static_context.new_dynamic_context();
         let result = xpath.evaluate(&context)?;
         assert_eq!(result.boolean()?, false);
         let xpath = Xpath::compile(&static_context, "1")?;
@@ -96,9 +97,9 @@ mod tests {
     }
     #[test]
     fn bool2() -> XdmResult<()> {
-        let static_context: StaticContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let xpath = Xpath::compile(&static_context, "1, 2")?;
-        let context: DynamicContext = Default::default();
+        let context: DynamicContext = static_context.new_dynamic_context();
         let result = xpath.evaluate(&context)?;
         assert_eq!(
             result.boolean().expect_err("expected an error").code,
@@ -108,9 +109,9 @@ mod tests {
     }
     #[test]
     fn parens1() -> XdmResult<()> {
-        let static_context: StaticContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let xpath = Xpath::compile(&static_context, "()")?;
-        let context: DynamicContext = Default::default();
+        let context: DynamicContext = static_context.new_dynamic_context();
         let result = xpath.evaluate(&context)?;
         assert_eq!(result, Xdm::Sequence(vec![]));
         let xpath = Xpath::compile(&static_context, "(3)")?;
@@ -137,56 +138,56 @@ mod tests {
     }
     #[test]
     fn arith1() -> XdmResult<()> {
-        let static_context: StaticContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let xpath = Xpath::compile(&static_context, "1 + 2")?;
-        let context: DynamicContext = Default::default();
+        let context: DynamicContext = static_context.new_dynamic_context();
         let result = xpath.evaluate(&context)?;
         assert_eq!(result, Xdm::Integer(3));
         Ok(())
     }
     #[test]
     fn arith2() -> XdmResult<()> {
-        let static_context: StaticContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let input = "1 + 0.2";
         let expr = static_context.parse(input)?;
         let result = expr.type_(&static_context)?.to_string();
         assert_eq!(result, "xs:decimal".to_string());
         let xpath = Xpath::compile(&static_context, input)?;
-        let context: DynamicContext = Default::default();
+        let context: DynamicContext = static_context.new_dynamic_context();
         let result = xpath.evaluate(&context)?;
         assert_eq!(result, Xdm::Decimal(Decimal::from_str("1.2").unwrap()));
         Ok(())
     }
     #[test]
     fn arith3() -> XdmResult<()> {
-        let static_context: StaticContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let input = "0.2 + 3e-2";
         let expr = static_context.parse(input)?;
         let result = expr.type_(&static_context)?.to_string();
         assert_eq!(result, "xs:anyAtomicType".to_string());
         let xpath = Xpath::compile(&static_context, input)?;
-        let context: DynamicContext = Default::default();
+        let context: DynamicContext = static_context.new_dynamic_context();
         let result = xpath.evaluate(&context)?;
         assert_eq!(result, Xdm::Double(0.23_f64));
         Ok(())
     }
     #[test]
     fn value_compare1() -> XdmResult<()> {
-        let static_context: StaticContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let input = "'a' ge 'b'";
         let expr = static_context.parse(input)?;
         let result = expr.type_(&static_context)?.to_string();
         assert_eq!(result, "xs:boolean?".to_string());
         let xpath = Xpath::compile(&static_context, input)?;
-        let context: DynamicContext = Default::default();
+        let context: DynamicContext = static_context.new_dynamic_context();
         let result = xpath.evaluate(&context)?;
         assert!(!result.boolean()?);
         Ok(())
     }
     #[test]
     fn roxml1() -> XdmResult<()> {
-        let static_context: StaticContext = Default::default();
-        let mut context: DynamicContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let mut context: DynamicContext = static_context.new_dynamic_context();
         let doc = r##"<root>
             <other stringattr="foo" numattr="42">foo</other>
             <mychild>bar bar</mychild>
@@ -215,16 +216,52 @@ mod tests {
     }
     #[test]
     fn function1() -> XdmResult<()> {
-        let static_context: StaticContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let xpath = Xpath::compile(&static_context, "boolean(1, 2)");
         assert!(xpath.is_err());
         Ok(())
     }
     #[test]
     fn function2() -> XdmResult<()> {
-        let static_context: StaticContext = Default::default();
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let xpath = Xpath::compile(&static_context, "not(not(boolean('foo')))")?;
-        let context: DynamicContext = Default::default();
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let result = xpath.evaluate(&context)?;
+        assert!(result.boolean()?);
+        Ok(())
+    }
+    #[test]
+    fn instance_of1() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let xpath = Xpath::compile(&static_context, "1 instance of xs:integer")?;
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let result = xpath.evaluate(&context)?;
+        assert!(result.boolean()?);
+        Ok(())
+    }
+    #[test]
+    fn instance_of2() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let xpath = Xpath::compile(&static_context, "'foo' instance of xs:integer")?;
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let result = xpath.evaluate(&context)?;
+        assert!(!result.boolean()?);
+        Ok(())
+    }
+    #[test]
+    fn instance_of3() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let xpath = Xpath::compile(&static_context, "1 instance of xs:string")?;
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let result = xpath.evaluate(&context)?;
+        assert!(!result.boolean()?);
+        Ok(())
+    }
+    #[test]
+    fn instance_of4() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let xpath = Xpath::compile(&static_context, "1 instance of xs:decimal")?;
+        let context: DynamicContext = static_context.new_dynamic_context();
         let result = xpath.evaluate(&context)?;
         assert!(result.boolean()?);
         Ok(())
