@@ -1,6 +1,6 @@
 use crate::context::StaticContext;
 use crate::runtime::CompiledExpr;
-use crate::types::Item;
+use crate::types::{Item, KindTest};
 use crate::types::{Occurrence, SequenceType};
 use crate::xdm::*;
 use crate::xpath_functions_31::{decimal_compare, double_compare, string_compare};
@@ -21,6 +21,7 @@ pub enum Expr {
     And(Vec<Expr>),
     Arithmetic(Box<Expr>, ArithmeticOp, Box<Expr>),
     InstanceOf(Box<Expr>, SequenceType),
+    TreatAs(Box<Expr>, SequenceType),
     Path(Box<Expr>, Box<Expr>),
     Step(Axis, NodeTest, Vec<Expr>),
     ValueComp(Box<Expr>, ValueComp, Box<Expr>),
@@ -48,7 +49,7 @@ pub enum Axis {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum NodeTest {
-    KindTest,
+    KindTest(KindTest),
     // including wildcards by storing "*" in QName parts
     NameTest(QName),
 }
@@ -213,6 +214,11 @@ impl Expr {
                     Ok(Xdm::Boolean(lub == st))
                 }))
             }
+            Expr::TreatAs(e, _st) => {
+                let ce = e.compile(ctx)?;
+                // FIXME there's probably more that should be done here.
+                Ok(ce)
+            }
             Expr::Path(s1, s2) => {
                 let e1 = s1.compile(ctx)?;
                 let e2 = s2.compile(ctx)?;
@@ -237,6 +243,20 @@ impl Expr {
                             let context = c.clone_with_focus(x1, 0);
                             e2.execute(&context)
                         }
+                        Xdm::Sequence(v) => {
+                            let mut result: Vec<Xdm> = Vec::new();
+                            for x in v.into_iter().enumerate() {
+                                let context = c.clone_with_focus(x.1, x.0);
+                                let res = e2.execute(&context)?;
+                                result.push(res);
+                            }
+
+                            if result.len() == 1 {
+                                Ok(result.remove(0))
+                            } else {
+                                Ok(Xdm::Sequence(result))
+                            }
+                        }
                         _ => Err(XdmError::xqtm(
                             "internal",
                             format!("Not a node seq: {:?}", x1),
@@ -258,6 +278,7 @@ impl Expr {
                         Xdm::NodeSeq(NodeSeq::RoXml(n)) => Ok(n),
                         _ => Err(XdmError::xqtm("", "didn't get a roxml node")),
                     }?;
+                    // FIXME this should be done at compile time
                     match (axis, &*nt) {
                         (Axis::Child, NodeTest::NameTest(ref qn)) => {
                             let mut children: Vec<_> = ro_node
@@ -323,6 +344,15 @@ impl Expr {
                                 Ok(Xdm::Sequence(attrs))
                             }
                         }
+                        (Axis::Self_, nt) => match nt {
+                            NodeTest::KindTest(kt) => match kt {
+                                KindTest::AnyKind => {
+                                    Ok(Xdm::NodeSeq(NodeSeq::RoXml(ro_node.clone())))
+                                }
+                                _ => unimplemented!(),
+                            },
+                            NodeTest::NameTest(_) => unimplemented!(),
+                        },
                         _ => unimplemented!(),
                     }
                 }))
@@ -375,7 +405,7 @@ impl Expr {
                         let pred = cp.execute(&context)?;
                         match pred {
                             Xdm::Decimal(_) | Xdm::Integer(_) | Xdm::Double(_) => {
-                                if pred.integer()? as usize == pos {
+                                if pred.integer()? as usize - 1 == pos {
                                     result.push(context.focus.unwrap().sequence);
                                 }
                             }
@@ -431,6 +461,7 @@ impl Expr {
                 Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:boolean"))?),
                 Occurrence::One,
             )),
+            Expr::TreatAs(_, st) => Ok(st.clone()),
             Expr::Path(e1, e2) => e2.type_(ctx),
             Expr::Step(a, _nt, _ps) => a.type_(ctx),
             Expr::ValueComp(_, _, _) => Ok(SequenceType::Item(
@@ -494,6 +525,7 @@ impl Display for Expr {
             Expr::And(v) => write!(f, "{}", v.iter().format(" and ")),
             Expr::Arithmetic(e1, o, e2) => write!(f, "{} {} {}", e1, o, e2),
             Expr::InstanceOf(e, t) => write!(f, "{} instance of {}", e, t),
+            Expr::TreatAs(e, t) => write!(f, "{} treat as {}", e, t),
             Expr::Path(e1, e2) => write!(f, "{}/{}", e1, e2),
             Expr::Step(a, nt, ps) => {
                 write!(f, "{}::{}", a, nt)?;
@@ -511,7 +543,7 @@ impl Display for Expr {
 impl Display for NodeTest {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            NodeTest::KindTest => todo!("Display for NodeTest"),
+            NodeTest::KindTest(_) => todo!("Display for NodeTest"),
             NodeTest::NameTest(qname) => write!(f, "{}", qname),
         }
     }

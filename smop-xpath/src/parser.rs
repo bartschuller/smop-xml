@@ -1,6 +1,6 @@
 use crate::ast::{ArithmeticOp, Axis, Expr, Literal, NodeTest, ValueComp};
 use crate::context::StaticContext;
-use crate::types::{Item, Occurrence, SequenceType};
+use crate::types::{Item, KindTest, Occurrence, SequenceType};
 use crate::xdm::{QName, XdmError};
 use pest_consume::match_nodes;
 use pest_consume::Error;
@@ -159,7 +159,8 @@ impl XpathParser {
     }
     fn TreatExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
-            [CastableExpr(e)] => e, // FIXME
+            [CastableExpr(e)] => e,
+            [CastableExpr(e), SequenceType(st)] => Expr::TreatAs(Box::new(e), st),
         ))
     }
     fn CastableExpr(input: Node) -> Result<Expr> {
@@ -237,12 +238,23 @@ impl XpathParser {
     fn ForwardStep(input: Node) -> Result<(Axis, NodeTest)> {
         Ok(match_nodes!(input.into_children();
             [ForwardAxis(a), NodeTest(t)] => (a, t),
+            [AbbrevForwardStep(at)] => (at.0, at.1),
         ))
+    }
+    fn AbbrevForwardStep(input: Node) -> Result<(Axis, NodeTest)> {
+        Ok(match_nodes!(input.into_children();
+            [NodeTest(t)] => (Axis::Child, t),
+            [AttributeIndicator(_), NodeTest(t)] => (Axis::Attribute, t),
+        ))
+    }
+    fn AttributeIndicator(_input: Node) -> Result<()> {
+        Ok(())
     }
     fn ForwardAxis(input: Node) -> Result<Axis> {
         Ok(match input.as_str() {
             "child" => Axis::Child,
             "attribute" => Axis::Attribute,
+            "self" => Axis::Self_,
             _ => unimplemented!(),
         })
     }
@@ -255,7 +267,22 @@ impl XpathParser {
     fn NodeTest(input: Node) -> Result<NodeTest> {
         Ok(match_nodes!(input.into_children();
             [NameTest(qname)] => NodeTest::NameTest(qname),
+            [KindTest(kind)] => NodeTest::KindTest(kind),
         ))
+    }
+    fn KindTest(input: Node) -> Result<KindTest> {
+        Ok(match_nodes!(input.into_children();
+            [AnyKindTest(kt)] => kt,
+            [DocumentTest(kt)] => kt,
+        ))
+    }
+    fn DocumentTest(input: Node) -> Result<KindTest> {
+        Ok(match_nodes!(input.into_children();
+            [] => KindTest::Document,
+        ))
+    }
+    fn AnyKindTest(_input: Node) -> Result<KindTest> {
+        Ok(KindTest::AnyKind)
     }
     fn NameTest(input: Node) -> Result<QName> {
         let sc = input.user_data().clone();
@@ -273,8 +300,9 @@ impl XpathParser {
     }
     fn PostfixExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
-            [PrimaryExpr(e)] => e, // FIXME
-            [PrimaryExpr(e), Predicate(pe)] => e, // FIXME
+            [PrimaryExpr(e)] => e,
+            [PrimaryExpr(e), Predicate(pe)] => Expr::Predicate(Box::new(e), Box::new(pe)),
+            // FIXME generalize for more predicates and other stuff
         ))
     }
     fn Predicate(input: Node) -> Result<Expr> {
@@ -296,6 +324,7 @@ impl XpathParser {
         Ok(match_nodes!(input.into_children();
             [Item(it)] => it,
             [AtomicOrUnionType(it)] => it,
+            [KindTest(kt)] => Item::KindTest(kt),
         ))
     }
     fn Item(_input: Node) -> Result<Item> {

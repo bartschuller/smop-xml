@@ -12,13 +12,27 @@ pub enum SequenceType {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Item {
-    KindTest,
+    KindTest(KindTest),
     Item,
     FunctionTest,
     MapTest,
     ArrayTest,
     AtomicOrUnion(Rc<SchemaType>),
     ParenthesizedItemType,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum KindTest {
+    Document,
+    Element,
+    Attribute,
+    SchemaElement,
+    SchemaAttribute,
+    PI,
+    Comment,
+    Text,
+    NamespaceNode,
+    AnyKind,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]

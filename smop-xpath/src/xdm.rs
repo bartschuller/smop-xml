@@ -375,7 +375,7 @@ impl<'a, 'input: 'a> IntoIterator for Xdm<'a, 'input> {
             // Xdm::NodeSeq(_) => {}
             // Xdm::Array(_) => {}
             // Xdm::Map(_) => {}
-            // Xdm::Sequence(_) => {}
+            Xdm::Sequence(v) => Box::new(v.into_iter()),
             _ => todo!("IntoIterator for Xdm"),
         }
     }

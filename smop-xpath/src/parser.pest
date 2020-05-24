@@ -71,7 +71,8 @@ ForwardStep = { (ForwardAxis ~ ColonColon ~ NodeTest) | AbbrevForwardStep }
 ForwardAxis = { "child" | "descendant" | "attribute" | "self" | "descendant-or-self" | "following-sibling" | "following" | "namespace" }
 ColonColon = _{ "::" }
 // 42
-AbbrevForwardStep = { "@"? ~ NodeTest }
+AbbrevForwardStep = { AttributeIndicator? ~ NodeTest }
+AttributeIndicator = { "@" }
 // 43
 ReverseStep = { (ReverseAxis ~ ColonColon ~ NodeTest) | AbbrevReverseStep }
 // 44

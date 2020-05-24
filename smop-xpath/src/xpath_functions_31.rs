@@ -1,5 +1,5 @@
 use crate::functions::{CompiledFunction, Function};
-use crate::types::Item;
+use crate::types::{Item, KindTest};
 use crate::types::{Occurrence, SequenceType};
 use crate::xdm::{NodeSeq, QName, Xdm, XdmError};
 use crate::StaticContext;
@@ -58,8 +58,11 @@ pub(crate) fn register(ctx: &mut StaticContext) {
     ctx.add_function(qname, fn_false_0_meta);
 
     let fn_root_1_meta = Function {
-        args: vec![SequenceType::Item(Item::KindTest, Occurrence::Optional)],
-        type_: SequenceType::Item(Item::KindTest, Occurrence::Optional),
+        args: vec![SequenceType::Item(
+            Item::KindTest(KindTest::AnyKind),
+            Occurrence::Optional,
+        )],
+        type_: SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::Optional),
         code: fn_root_1,
     };
     let qname = ctx.qname("fn", "root").unwrap();

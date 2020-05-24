@@ -215,6 +215,27 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn roxml2() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let mut context: DynamicContext = static_context.new_dynamic_context();
+        let doc = r##"<root>
+            <other stringattr="foo" numattr="42">foo</other>
+            <mychild>bar bar</mychild>
+            <other stringattr="baz" numattr="0">baz</other>
+        </root>"##;
+        let rodoc = Document::parse(doc)?;
+        let xdm = Xdm::NodeSeq(NodeSeq::RoXml(rodoc.root()));
+        let context = context.clone_with_focus(xdm, 0);
+        let xpath = Xpath::compile(
+            &static_context,
+            "(fn:root(self::node()) treat as document-node())/root/other[1]/@numattr",
+        )?;
+        let result = xpath.evaluate(&context)?;
+        println!("{:?}", result);
+        assert_eq!(result.string(), Ok("42".to_string()));
+        Ok(())
+    }
+    #[test]
     fn function1() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let xpath = Xpath::compile(&static_context, "boolean(1, 2)");
