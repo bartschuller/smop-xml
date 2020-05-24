@@ -36,6 +36,7 @@ impl QName {
         let name = &s[colon + 1..];
         let ns = match prefix {
             "xs" => "http://www.w3.org/2001/XMLSchema",
+            "fn" => "http://www.w3.org/2005/xpath-functions",
             &_ => panic!("not so well known prefix: {}", prefix),
         };
         QName {

@@ -190,13 +190,27 @@ impl XpathParser {
     }
     fn PathExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
-            [InitialSlash(e), RelativePathExpr(e)] => e, // FIXME
+            [InitialSlash(_), RelativePathExpr(e)] => {
+                Expr::Path(
+                    Box::new(Expr::TreatAs(
+                        Box::new(Expr::FunctionCall(
+                            QName::wellknown("fn:root"),
+                            vec![Expr::Step(
+                                Axis::Self_,
+                                NodeTest::KindTest(KindTest::AnyKind),
+                                vec![],
+                            )],
+                        )),
+                        SequenceType::Item(Item::KindTest(KindTest::Document), Occurrence::One),
+                    )),
+                    Box::new(e),
+                )
+            },
             [RelativePathExpr(e)] => e, // FIXME
         ))
     }
-    fn InitialSlash(_input: Node) -> Result<Expr> {
-        // (fn:root(self::node()) treat as document-node())
-        todo!("handle initial slash")
+    fn InitialSlash(_input: Node) -> Result<()> {
+        Ok(())
     }
     fn RelativePathExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();

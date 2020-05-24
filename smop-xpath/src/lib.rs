@@ -231,7 +231,9 @@ mod tests {
             "(fn:root(self::node()) treat as document-node())/root/other[1]/@numattr",
         )?;
         let result = xpath.evaluate(&context)?;
-        println!("{:?}", result);
+        assert_eq!(result.string(), Ok("42".to_string()));
+        let xpath = Xpath::compile(&static_context, "/root/other[1]/@numattr")?;
+        let result = xpath.evaluate(&context)?;
         assert_eq!(result.string(), Ok("42".to_string()));
         Ok(())
     }
