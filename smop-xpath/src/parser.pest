@@ -107,13 +107,13 @@ KeySpecifier = { NCName | IntegerLiteral | ParenthesizedExpr | "*" }
 // 55
 ArrowFunctionSpecifier = { EQName | VarRef | ParenthesizedExpr }
 // 56
-PrimaryExpr = { Literal | ParenthesizedExpr | ContextItemExpr | FunctionCall }
+PrimaryExpr = { Literal | VarRef | ParenthesizedExpr | ContextItemExpr | FunctionCall }
 // 57
 Literal = { DoubleLiteral | DecimalLiteral | IntegerLiteral | StringLiteral }
 // 59
 VarRef = { "$" ~ VarName }
 // 60
-VarName = { EQName }
+VarName = _{ EQName }
 // 61
 ParenthesizedExpr = { "(" ~ Expr? ~ ")" }
 // 62

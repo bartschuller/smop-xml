@@ -91,6 +91,7 @@ impl StaticContext {
         DynamicContext {
             focus: None,
             static_context: self.clone(),
+            variables: HashMap::new(),
         }
     }
 }

@@ -260,7 +260,7 @@ impl Xdm<'_, '_> {
             ))?),
             Xdm::Integer(i) => Ok(i),
             Xdm::Double(d) => Ok(d as i64),
-            Xdm::String(s) => s.parse::<i64>().map_err(|e| {
+            Xdm::String(s) => s.parse::<i64>().map_err(|_e| {
                 XdmError::xqtm(
                     "err:FORG0001",
                     format!("Can't cast string '{}' to an integer", s),
@@ -384,8 +384,8 @@ impl<'a, 'input: 'a> IntoIterator for Xdm<'a, 'input> {
 
 #[cfg(test)]
 mod tests {
-    use crate::xdm::{QName, XdmResult};
-    use roxmltree::Document;
+    use crate::xdm::{QName};
+    
 
     #[test]
     fn qname1() {

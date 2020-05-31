@@ -423,6 +423,7 @@ impl XpathParser {
     fn PrimaryExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
             [Literal(lit)] => Expr::Literal(lit),
+            [VarRef(eq_name)] => Expr::VarRef(eq_name),
             [ParenthesizedExpr(e)] => e,
             [ContextItemExpr(e)] => e,
             [FunctionCall(e)] => e,
@@ -463,6 +464,11 @@ impl XpathParser {
             inner.to_string()
         };
         Ok(Literal::String(unescaped))
+    }
+    fn VarRef(input: Node) -> Result<QName> {
+        Ok(match_nodes!(input.into_children();
+            [EQName(eq)] => eq
+        ))
     }
     fn IfExpr(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();

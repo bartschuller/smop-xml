@@ -39,7 +39,7 @@ impl Xpath {
 #[cfg(test)]
 mod tests {
     use crate::runtime::DynamicContext;
-    use crate::xdm::{NodeSeq, Xdm, XdmResult};
+    use crate::xdm::{NodeSeq, QName, Xdm, XdmResult};
     use crate::{StaticContext, Xpath};
     use roxmltree::Document;
     use rust_decimal::Decimal;
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn roxml1() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
-        let mut context: DynamicContext = static_context.new_dynamic_context();
+        let context: DynamicContext = static_context.new_dynamic_context();
         let doc = r##"<root>
             <other stringattr="foo" numattr="42">foo</other>
             <mychild>bar bar</mychild>
@@ -217,7 +217,7 @@ mod tests {
     #[test]
     fn roxml2() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
-        let mut context: DynamicContext = static_context.new_dynamic_context();
+        let context: DynamicContext = static_context.new_dynamic_context();
         let doc = r##"<root>
             <other stringattr="foo" numattr="42">foo</other>
             <mychild>bar bar</mychild>
@@ -287,6 +287,16 @@ mod tests {
         let context: DynamicContext = static_context.new_dynamic_context();
         let result = xpath.evaluate(&context)?;
         assert!(result.boolean()?);
+        Ok(())
+    }
+    #[test]
+    fn var1() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let xpath = Xpath::compile(&static_context, "$a")?;
+        let mut context: DynamicContext = static_context.new_dynamic_context();
+        context.set_variable(QName::new("a".to_string(), None, None), Xdm::Integer(42));
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result.integer()?, 42);
         Ok(())
     }
 }

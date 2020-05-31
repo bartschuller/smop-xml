@@ -13,6 +13,7 @@ use std::fmt::{Display, Formatter};
 #[derive(Debug, PartialEq)]
 pub enum Expr {
     Literal(Literal),
+    VarRef(QName),
     Sequence(Vec<Expr>),
     ContextItem,
     IfThenElse(Box<Expr>, Box<Expr>, Box<Expr>),
@@ -113,6 +114,11 @@ impl Expr {
         let type_ = self.type_(ctx)?;
         match self {
             Expr::Literal(l) => l.compile(),
+            Expr::VarRef(qname) => Ok(CompiledExpr::new(move |c| {
+                c.varref(&qname).ok_or_else(|| {
+                    XdmError::xqtm("err:XPST0008", format!("variable `{}` not found", qname))
+                })
+            })),
             Expr::Sequence(s) => {
                 let compiled_vec: XdmResult<Vec<_>> =
                     s.into_iter().map(|x| x.compile(ctx)).collect();
@@ -239,7 +245,7 @@ impl Expr {
                                 Ok(Xdm::Sequence(result))
                             }
                         }
-                        Xdm::NodeSeq(NodeSeq::RoXml(ronode)) => {
+                        Xdm::NodeSeq(NodeSeq::RoXml(_ronode)) => {
                             let context = c.clone_with_focus(x1, 0);
                             e2.execute(&context)
                         }
@@ -286,7 +292,7 @@ impl Expr {
                                 .enumerate()
                                 .filter_map(|(pos, child)| {
                                     if child.is_element() && child.has_tag_name(qn) {
-                                        let mut node = Xdm::NodeSeq(NodeSeq::RoXml(child));
+                                        let node = Xdm::NodeSeq(NodeSeq::RoXml(child));
                                         let mut include = true;
                                         let context = c.clone_with_focus(node, pos);
                                         for predicate in &predicates {
@@ -428,6 +434,7 @@ impl Expr {
     pub(crate) fn type_(&self, ctx: &StaticContext) -> XdmResult<SequenceType> {
         match self {
             Expr::Literal(l) => Ok(l.type_(ctx)),
+            Expr::VarRef(_) => Ok(SequenceType::EmptySequence), // FIXME
             Expr::Sequence(v) => {
                 if v.is_empty() {
                     Ok(SequenceType::EmptySequence)
@@ -437,7 +444,7 @@ impl Expr {
                     SequenceType::add_vec(ctx, child_types?)
                 }
             }
-            Expr::ContextItem => Ok(SequenceType::EmptySequence),
+            Expr::ContextItem => Ok(SequenceType::EmptySequence), // FIXME
             Expr::IfThenElse(_, t, e) => {
                 let t_type = t.type_(ctx)?;
                 let e_type = e.type_(ctx)?;
@@ -462,7 +469,7 @@ impl Expr {
                 Occurrence::One,
             )),
             Expr::TreatAs(_, st) => Ok(st.clone()),
-            Expr::Path(e1, e2) => e2.type_(ctx),
+            Expr::Path(_e1, e2) => e2.type_(ctx),
             Expr::Step(a, _nt, _ps) => a.type_(ctx),
             Expr::ValueComp(_, _, _) => Ok(SequenceType::Item(
                 Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:boolean"))?),
@@ -474,7 +481,7 @@ impl Expr {
 }
 
 impl Axis {
-    pub(crate) fn type_(&self, ctx: &StaticContext) -> XdmResult<SequenceType> {
+    pub(crate) fn type_(&self, _ctx: &StaticContext) -> XdmResult<SequenceType> {
         // match self {
         //     Axis::Child => {},
         //     Axis::Descendant => {},
@@ -517,6 +524,7 @@ impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Expr::Literal(l) => l.fmt(f),
+            Expr::VarRef(qname) => write!(f, "&{}", qname),
             Expr::Sequence(v) => write!(f, "({})", v.iter().format(", ")),
             Expr::ContextItem => f.write_str("."),
             Expr::IfThenElse(i, t, e) => write!(f, "if ({}) then {} else {}", i, t, e),

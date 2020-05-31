@@ -1,12 +1,12 @@
 use crate::functions::{CompiledFunction, Function};
 use crate::types::{Item, KindTest};
 use crate::types::{Occurrence, SequenceType};
-use crate::xdm::{NodeSeq, QName, Xdm, XdmError};
+use crate::xdm::{NodeSeq, QName, Xdm};
 use crate::StaticContext;
-use itertools::Itertools;
-use num_traits::identities::Zero;
+
+
 use rust_decimal::Decimal;
-use std::cmp::Ordering;
+
 
 pub(crate) fn register(ctx: &mut StaticContext) {
     let xs_boolean = QName::wellknown("xs:boolean");
@@ -84,11 +84,11 @@ pub(crate) fn register(ctx: &mut StaticContext) {
 }
 
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, mut args| args.first().unwrap().boolean().map(Xdm::Boolean))
+    CompiledFunction::new(|_ctx, args| args.first().unwrap().boolean().map(Xdm::Boolean))
 }
 pub(crate) fn fn_not_1() -> CompiledFunction {
-    let boolean = fn_boolean_1();
-    CompiledFunction::new(|ctx, args| args.first().unwrap().boolean().map(|b| Xdm::Boolean(!b)))
+    let _boolean = fn_boolean_1();
+    CompiledFunction::new(|_ctx, args| args.first().unwrap().boolean().map(|b| Xdm::Boolean(!b)))
 }
 pub(crate) fn fn_true_0() -> CompiledFunction {
     CompiledFunction::new(|_ctx, _args| Ok(Xdm::Boolean(true)))
@@ -97,7 +97,7 @@ pub(crate) fn fn_false_0() -> CompiledFunction {
     CompiledFunction::new(|_ctx, _args| Ok(Xdm::Boolean(false)))
 }
 pub(crate) fn fn_root_1() -> CompiledFunction {
-    CompiledFunction::new(|ctx, args| {
+    CompiledFunction::new(|_ctx, args| {
         if let Some(Xdm::NodeSeq(NodeSeq::RoXml(oh))) = args.first() {
             Ok(Xdm::NodeSeq(NodeSeq::RoXml(oh.document().root())))
         } else {
@@ -106,7 +106,7 @@ pub(crate) fn fn_root_1() -> CompiledFunction {
     })
 }
 pub(crate) fn fn_string_join_1() -> CompiledFunction {
-    CompiledFunction::new(|ctx, mut args| {
+    CompiledFunction::new(|_ctx, mut args| {
         let x = args.remove(0);
         Ok(match x {
             Xdm::Sequence(v) => {

@@ -1,4 +1,4 @@
-use crate::ast::NodeTest;
+
 use roxmltree::Node;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
@@ -24,20 +24,20 @@ impl<'a, 'input: 'a> Iterator for AxisIter<'a, 'input> {
 }
 
 impl<'a, 'input: 'a> Debug for AxisIter<'a, 'input> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, _f: &mut Formatter<'_>) -> fmt::Result {
         unimplemented!()
     }
 }
 
 impl<'a, 'input: 'a> PartialEq for AxisIter<'a, 'input> {
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(&self, _other: &Self) -> bool {
         unimplemented!()
     }
 }
 #[cfg(test)]
 mod tests {
     use crate::roxml::AxisIter;
-    use crate::xdm::{QName, XdmResult};
+    use crate::xdm::{XdmResult};
     use roxmltree::Document;
 
     #[test]
@@ -47,8 +47,8 @@ mod tests {
         let mut d = root.children();
         let d = d.next().unwrap();
         assert_eq!(d.tag_name().name(), "d");
-        let es = d.children().enumerate();
-        let attrs = d.attributes().iter();
+        let _es = d.children().enumerate();
+        let _attrs = d.attributes().iter();
         Ok(())
     }
 
@@ -56,16 +56,16 @@ mod tests {
     fn iterators2() -> XdmResult<()> {
         let doc = Document::parse(r#"<d><e>1</e><e>2</e></d>"#)?;
         let root = doc.root();
-        let children = AxisIter {
+        let _children = AxisIter {
             node: None,
-            next: |n| None,
+            next: |_n| None,
             position: 0,
             last: None,
         };
         let mut d = root.children();
         let d = d.next().unwrap();
         assert_eq!(d.tag_name().name(), "d");
-        let es = d.children().enumerate();
+        let _es = d.children().enumerate();
 
         Ok(())
     }
