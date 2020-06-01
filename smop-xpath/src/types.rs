@@ -35,6 +35,22 @@ pub enum KindTest {
     AnyKind,
 }
 
+impl Display for KindTest {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            KindTest::Document => write!(f, "document-node()"),
+            KindTest::Element => write!(f, "element()"),
+            KindTest::Attribute => write!(f, "attribute()"),
+            KindTest::SchemaElement => write!(f, "schema-element()"),
+            KindTest::SchemaAttribute => write!(f, "schema-attribute()"),
+            KindTest::PI => write!(f, "processing-instruction()"),
+            KindTest::Comment => write!(f, "comment()"),
+            KindTest::Text => write!(f, "text()"),
+            KindTest::NamespaceNode => write!(f, "namespace-node()"),
+            KindTest::AnyKind => write!(f, "node()"),
+        }
+    }
+}
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum Occurrence {
     Optional,
@@ -107,7 +123,12 @@ impl Display for Item {
         match self {
             Item::Item => f.write_str("item()"),
             Item::AtomicOrUnion(schema_type) => write!(f, "{}", schema_type),
+            Item::KindTest(kt) => write!(f, "{}", kt),
             &_ => todo!("Display for other Item types: {:?}", self),
+            // Item::FunctionTest => {}
+            // Item::MapTest => {}
+            // Item::ArrayTest => {}
+            // Item::ParenthesizedItemType => {}
         }
     }
 }

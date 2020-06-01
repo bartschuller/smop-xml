@@ -2,6 +2,7 @@ use crate::ast::{ArithmeticOp, Axis, Expr, Literal, NodeTest, ValueComp};
 use crate::context::StaticContext;
 use crate::types::{Item, KindTest, Occurrence, SequenceType};
 use crate::xdm::{QName, XdmError};
+use itertools::Itertools;
 use pest_consume::match_nodes;
 use pest_consume::Error;
 use pest_consume::Parser;
@@ -62,8 +63,29 @@ impl XpathParser {
     }
     fn ExprSingle(input: Node) -> Result<Expr> {
         Ok(match_nodes!(input.into_children();
+            [ForExpr(e)] => e,
             [IfExpr(e)] => e,
             [OrExpr(e)] => e,
+        ))
+    }
+    fn ForExpr(input: Node) -> Result<Expr> {
+        // let e: Expr = unreachable!();
+        // let bs: Vec<(QName, Expr)> = unreachable!();
+        // let ret = bs.into_iter().rev().fold(e, |e,b|Expr::For(b.0, Box::new(b.1), Box::new(e)));
+        Ok(match_nodes!(input.into_children();
+            [SimpleForClause(bs), ExprSingle(e)] => bs.into_iter().rev().fold(e, |e,b|{
+                Expr::For(b.0, Box::new(b.1), Box::new(e))
+            }),
+        ))
+    }
+    fn SimpleForClause(input: Node) -> Result<Vec<(QName, Expr)>> {
+        Ok(match_nodes!(input.into_children();
+            [SimpleForBinding(b)..] => b.collect(),
+        ))
+    }
+    fn SimpleForBinding(input: Node) -> Result<(QName, Expr)> {
+        Ok(match_nodes!(input.into_children();
+            [EQName(qn), ExprSingle(e)] => (qn, e),
         ))
     }
     fn OrExpr(input: Node) -> Result<Expr> {
@@ -773,5 +795,29 @@ mod tests {
         let input = "child::a[2]";
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn for1() {
+        let context: StaticContext = Default::default();
+        let input = "for $i in (1, 2) return $i";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn for2() {
+        let context: StaticContext = Default::default();
+        let input = "for $i in (10, 20) return for $j in (1, $i) return $i + $j";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn for3() {
+        let context: StaticContext = Default::default();
+        let input = "for $i in (10, 20),
+                               $j in (1, $i)
+                           return ($i + $j)";
+        let equiv = "for $i in (10, 20) return for $j in (1, $i) return $i + $j";
+        let output = context.parse(input);
+        assert_eq!(equiv, format!("{}", output.unwrap()))
     }
 }

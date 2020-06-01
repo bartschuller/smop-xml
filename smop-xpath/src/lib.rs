@@ -39,6 +39,8 @@ impl Xpath {
 #[cfg(test)]
 mod tests {
     use crate::runtime::DynamicContext;
+    use crate::types::Item;
+    use crate::types::{Occurrence, SequenceType};
     use crate::xdm::{NodeSeq, QName, Xdm, XdmResult};
     use crate::{StaticContext, Xpath};
     use roxmltree::Document;
@@ -187,13 +189,13 @@ mod tests {
     #[test]
     fn roxml1() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
-        let context: DynamicContext = static_context.new_dynamic_context();
         let doc = r##"<root>
             <other stringattr="foo" numattr="42">foo</other>
             <mychild>bar bar</mychild>
             <other stringattr="baz" numattr="0">baz</other>
         </root>"##;
         let rodoc = Document::parse(doc)?;
+        let context: DynamicContext = static_context.new_dynamic_context();
         let xdm = Xdm::NodeSeq(NodeSeq::RoXml(rodoc.root()));
         let context = context.clone_with_focus(xdm, 0);
         //let xpath = Xpath::compile(&static_context, "/root/mychild/@numattr")?;
@@ -217,13 +219,15 @@ mod tests {
     #[test]
     fn roxml2() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
-        let context: DynamicContext = static_context.new_dynamic_context();
         let doc = r##"<root>
             <other stringattr="foo" numattr="42">foo</other>
             <mychild>bar bar</mychild>
             <other stringattr="baz" numattr="0">baz</other>
         </root>"##;
         let rodoc = Document::parse(doc)?;
+
+        let context: DynamicContext = static_context.new_dynamic_context();
+
         let xdm = Xdm::NodeSeq(NodeSeq::RoXml(rodoc.root()));
         let context = context.clone_with_focus(xdm, 0);
         let xpath = Xpath::compile(
@@ -291,12 +295,27 @@ mod tests {
     }
     #[test]
     fn var1() -> XdmResult<()> {
-        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let mut static_context: StaticContext = Default::default();
+        let a_type = static_context.schema_type(&static_context.qname("xs", "integer").unwrap())?;
+        static_context.set_variable_type(
+            QName::new("a".to_string(), None, None),
+            SequenceType::Item(Item::AtomicOrUnion(a_type), Occurrence::One),
+        );
         let xpath = Xpath::compile(&static_context, "$a")?;
+        let static_context = Rc::new(static_context);
         let mut context: DynamicContext = static_context.new_dynamic_context();
         context.set_variable(QName::new("a".to_string(), None, None), Xdm::Integer(42));
         let result = xpath.evaluate(&context)?;
         assert_eq!(result.integer()?, 42);
+        Ok(())
+    }
+    #[test]
+    fn for1() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let input = "for $i in 10 return $i";
+        let expr = static_context.parse(input)?;
+        let result = expr.type_(&static_context)?.to_string();
+        assert_eq!(result, "xs:integer".to_string());
         Ok(())
     }
 }

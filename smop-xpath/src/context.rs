@@ -2,11 +2,12 @@ use crate::ast::Expr;
 use crate::functions::{Function, FunctionKey};
 use crate::parser::parse;
 use crate::runtime::DynamicContext;
-use crate::types::{SchemaType, TypeTree, Variety};
+use crate::types::{SchemaType, SequenceType, TypeTree, Variety};
 use crate::xdm::{QName, XdmError, XdmResult};
-use std::collections::HashMap;
+use im::HashMap;
 use std::rc::Rc;
 
+#[derive(Clone)]
 pub struct StaticContext {
     namespaces: HashMap<String, String>,
     prefixes: HashMap<String, String>,
@@ -14,6 +15,7 @@ pub struct StaticContext {
     functions: HashMap<FunctionKey, Function>,
     default_function_namespace: Option<String>,
     default_element_namespace: Option<String>,
+    variable_types: HashMap<QName, SequenceType>,
 }
 
 impl StaticContext {
@@ -90,9 +92,17 @@ impl StaticContext {
     pub fn new_dynamic_context<'a, 'input>(self: &Rc<Self>) -> DynamicContext<'a, 'input> {
         DynamicContext {
             focus: None,
-            static_context: self.clone(),
+            static_context: Rc::clone(self),
             variables: HashMap::new(),
         }
+    }
+
+    pub fn variable_type(&self, qname: &QName) -> Option<SequenceType> {
+        self.variable_types.get(qname).cloned()
+    }
+
+    pub fn set_variable_type(&mut self, qname: QName, st: SequenceType) {
+        self.variable_types.insert(qname, st);
     }
 }
 
@@ -128,6 +138,7 @@ impl Default for StaticContext {
             functions: HashMap::new(),
             default_function_namespace: Some("http://www.w3.org/2005/xpath-functions".to_string()),
             default_element_namespace: None,
+            variable_types: HashMap::new(),
         };
 
         sc.add_prefix_ns("xs", "http://www.w3.org/2001/XMLSchema");

@@ -1,22 +1,25 @@
 use crate::runtime::DynamicContext;
 use crate::types::SequenceType;
 use crate::xdm::{Xdm, XdmResult};
+use std::rc::Rc;
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Clone)]
 pub struct FunctionKey {
     pub name: String,
     pub ns: String,
     pub arity: usize,
 }
 
+#[derive(Clone)]
 pub struct Function {
     pub args: Vec<SequenceType>,
     pub type_: SequenceType,
     pub code: fn() -> CompiledFunction,
 }
 
+#[derive(Clone)]
 pub struct CompiledFunction(
-    Box<
+    Rc<
         dyn for<'a, 'input, 'context> Fn(
             &'context DynamicContext,
             Vec<Xdm<'a, 'input>>,
@@ -32,7 +35,7 @@ impl CompiledFunction {
                 Vec<Xdm<'a, 'input>>,
             ) -> XdmResult<Xdm<'a, 'input>>,
     ) -> Self {
-        CompiledFunction(Box::new(closure))
+        CompiledFunction(Rc::new(closure))
     }
     pub fn execute<'a, 'input: 'a, 'context>(
         &self,

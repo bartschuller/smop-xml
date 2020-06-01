@@ -1,14 +1,16 @@
 use crate::xdm::{NodeSeq, QName, Xdm, XdmError, XdmResult};
 use crate::StaticContext;
 
-use std::collections::HashMap;
+use im::HashMap;
 use std::rc::Rc;
 
+#[derive(Clone)]
 pub struct Focus<'a, 'input> {
     pub sequence: Xdm<'a, 'input>,
     pub position: usize,
 }
 
+#[derive(Clone)]
 pub struct DynamicContext<'a, 'input> {
     pub focus: Option<Focus<'a, 'input>>,
     pub static_context: Rc<StaticContext>,
@@ -19,11 +21,21 @@ impl<'a, 'input> DynamicContext<'a, 'input> {
     pub fn clone_with_focus(&self, sequence: Xdm<'a, 'input>, position: usize) -> Self {
         DynamicContext {
             focus: Some(Focus { sequence, position }),
-            static_context: self.static_context.clone(),
+            static_context: Rc::clone(&self.static_context),
             variables: self.variables.clone(),
         }
     }
+    pub fn clone_with_variable(&self, qname: QName, value: Xdm<'a, 'input>) -> Self {
+        let mut ret = DynamicContext {
+            focus: self.focus.clone(),
+            static_context: Rc::clone(&self.static_context),
+            variables: self.variables.clone(),
+        };
+        ret.set_variable(qname, value);
+        ret
+    }
     pub fn varref(&self, qname: &QName) -> Option<Xdm<'a, 'input>> {
+        println!("fetching ${}: {:?}", qname, self.variables.get(qname));
         self.variables.get(qname).cloned()
     }
     pub fn set_variable(&mut self, qname: QName, value: Xdm<'a, 'input>) {

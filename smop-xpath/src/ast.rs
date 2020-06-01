@@ -27,6 +27,7 @@ pub enum Expr {
     Step(Axis, NodeTest, Vec<Expr>),
     ValueComp(Box<Expr>, ValueComp, Box<Expr>),
     Predicate(Box<Expr>, Box<Expr>),
+    For(QName, Box<Expr>, Box<Expr>),
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -112,9 +113,11 @@ impl Display for Literal {
 impl Expr {
     pub(crate) fn compile(self, ctx: &StaticContext) -> XdmResult<CompiledExpr> {
         let type_ = self.type_(ctx)?;
+        let expr_string = format!("{}", &self);
         match self {
             Expr::Literal(l) => l.compile(),
             Expr::VarRef(qname) => Ok(CompiledExpr::new(move |c| {
+                println!("running {}", expr_string);
                 c.varref(&qname).ok_or_else(|| {
                     XdmError::xqtm("err:XPST0008", format!("variable `{}` not found", qname))
                 })
@@ -182,6 +185,7 @@ impl Expr {
             Expr::And(_) => todo!("implement And"),
             Expr::Arithmetic(l, o, r) => match type_ {
                 SequenceType::EmptySequence => {
+                    println!("warning: compiling away arithmetic op to empty sequence");
                     Ok(CompiledExpr::new(move |_c| Ok(Xdm::Sequence(vec![]))))
                 }
                 SequenceType::Item(i, _) => {
@@ -193,6 +197,7 @@ impl Expr {
                     let type_string = i.to_string();
                     Ok(match type_string.as_ref() {
                         "xs:integer" => CompiledExpr::new(move |c| {
+                            println!("running integer + : {}", expr_string);
                             Ok(Xdm::Integer(
                                 l_c.execute(c)?.integer()? + r_c.execute(c)?.integer()?,
                             ))
@@ -429,12 +434,40 @@ impl Expr {
                     }
                 }))
             }
+            Expr::For(qname, in_expr, ret_expr) => {
+                let ic = in_expr.compile(ctx)?;
+                let rc = ret_expr.compile(ctx)?;
+
+                Ok(CompiledExpr::new(move |c| {
+                    println!("running {}", expr_string);
+                    let binding_seq = ic.execute(c)?;
+                    println!("ranging over {:?}", binding_seq);
+                    let mut result: Vec<Xdm> = Vec::new();
+                    for val in binding_seq {
+                        let context = c.clone_with_variable(qname.clone(), val);
+                        println!("going to execute with variables={:?}", context.variables);
+                        let ret_val = rc.execute(&context)?;
+                        println!("{} {:?}", qname, ret_val);
+                        result.extend(ret_val.into_iter());
+                    }
+                    if result.len() == 1 {
+                        Ok(result.remove(0))
+                    } else {
+                        Ok(Xdm::Sequence(result))
+                    }
+                }))
+            }
         }
     }
     pub(crate) fn type_(&self, ctx: &StaticContext) -> XdmResult<SequenceType> {
         match self {
             Expr::Literal(l) => Ok(l.type_(ctx)),
-            Expr::VarRef(_) => Ok(SequenceType::EmptySequence), // FIXME
+            Expr::VarRef(qname) => ctx.variable_type(qname).ok_or_else(|| {
+                XdmError::xqtm(
+                    "err:XPST0008",
+                    format!("variable ${} not found in static context", qname),
+                )
+            }),
             Expr::Sequence(v) => {
                 if v.is_empty() {
                     Ok(SequenceType::EmptySequence)
@@ -476,6 +509,16 @@ impl Expr {
                 Occurrence::Optional,
             )),
             Expr::Predicate(e, _) => e.type_(ctx),
+            Expr::For(qname, bs, e) => {
+                let bi_type = bs.type_(ctx)?;
+                let bi_type = match bi_type {
+                    SequenceType::EmptySequence => unreachable!(),
+                    SequenceType::Item(it, o) => SequenceType::Item(it, Occurrence::One),
+                };
+                let mut new_ctx = ctx.clone();
+                new_ctx.set_variable_type(qname.clone(), bi_type);
+                e.type_(&new_ctx)
+            }
         }
     }
 }
@@ -504,19 +547,18 @@ impl Display for Axis {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Axis::Child => write!(f, "child"),
-            // Axis::Descendant => {},
-            // Axis::Attribute => {},
-            // Axis::Self_ => {},
-            // Axis::DescendantOrSelf => {},
-            // Axis::FollowingSibling => {},
-            // Axis::Following => {},
-            // Axis::Namespace => {},
-            // Axis::Parent => {},
-            // Axis::Ancestor => {},
-            // Axis::PrecedingSibling => {},
-            // Axis::Preceding => {},
-            // Axis::AncestorOrSelf => {},
-            _ => todo!("Display for Axis"),
+            Axis::Descendant => write!(f, "descendant"),
+            Axis::Attribute => write!(f, "attribute"),
+            Axis::Self_ => write!(f, "self"),
+            Axis::DescendantOrSelf => write!(f, "descendant-or-self"),
+            Axis::FollowingSibling => write!(f, "following-sibling"),
+            Axis::Following => write!(f, "following"),
+            Axis::Namespace => write!(f, "namespace"),
+            Axis::Parent => write!(f, "parent"),
+            Axis::Ancestor => write!(f, "ancestor"),
+            Axis::PrecedingSibling => write!(f, "preceding-sibling"),
+            Axis::Preceding => write!(f, "preceding"),
+            Axis::AncestorOrSelf => write!(f, "ancestor-or-self"),
         }
     }
 }
@@ -524,7 +566,7 @@ impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Expr::Literal(l) => l.fmt(f),
-            Expr::VarRef(qname) => write!(f, "&{}", qname),
+            Expr::VarRef(qname) => write!(f, "${}", qname),
             Expr::Sequence(v) => write!(f, "({})", v.iter().format(", ")),
             Expr::ContextItem => f.write_str("."),
             Expr::IfThenElse(i, t, e) => write!(f, "if ({}) then {} else {}", i, t, e),
@@ -544,6 +586,7 @@ impl Display for Expr {
             }
             Expr::ValueComp(e1, vc, e2) => write!(f, "{} {} {}", e1, vc, e2),
             Expr::Predicate(e, p) => write!(f, "{}[{}]", e, p),
+            Expr::For(qname, bs, ret) => write!(f, "for ${} in {} return {}", qname, bs, ret),
         }
     }
 }
@@ -551,7 +594,7 @@ impl Display for Expr {
 impl Display for NodeTest {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            NodeTest::KindTest(_) => todo!("Display for NodeTest"),
+            NodeTest::KindTest(kt) => write!(f, "{}", kt),
             NodeTest::NameTest(qname) => write!(f, "{}", qname),
         }
     }
