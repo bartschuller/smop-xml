@@ -9,25 +9,26 @@ use rust_decimal::Decimal;
 use std::borrow::Borrow;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::rc::Rc;
 
 #[derive(Debug, PartialEq)]
-pub enum Expr {
-    Literal(Literal),
-    VarRef(QName),
-    Sequence(Vec<Expr>),
-    ContextItem,
-    IfThenElse(Box<Expr>, Box<Expr>, Box<Expr>),
-    FunctionCall(QName, Vec<Expr>),
-    Or(Vec<Expr>),
-    And(Vec<Expr>),
-    Arithmetic(Box<Expr>, ArithmeticOp, Box<Expr>),
-    InstanceOf(Box<Expr>, SequenceType),
-    TreatAs(Box<Expr>, SequenceType),
-    Path(Box<Expr>, Box<Expr>),
-    Step(Axis, NodeTest, Vec<Expr>),
-    ValueComp(Box<Expr>, ValueComp, Box<Expr>),
-    Predicate(Box<Expr>, Box<Expr>),
-    For(QName, Box<Expr>, Box<Expr>),
+pub enum Expr<T> {
+    Literal(Literal, T),
+    VarRef(QName, T),
+    Sequence(Vec<Expr<T>>, T),
+    ContextItem(T),
+    IfThenElse(Box<Expr<T>>, Box<Expr<T>>, Box<Expr<T>>, T),
+    FunctionCall(QName, Vec<Expr<T>>, T),
+    Or(Vec<Expr<T>>, T),
+    And(Vec<Expr<T>>, T),
+    Arithmetic(Box<Expr<T>>, ArithmeticOp, Box<Expr<T>>, T),
+    InstanceOf(Box<Expr<T>>, SequenceType, T),
+    TreatAs(Box<Expr<T>>, SequenceType, T),
+    Path(Box<Expr<T>>, Box<Expr<T>>, T),
+    Step(Axis, NodeTest, Vec<Expr<T>>, T),
+    ValueComp(Box<Expr<T>>, ValueComp, Box<Expr<T>>, T),
+    Predicate(Box<Expr<T>>, Box<Expr<T>>, T),
+    For(QName, Box<Expr<T>>, Box<Expr<T>>, T),
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -110,21 +111,42 @@ impl Display for Literal {
         }
     }
 }
-impl Expr {
-    pub(crate) fn compile(self, ctx: &StaticContext) -> XdmResult<CompiledExpr> {
-        let type_ = self.type_(ctx)?;
+
+impl<T> Expr<T> {
+    pub(crate) fn t(&self) -> &T {
+        match self {
+            Expr::Literal(_, t) => t,
+            Expr::VarRef(_, t) => t,
+            Expr::Sequence(_, t) => t,
+            Expr::ContextItem(t) => t,
+            Expr::IfThenElse(_, _, _, t) => t,
+            Expr::FunctionCall(_, _, t) => t,
+            Expr::Or(_, t) => t,
+            Expr::And(_, t) => t,
+            Expr::Arithmetic(_, _, _, t) => t,
+            Expr::InstanceOf(_, _, t) => t,
+            Expr::TreatAs(_, _, t) => t,
+            Expr::Path(_, _, t) => t,
+            Expr::Step(_, _, _, t) => t,
+            Expr::ValueComp(_, _, _, t) => t,
+            Expr::Predicate(_, _, t) => t,
+            Expr::For(_, _, _, t) => t,
+        }
+    }
+}
+impl Expr<(SequenceType, Rc<StaticContext>)> {
+    pub(crate) fn compile(self) -> XdmResult<CompiledExpr> {
         let expr_string = format!("{}", &self);
         match self {
-            Expr::Literal(l) => l.compile(),
-            Expr::VarRef(qname) => Ok(CompiledExpr::new(move |c| {
+            Expr::Literal(l, _) => l.compile(),
+            Expr::VarRef(qname, _) => Ok(CompiledExpr::new(move |c| {
                 println!("running {}", expr_string);
                 c.varref(&qname).ok_or_else(|| {
                     XdmError::xqtm("err:XPST0008", format!("variable `{}` not found", qname))
                 })
             })),
-            Expr::Sequence(s) => {
-                let compiled_vec: XdmResult<Vec<_>> =
-                    s.into_iter().map(|x| x.compile(ctx)).collect();
+            Expr::Sequence(s, _t) => {
+                let compiled_vec: XdmResult<Vec<_>> = s.into_iter().map(|x| x.compile()).collect();
                 compiled_vec.map(|compiled_vec| {
                     CompiledExpr::new(move |c| {
                         let v: XdmResult<Vec<_>> =
@@ -142,10 +164,10 @@ impl Expr {
                     })
                 })
             }
-            Expr::IfThenElse(condition_expr, if_expr, else_expr) => {
-                let condition = condition_expr.compile(ctx)?;
-                let if_branch = if_expr.compile(ctx)?;
-                let else_branch = else_expr.compile(ctx)?;
+            Expr::IfThenElse(condition_expr, if_expr, else_expr, _) => {
+                let condition = condition_expr.compile()?;
+                let if_branch = if_expr.compile()?;
+                let else_branch = else_expr.compile()?;
                 Ok(CompiledExpr::new(move |c| {
                     if condition.execute(c)?.boolean()? {
                         if_branch.execute(c)
@@ -154,7 +176,7 @@ impl Expr {
                     }
                 }))
             }
-            Expr::ContextItem => Ok(CompiledExpr::new(move |c| {
+            Expr::ContextItem(_) => Ok(CompiledExpr::new(move |c| {
                 if let Some(ref focus) = c.focus {
                     match &focus.sequence {
                         Xdm::Sequence(v) => v
@@ -168,10 +190,10 @@ impl Expr {
                     Err(XdmError::xqtm("XPDY0002", "context item is undefined"))
                 }
             })),
-            Expr::FunctionCall(qname, args) => {
-                let code = (ctx.function(&qname, args.len()).unwrap().code)();
+            Expr::FunctionCall(qname, args, t) => {
+                let code = (t.1.function(&qname, args.len()).unwrap().code)();
                 let compiled_vec: XdmResult<Vec<_>> =
-                    args.into_iter().map(|x| x.compile(ctx)).collect();
+                    args.into_iter().map(|x| x.compile()).collect();
                 compiled_vec.map(|compiled_vec| {
                     CompiledExpr::new(move |c| {
                         let v: XdmResult<Vec<Xdm>> =
@@ -181,9 +203,9 @@ impl Expr {
                     })
                 })
             }
-            Expr::Or(_) => todo!("implement Or"),
-            Expr::And(_) => todo!("implement And"),
-            Expr::Arithmetic(l, o, r) => match type_ {
+            Expr::Or(_, _) => todo!("implement Or"),
+            Expr::And(_, _) => todo!("implement And"),
+            Expr::Arithmetic(l, o, r, t) => match t.0 {
                 SequenceType::EmptySequence => {
                     println!("warning: compiling away arithmetic op to empty sequence");
                     Ok(CompiledExpr::new(move |_c| Ok(Xdm::Sequence(vec![]))))
@@ -192,8 +214,8 @@ impl Expr {
                     if o != ArithmeticOp::Plus {
                         todo!("operations beside plus")
                     }
-                    let l_c = l.compile(ctx)?;
-                    let r_c = r.compile(ctx)?;
+                    let l_c = l.compile()?;
+                    let r_c = r.compile()?;
                     let type_string = i.to_string();
                     Ok(match type_string.as_ref() {
                         "xs:integer" => CompiledExpr::new(move |c| {
@@ -216,8 +238,8 @@ impl Expr {
                     })
                 }
             },
-            Expr::InstanceOf(e, st) => {
-                let ce = e.compile(ctx)?;
+            Expr::InstanceOf(e, st, _t) => {
+                let ce = e.compile()?;
                 Ok(CompiledExpr::new(move |c| {
                     let x = ce.execute(c)?;
                     let st2 = x.dynamic_type(&c.static_context)?;
@@ -225,14 +247,14 @@ impl Expr {
                     Ok(Xdm::Boolean(lub == st))
                 }))
             }
-            Expr::TreatAs(e, _st) => {
-                let ce = e.compile(ctx)?;
+            Expr::TreatAs(e, _st, _) => {
+                let ce = e.compile()?;
                 // FIXME there's probably more that should be done here.
                 Ok(ce)
             }
-            Expr::Path(s1, s2) => {
-                let e1 = s1.compile(ctx)?;
-                let e2 = s2.compile(ctx)?;
+            Expr::Path(s1, s2, _) => {
+                let e1 = s1.compile()?;
+                let e2 = s2.compile()?;
                 Ok(CompiledExpr::new(move |c| {
                     let x1 = e1.execute(c)?;
                     match x1 {
@@ -275,10 +297,9 @@ impl Expr {
                     }
                 }))
             }
-            Expr::Step(axis, nt, ps) => {
+            Expr::Step(axis, nt, ps, _) => {
                 let nt = Box::new(nt);
-                let predicates: XdmResult<Vec<_>> =
-                    ps.into_iter().map(|x| x.compile(ctx)).collect();
+                let predicates: XdmResult<Vec<_>> = ps.into_iter().map(|x| x.compile()).collect();
                 let predicates = predicates?;
                 Ok(CompiledExpr::new(move |c| {
                     let ci = c
@@ -368,9 +389,9 @@ impl Expr {
                     }
                 }))
             }
-            Expr::ValueComp(e1, vc, e2) => {
-                let c1 = e1.compile(ctx)?;
-                let c2 = e2.compile(ctx)?;
+            Expr::ValueComp(e1, vc, e2, _) => {
+                let c1 = e1.compile()?;
+                let c2 = e2.compile()?;
                 Ok(CompiledExpr::new(move |c| {
                     let a1 = c1.execute(c)?.atomize()?;
                     let a2 = c2.execute(c)?.atomize()?;
@@ -404,9 +425,9 @@ impl Expr {
                     }
                 }))
             }
-            Expr::Predicate(e, p) => {
-                let ce = e.compile(ctx)?;
-                let cp = p.compile(ctx)?;
+            Expr::Predicate(e, p, _) => {
+                let ce = e.compile()?;
+                let cp = p.compile()?;
                 Ok(CompiledExpr::new(move |c| {
                     let seq = ce.execute(c)?;
                     let mut iter = seq.into_iter().enumerate();
@@ -434,9 +455,9 @@ impl Expr {
                     }
                 }))
             }
-            Expr::For(qname, in_expr, ret_expr) => {
-                let ic = in_expr.compile(ctx)?;
-                let rc = ret_expr.compile(ctx)?;
+            Expr::For(qname, in_expr, ret_expr, _) => {
+                let ic = in_expr.compile()?;
+                let rc = ret_expr.compile()?;
 
                 Ok(CompiledExpr::new(move |c| {
                     println!("running {}", expr_string);
@@ -459,70 +480,175 @@ impl Expr {
             }
         }
     }
-    pub(crate) fn type_(&self, ctx: &StaticContext) -> XdmResult<SequenceType> {
+}
+
+impl Expr<()> {
+    pub(crate) fn type_(
+        self,
+        ctx: Rc<StaticContext>,
+    ) -> XdmResult<Expr<(SequenceType, Rc<StaticContext>)>> {
         match self {
-            Expr::Literal(l) => Ok(l.type_(ctx)),
-            Expr::VarRef(qname) => ctx.variable_type(qname).ok_or_else(|| {
-                XdmError::xqtm(
-                    "err:XPST0008",
-                    format!("variable ${} not found in static context", qname),
-                )
-            }),
-            Expr::Sequence(v) => {
+            Expr::Literal(l, _) => {
+                let l_type = l.type_(&ctx);
+                Ok(Expr::Literal(l, (l_type, ctx)))
+            }
+            Expr::VarRef(qname, _) => ctx
+                .variable_type(&qname)
+                .ok_or_else(|| {
+                    XdmError::xqtm(
+                        "err:XPST0008",
+                        format!("variable ${} not found in static context", qname),
+                    )
+                })
+                .map(|type_| Expr::VarRef(qname, (type_, ctx))),
+            Expr::Sequence(v, _) => {
                 if v.is_empty() {
-                    Ok(SequenceType::EmptySequence)
+                    Ok(Expr::Sequence(vec![], (SequenceType::EmptySequence, ctx)))
                 } else {
                     assert!(v.len() > 1);
-                    let child_types: XdmResult<Vec<_>> = v.iter().map(|e| e.type_(ctx)).collect();
-                    SequenceType::add_vec(ctx, child_types?)
+                    let v_typed: XdmResult<Vec<_>> =
+                        v.into_iter().map(|e| e.type_(Rc::clone(&ctx))).collect();
+                    let v_typed = v_typed?;
+                    let child_types = v_typed.iter().map(|e| e.t().0.clone()).collect();
+                    Ok(Expr::Sequence(
+                        v_typed,
+                        (SequenceType::add_vec(&Rc::clone(&ctx), child_types)?, ctx),
+                    ))
                 }
             }
-            Expr::ContextItem => Ok(SequenceType::EmptySequence), // FIXME
-            Expr::IfThenElse(_, t, e) => {
-                let t_type = t.type_(ctx)?;
-                let e_type = e.type_(ctx)?;
-                SequenceType::lub(ctx, &t_type, &e_type)
+            Expr::ContextItem(_) => Ok(Expr::ContextItem((ctx.context_item_type.clone(), ctx))),
+            Expr::IfThenElse(i, t, e, _) => {
+                let i_typed = i.type_(Rc::clone(&ctx))?;
+                let t_typed = t.type_(Rc::clone(&ctx))?;
+                let e_typed = e.type_(Rc::clone(&ctx))?;
+                let e_type = e_typed.t().0.clone();
+                let t_type = t_typed.t().0.clone();
+                Ok(Expr::IfThenElse(
+                    Box::new(i_typed),
+                    Box::new(t_typed),
+                    Box::new(e_typed),
+                    (SequenceType::lub(&ctx, &t_type, &e_type)?, ctx),
+                ))
             }
-            Expr::FunctionCall(qname, args) => ctx
-                .function(qname, args.len())
-                .map(|func| func.type_.clone())
-                .ok_or_else(|| {
-                    let msg = format!("No function {}#{} found", qname, args.len());
-                    XdmError::xqtm("err:XPST0017", msg.as_str())
-                }),
-            Expr::Or(_) => todo!("implement type_"),
-            Expr::And(_) => todo!("implement type_"),
-            Expr::Arithmetic(l, _op, r) => {
-                let t1 = l.type_(ctx)?;
-                let t2 = r.type_(ctx)?;
-                SequenceType::lub(ctx, &t1, &t2)
+            Expr::FunctionCall(qname, args, _) => {
+                let arity = args.len();
+                let args_typed: XdmResult<Vec<_>> =
+                    args.into_iter().map(|a| a.type_(Rc::clone(&ctx))).collect();
+                let args_typed = args_typed?;
+                let ctx2 = Rc::clone(&ctx);
+                ctx.function(&qname, arity)
+                    .map(|func| {
+                        Expr::FunctionCall(qname.clone(), args_typed, (func.type_.clone(), ctx2))
+                    })
+                    .ok_or_else(|| {
+                        let msg = format!("No function {}#{} found", qname, arity);
+                        XdmError::xqtm("err:XPST0017", msg.as_str())
+                    })
             }
-            Expr::InstanceOf(_, _) => Ok(SequenceType::Item(
-                Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:boolean"))?),
-                Occurrence::One,
-            )),
-            Expr::TreatAs(_, st) => Ok(st.clone()),
-            Expr::Path(_e1, e2) => e2.type_(ctx),
-            Expr::Step(a, _nt, _ps) => a.type_(ctx),
-            Expr::ValueComp(_, _, _) => Ok(SequenceType::Item(
-                Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:boolean"))?),
-                Occurrence::Optional,
-            )),
-            Expr::Predicate(e, _) => e.type_(ctx),
-            Expr::For(qname, bs, e) => {
-                let bi_type = bs.type_(ctx)?;
-                let bi_type = match bi_type {
+            Expr::Or(v, _) => {
+                let v_typed: XdmResult<Vec<_>> =
+                    v.into_iter().map(|a| a.type_(Rc::clone(&ctx))).collect();
+                Ok(Expr::Or(v_typed?, todo!("implement type_")))
+            }
+            Expr::And(v, _) => {
+                let v_typed: XdmResult<Vec<_>> =
+                    v.into_iter().map(|a| a.type_(Rc::clone(&ctx))).collect();
+                Ok(Expr::And(v_typed?, todo!("implement type_")))
+            }
+            Expr::Arithmetic(l, op, r, _) => {
+                let t1 = l.type_(Rc::clone(&ctx))?;
+                let t2 = r.type_(Rc::clone(&ctx))?;
+                let t1_type = t1.t().0.clone();
+                let t2_type = t2.t().0.clone();
+                Ok(Expr::Arithmetic(
+                    Box::new(t1),
+                    op,
+                    Box::new(t2),
+                    (SequenceType::lub(&ctx, &t1_type, &t2_type)?, ctx),
+                ))
+            }
+            Expr::InstanceOf(e, st, _) => {
+                let e_typed = e.type_(Rc::clone(&ctx))?;
+                Ok(Expr::InstanceOf(
+                    Box::new(e_typed),
+                    st,
+                    (
+                        SequenceType::Item(
+                            Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:boolean"))?),
+                            Occurrence::One,
+                        ),
+                        ctx,
+                    ),
+                ))
+            }
+            Expr::TreatAs(e, st, _) => {
+                let e_typed = e.type_(Rc::clone(&ctx))?;
+                Ok(Expr::TreatAs(Box::new(e_typed), st.clone(), (st, ctx)))
+            }
+            Expr::Path(e1, e2, _) => {
+                let e1_typed = e1.type_(Rc::clone(&ctx))?;
+                let e2_typed = e2.type_(Rc::clone(&ctx))?;
+                let e2_type = e2_typed.t().0.clone();
+                Ok(Expr::Path(
+                    Box::new(e1_typed),
+                    Box::new(e2_typed),
+                    (e2_type, ctx),
+                ))
+            }
+            Expr::Step(a, nt, ps, _) => {
+                let ps_typed: XdmResult<Vec<_>> =
+                    ps.into_iter().map(|a| a.type_(Rc::clone(&ctx))).collect();
+                Ok(Expr::Step(
+                    a,
+                    nt,
+                    ps_typed?,
+                    (a.type_(&Rc::clone(&ctx))?, ctx),
+                ))
+            }
+            Expr::ValueComp(e1, vc, e2, _) => {
+                let e1_typed = e1.type_(Rc::clone(&ctx))?;
+                let e2_typed = e2.type_(Rc::clone(&ctx))?;
+                let ret_type = SequenceType::Item(
+                    Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:boolean"))?),
+                    Occurrence::Optional,
+                );
+                Ok(Expr::ValueComp(
+                    Box::new(e1_typed),
+                    vc,
+                    Box::new(e2_typed),
+                    (ret_type, ctx),
+                ))
+            }
+            Expr::Predicate(e, p, _) => {
+                let e_typed = e.type_(Rc::clone(&ctx))?;
+                let p_typed = p.type_(Rc::clone(&ctx))?;
+                let e_type = e_typed.t().0.clone();
+                Ok(Expr::Predicate(
+                    Box::new(e_typed),
+                    Box::new(p_typed),
+                    (e_type, ctx),
+                ))
+            }
+            Expr::For(qname, bs, e, _) => {
+                let bs_typed = bs.type_(Rc::clone(&ctx))?;
+                let bi_type = match bs_typed.t().0.clone() {
                     SequenceType::EmptySequence => unreachable!(),
-                    SequenceType::Item(it, o) => SequenceType::Item(it, Occurrence::One),
+                    SequenceType::Item(it, _o) => SequenceType::Item(it, Occurrence::One),
                 };
-                let mut new_ctx = ctx.clone();
+                let mut new_ctx = (&*ctx).clone();
                 new_ctx.set_variable_type(qname.clone(), bi_type);
-                e.type_(&new_ctx)
+                let e_typed = e.type_(Rc::new(new_ctx))?;
+                let e_type = e_typed.t().0.clone();
+                Ok(Expr::For(
+                    qname,
+                    Box::new(bs_typed),
+                    Box::new(e_typed),
+                    (e_type, ctx),
+                ))
             }
         }
     }
 }
-
 impl Axis {
     pub(crate) fn type_(&self, _ctx: &StaticContext) -> XdmResult<SequenceType> {
         // match self {
@@ -562,31 +688,33 @@ impl Display for Axis {
         }
     }
 }
-impl Display for Expr {
+impl<T> Display for Expr<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Expr::Literal(l) => l.fmt(f),
-            Expr::VarRef(qname) => write!(f, "${}", qname),
-            Expr::Sequence(v) => write!(f, "({})", v.iter().format(", ")),
-            Expr::ContextItem => f.write_str("."),
-            Expr::IfThenElse(i, t, e) => write!(f, "if ({}) then {} else {}", i, t, e),
-            Expr::FunctionCall(name, args) => write!(f, "{}({})", name, args.iter().format(", ")),
-            Expr::Or(v) => write!(f, "{}", v.iter().format(" or ")),
-            Expr::And(v) => write!(f, "{}", v.iter().format(" and ")),
-            Expr::Arithmetic(e1, o, e2) => write!(f, "{} {} {}", e1, o, e2),
-            Expr::InstanceOf(e, t) => write!(f, "{} instance of {}", e, t),
-            Expr::TreatAs(e, t) => write!(f, "{} treat as {}", e, t),
-            Expr::Path(e1, e2) => write!(f, "{}/{}", e1, e2),
-            Expr::Step(a, nt, ps) => {
+            Expr::Literal(l, _) => l.fmt(f),
+            Expr::VarRef(qname, _) => write!(f, "${}", qname),
+            Expr::Sequence(v, _) => write!(f, "({})", v.iter().format(", ")),
+            Expr::ContextItem(_) => f.write_str("."),
+            Expr::IfThenElse(i, t, e, _) => write!(f, "if ({}) then {} else {}", i, t, e),
+            Expr::FunctionCall(name, args, _) => {
+                write!(f, "{}({})", name, args.iter().format(", "))
+            }
+            Expr::Or(v, _) => write!(f, "{}", v.iter().format(" or ")),
+            Expr::And(v, _) => write!(f, "{}", v.iter().format(" and ")),
+            Expr::Arithmetic(e1, o, e2, _) => write!(f, "{} {} {}", e1, o, e2),
+            Expr::InstanceOf(e, t, _) => write!(f, "{} instance of {}", e, t),
+            Expr::TreatAs(e, t, _) => write!(f, "{} treat as {}", e, t),
+            Expr::Path(e1, e2, _) => write!(f, "{}/{}", e1, e2),
+            Expr::Step(a, nt, ps, _) => {
                 write!(f, "{}::{}", a, nt)?;
                 for p in ps {
                     write!(f, "[{}]", p)?;
                 }
                 Ok(())
             }
-            Expr::ValueComp(e1, vc, e2) => write!(f, "{} {} {}", e1, vc, e2),
-            Expr::Predicate(e, p) => write!(f, "{}[{}]", e, p),
-            Expr::For(qname, bs, ret) => write!(f, "for ${} in {} return {}", qname, bs, ret),
+            Expr::ValueComp(e1, vc, e2, _) => write!(f, "{} {} {}", e1, vc, e2),
+            Expr::Predicate(e, p, _) => write!(f, "{}[{}]", e, p),
+            Expr::For(qname, bs, ret, _) => write!(f, "for ${} in {} return {}", qname, bs, ret),
         }
     }
 }

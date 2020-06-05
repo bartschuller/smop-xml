@@ -212,24 +212,28 @@ mod tests {
     use crate::ast::{Expr, Literal};
     use crate::xdm::XdmResult;
     use crate::StaticContext;
+    use std::rc::Rc;
 
     #[test]
     fn types1() -> XdmResult<()> {
-        let sc: StaticContext = Default::default();
-        let ast = Expr::Literal(Literal::Integer(1));
-        let type_ = ast.type_(&sc);
-        let res = type_?.to_string();
+        let sc: Rc<StaticContext> = Rc::new(Default::default());
+        let ast = Expr::Literal(Literal::Integer(1), ());
+        let type_ = ast.type_(Rc::clone(&sc));
+        let res = type_?.t().0.to_string();
         assert_eq!("xs:integer", res);
-        let ast = Expr::Sequence(vec![]);
-        let type_ = ast.type_(&sc);
-        let res = type_?.to_string();
+        let ast = Expr::Sequence(vec![], ());
+        let type_ = ast.type_(Rc::clone(&sc));
+        let res = type_?.t().0.to_string();
         assert_eq!("empty-sequence()", res);
-        let ast = Expr::Sequence(vec![
-            Expr::Literal(Literal::Integer(1)),
-            Expr::Literal(Literal::Integer(1)),
-        ]);
-        let type_ = ast.type_(&sc);
-        let res = type_?.to_string();
+        let ast = Expr::Sequence(
+            vec![
+                Expr::Literal(Literal::Integer(1), ()),
+                Expr::Literal(Literal::Integer(1), ()),
+            ],
+            (),
+        );
+        let type_ = ast.type_(sc);
+        let res = type_?.t().0.to_string();
         assert_eq!("xs:integer+", res);
         Ok(())
     }

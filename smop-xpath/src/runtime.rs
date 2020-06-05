@@ -1,4 +1,4 @@
-use crate::xdm::{NodeSeq, QName, Xdm, XdmError, XdmResult};
+use crate::xdm::{QName, Xdm, XdmResult};
 use crate::StaticContext;
 
 use im::HashMap;

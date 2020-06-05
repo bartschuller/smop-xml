@@ -16,16 +16,19 @@ mod xpath_functions_31;
 pub use crate::context::StaticContext;
 use crate::runtime::{CompiledExpr, DynamicContext};
 use crate::xdm::{XdmError, XdmResult};
+use std::rc::Rc;
 use xdm::Xdm;
 
 pub struct Xpath(CompiledExpr);
 
 impl Xpath {
-    pub fn compile(context: &StaticContext, xpath: &str) -> XdmResult<Xpath> {
+    pub fn compile(context: &Rc<StaticContext>, xpath: &str) -> XdmResult<Xpath> {
         let expr = context
             .parse(xpath)
             .map_err(|e| XdmError::xqtm("XPST0003", e.to_string().as_str()))?;
-        expr.compile(context).map(|compiled| Xpath(compiled))
+        expr.type_(Rc::clone(context))?
+            .compile()
+            .map(|compiled| Xpath(compiled))
     }
 
     pub fn evaluate<'a, 'input, 'context>(
@@ -51,8 +54,8 @@ mod tests {
     #[test]
     fn compile1() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
-        let xpath = Xpath::compile(&static_context, "1")?;
         let context: DynamicContext = static_context.new_dynamic_context();
+        let xpath = Xpath::compile(&static_context, "1")?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(result, Xdm::Integer(1));
         Ok(())
@@ -61,8 +64,8 @@ mod tests {
     #[test]
     fn compile2() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
-        let xpath = Xpath::compile(&static_context, "1,'two'")?;
         let context: DynamicContext = static_context.new_dynamic_context();
+        let xpath = Xpath::compile(&static_context, "1,'two'")?;
         let result1 = xpath.evaluate(&context)?;
         assert_eq!(
             result1,
@@ -76,8 +79,8 @@ mod tests {
     #[test]
     fn if1() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
-        let xpath = Xpath::compile(&static_context, "if (1) then 'hello' else 42")?;
         let context: DynamicContext = static_context.new_dynamic_context();
+        let xpath = Xpath::compile(&static_context, "if (1) then 'hello' else 42")?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(result, Xdm::String("hello".to_string()));
         let xpath = Xpath::compile(&static_context, "if (0) then 'hello' else 42")?;
@@ -88,8 +91,8 @@ mod tests {
     #[test]
     fn bool1() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
-        let xpath = Xpath::compile(&static_context, "0")?;
         let context: DynamicContext = static_context.new_dynamic_context();
+        let xpath = Xpath::compile(&static_context, "0")?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(result.boolean()?, false);
         let xpath = Xpath::compile(&static_context, "1")?;
@@ -100,8 +103,8 @@ mod tests {
     #[test]
     fn bool2() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
-        let xpath = Xpath::compile(&static_context, "1, 2")?;
         let context: DynamicContext = static_context.new_dynamic_context();
+        let xpath = Xpath::compile(&static_context, "1, 2")?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(
             result.boolean().expect_err("expected an error").code,
@@ -112,8 +115,8 @@ mod tests {
     #[test]
     fn parens1() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
-        let xpath = Xpath::compile(&static_context, "()")?;
         let context: DynamicContext = static_context.new_dynamic_context();
+        let xpath = Xpath::compile(&static_context, "()")?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(result, Xdm::Sequence(vec![]));
         let xpath = Xpath::compile(&static_context, "(3)")?;
@@ -141,8 +144,8 @@ mod tests {
     #[test]
     fn arith1() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
-        let xpath = Xpath::compile(&static_context, "1 + 2")?;
         let context: DynamicContext = static_context.new_dynamic_context();
+        let xpath = Xpath::compile(&static_context, "1 + 2")?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(result, Xdm::Integer(3));
         Ok(())
@@ -150,12 +153,12 @@ mod tests {
     #[test]
     fn arith2() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let context: DynamicContext = static_context.new_dynamic_context();
         let input = "1 + 0.2";
         let expr = static_context.parse(input)?;
-        let result = expr.type_(&static_context)?.to_string();
+        let result = expr.type_(Rc::clone(&static_context))?.t().0.to_string();
         assert_eq!(result, "xs:decimal".to_string());
         let xpath = Xpath::compile(&static_context, input)?;
-        let context: DynamicContext = static_context.new_dynamic_context();
         let result = xpath.evaluate(&context)?;
         assert_eq!(result, Xdm::Decimal(Decimal::from_str("1.2").unwrap()));
         Ok(())
@@ -163,12 +166,12 @@ mod tests {
     #[test]
     fn arith3() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let context: DynamicContext = static_context.new_dynamic_context();
         let input = "0.2 + 3e-2";
         let expr = static_context.parse(input)?;
-        let result = expr.type_(&static_context)?.to_string();
+        let result = expr.type_(Rc::clone(&static_context))?.t().0.to_string();
         assert_eq!(result, "xs:anyAtomicType".to_string());
         let xpath = Xpath::compile(&static_context, input)?;
-        let context: DynamicContext = static_context.new_dynamic_context();
         let result = xpath.evaluate(&context)?;
         assert_eq!(result, Xdm::Double(0.23_f64));
         Ok(())
@@ -176,12 +179,12 @@ mod tests {
     #[test]
     fn value_compare1() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let context: DynamicContext = static_context.new_dynamic_context();
         let input = "'a' ge 'b'";
         let expr = static_context.parse(input)?;
-        let result = expr.type_(&static_context)?.to_string();
+        let result = expr.type_(Rc::clone(&static_context))?.t().0.to_string();
         assert_eq!(result, "xs:boolean?".to_string());
         let xpath = Xpath::compile(&static_context, input)?;
-        let context: DynamicContext = static_context.new_dynamic_context();
         let result = xpath.evaluate(&context)?;
         assert!(!result.boolean()?);
         Ok(())
@@ -301,8 +304,8 @@ mod tests {
             QName::new("a".to_string(), None, None),
             SequenceType::Item(Item::AtomicOrUnion(a_type), Occurrence::One),
         );
-        let xpath = Xpath::compile(&static_context, "$a")?;
         let static_context = Rc::new(static_context);
+        let xpath = Xpath::compile(&static_context, "$a")?;
         let mut context: DynamicContext = static_context.new_dynamic_context();
         context.set_variable(QName::new("a".to_string(), None, None), Xdm::Integer(42));
         let result = xpath.evaluate(&context)?;
@@ -314,7 +317,7 @@ mod tests {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let input = "for $i in 10 return $i";
         let expr = static_context.parse(input)?;
-        let result = expr.type_(&static_context)?.to_string();
+        let result = expr.type_(static_context)?.t().0.to_string();
         assert_eq!(result, "xs:integer".to_string());
         Ok(())
     }

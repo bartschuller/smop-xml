@@ -16,10 +16,11 @@ pub struct StaticContext {
     default_function_namespace: Option<String>,
     default_element_namespace: Option<String>,
     variable_types: HashMap<QName, SequenceType>,
+    pub context_item_type: SequenceType,
 }
 
 impl StaticContext {
-    pub fn parse(&self, input: &str) -> XdmResult<Expr> {
+    pub fn parse(&self, input: &str) -> XdmResult<Expr<()>> {
         parse(self, input).map_err(|e| XdmError::xqtm("XPST0003", &e.to_string()))
     }
     fn add_prefix_ns(&mut self, prefix: &str, ns: &str) {
@@ -139,6 +140,7 @@ impl Default for StaticContext {
             default_function_namespace: Some("http://www.w3.org/2005/xpath-functions".to_string()),
             default_element_namespace: None,
             variable_types: HashMap::new(),
+            context_item_type: SequenceType::EmptySequence,
         };
 
         sc.add_prefix_ns("xs", "http://www.w3.org/2001/XMLSchema");

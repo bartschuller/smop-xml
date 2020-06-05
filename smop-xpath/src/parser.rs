@@ -2,10 +2,7 @@ use crate::ast::{ArithmeticOp, Axis, Expr, Literal, NodeTest, ValueComp};
 use crate::context::StaticContext;
 use crate::types::{Item, KindTest, Occurrence, SequenceType};
 use crate::xdm::{QName, XdmError};
-use itertools::Itertools;
-use pest_consume::match_nodes;
-use pest_consume::Error;
-use pest_consume::Parser;
+use pest_consume::*;
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
@@ -18,7 +15,7 @@ impl<R> From<XdmError> for pest::error::Error<R> {
     }
 }
 
-pub(crate) fn parse(ctx: &StaticContext, input: &str) -> Result<Expr> {
+pub(crate) fn parse(ctx: &StaticContext, input: &str) -> Result<Expr<()>> {
     let root = XpathParser::parse_with_userdata(Rule::Xpath, input, ctx);
     let root2 = root.clone();
     pest_ascii_tree::print_ascii_tree(root2.map(|n| n.as_pairs().to_owned()));
@@ -45,7 +42,7 @@ pub struct XpathParser;
 
 #[pest_consume::parser]
 impl XpathParser {
-    pub fn Xpath(input: Node) -> Result<Expr> {
+    pub fn Xpath(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [Expr(expr), EOI(_)] => expr,
         ))
@@ -53,62 +50,62 @@ impl XpathParser {
     fn EOI(_input: Node) -> Result<()> {
         Ok(())
     }
-    fn Expr(input: Node) -> Result<Expr> {
+    fn Expr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [ExprSingle(expr)] => expr,
             [ExprSingle(expr)..] => {
-                    Expr::Sequence(expr.collect())
+                    Expr::Sequence(expr.collect(), ())
             }
         ))
     }
-    fn ExprSingle(input: Node) -> Result<Expr> {
+    fn ExprSingle(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [ForExpr(e)] => e,
             [IfExpr(e)] => e,
             [OrExpr(e)] => e,
         ))
     }
-    fn ForExpr(input: Node) -> Result<Expr> {
+    fn ForExpr(input: Node) -> Result<Expr<()>> {
         // let e: Expr = unreachable!();
         // let bs: Vec<(QName, Expr)> = unreachable!();
         // let ret = bs.into_iter().rev().fold(e, |e,b|Expr::For(b.0, Box::new(b.1), Box::new(e)));
         Ok(match_nodes!(input.into_children();
             [SimpleForClause(bs), ExprSingle(e)] => bs.into_iter().rev().fold(e, |e,b|{
-                Expr::For(b.0, Box::new(b.1), Box::new(e))
+                Expr::For(b.0, Box::new(b.1), Box::new(e), ())
             }),
         ))
     }
-    fn SimpleForClause(input: Node) -> Result<Vec<(QName, Expr)>> {
+    fn SimpleForClause(input: Node) -> Result<Vec<(QName, Expr<()>)>> {
         Ok(match_nodes!(input.into_children();
             [SimpleForBinding(b)..] => b.collect(),
         ))
     }
-    fn SimpleForBinding(input: Node) -> Result<(QName, Expr)> {
+    fn SimpleForBinding(input: Node) -> Result<(QName, Expr<()>)> {
         Ok(match_nodes!(input.into_children();
             [EQName(qn), ExprSingle(e)] => (qn, e),
         ))
     }
-    fn OrExpr(input: Node) -> Result<Expr> {
+    fn OrExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [AndExpr(expr)] => expr,
             [AndExpr(expr)..] => {
-                    Expr::Or(expr.collect())
+                    Expr::Or(expr.collect(), ())
             }
         ))
     }
-    fn AndExpr(input: Node) -> Result<Expr> {
+    fn AndExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [ComparisonExpr(expr)] => expr,
             [ComparisonExpr(expr)..] => {
-                    Expr::And(expr.collect())
+                    Expr::And(expr.collect(), ())
             }
         ))
     }
-    fn ComparisonExpr(input: Node) -> Result<Expr> {
+    fn ComparisonExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [StringConcatExpr(e)] => e, // FIXME
             [StringConcatExpr(e1), ValueComp(c), StringConcatExpr(e2)] => {
-                Expr::ValueComp(Box::new(e1), c, Box::new(e2))
+                Expr::ValueComp(Box::new(e1), c, Box::new(e2), ())
             }
             //[StringConcatExpr(e1), GeneralComp(c), StringConcatExpr(e2)] => , // FIXME
         ))
@@ -125,12 +122,12 @@ impl XpathParser {
         })
     }
     //fn GeneralComp(input: Node) -> Result {}
-    fn StringConcatExpr(input: Node) -> Result<Expr> {
+    fn StringConcatExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [RangeExpr(e)] => e, // FIXME
         ))
     }
-    fn RangeExpr(input: Node) -> Result<Expr> {
+    fn RangeExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [AdditiveExpr(e)] => e, // FIXME
         ))
@@ -138,15 +135,15 @@ impl XpathParser {
     //   A - B + C - D
     // is equivalent to
     //   ((A - B) + C) - D
-    fn AdditiveExpr(input: Node) -> Result<Expr> {
+    fn AdditiveExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [MultiplicativeExpr(e)] => e,
             [MultiplicativeExpr(e1), AdditiveExpr1(oe)..] => {
-                oe.fold(e1, |a, (op, b)| Expr::Arithmetic(Box::new(a), op, Box::new(b)))
+                oe.fold(e1, |a, (op, b)| Expr::Arithmetic(Box::new(a), op, Box::new(b), ()))
             }
         ))
     }
-    fn AdditiveExpr1(input: Node) -> Result<(ArithmeticOp, Expr)> {
+    fn AdditiveExpr1(input: Node) -> Result<(ArithmeticOp, Expr<()>)> {
         Ok(match_nodes!(input.into_children();
             [AdditiveOp(op), MultiplicativeExpr(e)] => (op, e),
         ))
@@ -158,59 +155,59 @@ impl XpathParser {
             &_ => unreachable!(),
         })
     }
-    fn MultiplicativeExpr(input: Node) -> Result<Expr> {
+    fn MultiplicativeExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [UnionExpr(e)] => e, // FIXME
         ))
     }
-    fn UnionExpr(input: Node) -> Result<Expr> {
+    fn UnionExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [IntersectExceptExpr(e)] => e, // FIXME
         ))
     }
-    fn IntersectExceptExpr(input: Node) -> Result<Expr> {
+    fn IntersectExceptExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [InstanceofExpr(e)] => e, // FIXME
         ))
     }
-    fn InstanceofExpr(input: Node) -> Result<Expr> {
+    fn InstanceofExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [TreatExpr(e)] => e,
-            [TreatExpr(e), SequenceType(t)] => Expr::InstanceOf(Box::new(e), t),
+            [TreatExpr(e), SequenceType(t)] => Expr::InstanceOf(Box::new(e), t, ()),
         ))
     }
-    fn TreatExpr(input: Node) -> Result<Expr> {
+    fn TreatExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [CastableExpr(e)] => e,
-            [CastableExpr(e), SequenceType(st)] => Expr::TreatAs(Box::new(e), st),
+            [CastableExpr(e), SequenceType(st)] => Expr::TreatAs(Box::new(e), st, ()),
         ))
     }
-    fn CastableExpr(input: Node) -> Result<Expr> {
+    fn CastableExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [CastExpr(e)] => e, // FIXME
         ))
     }
-    fn CastExpr(input: Node) -> Result<Expr> {
+    fn CastExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [ArrowExpr(e)] => e, // FIXME
         ))
     }
-    fn ArrowExpr(input: Node) -> Result<Expr> {
+    fn ArrowExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [UnaryExpr(e)] => e, // FIXME
         ))
     }
-    fn UnaryExpr(input: Node) -> Result<Expr> {
+    fn UnaryExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [SimpleMapExpr(e)] => e, // FIXME
         ))
     }
-    fn SimpleMapExpr(input: Node) -> Result<Expr> {
+    fn SimpleMapExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [PathExpr(e)] => e, // FIXME
         ))
     }
-    fn PathExpr(input: Node) -> Result<Expr> {
+    fn PathExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [InitialSlash(_), RelativePathExpr(e)] => {
                 Expr::Path(
@@ -221,11 +218,15 @@ impl XpathParser {
                                 Axis::Self_,
                                 NodeTest::KindTest(KindTest::AnyKind),
                                 vec![],
+                                ()
                             )],
+                            ()
                         )),
                         SequenceType::Item(Item::KindTest(KindTest::Document), Occurrence::One),
+                        ()
                     )),
                     Box::new(e),
+                    ()
                 )
             },
             [RelativePathExpr(e)] => e, // FIXME
@@ -234,15 +235,15 @@ impl XpathParser {
     fn InitialSlash(_input: Node) -> Result<()> {
         Ok(())
     }
-    fn RelativePathExpr(input: Node) -> Result<Expr> {
+    fn RelativePathExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [StepExpr(e)] => e,
             [StepExpr(e), SlashStep(v)..] => {
-                v.into_iter().fold(e, |e1, e2|Expr::Path(Box::new(e1), Box::new(e2)))
+                v.into_iter().fold(e, |e1, e2|Expr::Path(Box::new(e1), Box::new(e2), ()))
             }
         ))
     }
-    fn SlashStep(input: Node) -> Result<Expr> {
+    fn SlashStep(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [Slash(_), StepExpr(e)] => e,
             [SlashSlash(_), StepExpr(e)] => e, // FIXME
@@ -254,16 +255,16 @@ impl XpathParser {
     fn SlashSlash(_input: Node) -> Result<bool> {
         Ok(true)
     }
-    fn StepExpr(input: Node) -> Result<Expr> {
+    fn StepExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [PostfixExpr(e)] => e, // FIXME
             [AxisStep(e)] => e, // FIXME
         ))
     }
-    fn AxisStep(input: Node) -> Result<Expr> {
+    fn AxisStep(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [ReverseStep(s), PredicateList(p)] => Expr::Step(s.0, s.1, p),
-            [ForwardStep(s), PredicateList(p)] => Expr::Step(s.0, s.1, p),
+            [ReverseStep(s), PredicateList(p)] => Expr::Step(s.0, s.1, p, ()),
+            [ForwardStep(s), PredicateList(p)] => Expr::Step(s.0, s.1, p, ()),
         ))
     }
     fn ReverseStep(input: Node) -> Result<(Axis, NodeTest)> {
@@ -329,19 +330,19 @@ impl XpathParser {
             }
         ))
     }
-    fn PredicateList(input: Node) -> Result<Vec<Expr>> {
+    fn PredicateList(input: Node) -> Result<Vec<Expr<()>>> {
         Ok(match_nodes!(input.into_children();
             [Predicate(expr)..] => expr.collect(),
         ))
     }
-    fn PostfixExpr(input: Node) -> Result<Expr> {
+    fn PostfixExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [PrimaryExpr(e)] => e,
-            [PrimaryExpr(e), Predicate(pe)] => Expr::Predicate(Box::new(e), Box::new(pe)),
+            [PrimaryExpr(e), Predicate(pe)] => Expr::Predicate(Box::new(e), Box::new(pe), ()),
             // FIXME generalize for more predicates and other stuff
         ))
     }
-    fn Predicate(input: Node) -> Result<Expr> {
+    fn Predicate(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [Expr(expr)] => expr,
         ))
@@ -380,21 +381,21 @@ impl XpathParser {
             &_ => unreachable!(),
         })
     }
-    fn ParenthesizedExpr(input: Node) -> Result<Expr> {
+    fn ParenthesizedExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [Expr(e)] => e,
-            [] => Expr::Sequence(vec![])
+            [] => Expr::Sequence(vec![], ())
         ))
     }
-    fn ContextItemExpr(_input: Node) -> Result<Expr> {
-        Ok(Expr::ContextItem)
+    fn ContextItemExpr(_input: Node) -> Result<Expr<()>> {
+        Ok(Expr::ContextItem(()))
     }
-    fn FunctionCall(input: Node) -> Result<Expr> {
+    fn FunctionCall(input: Node) -> Result<Expr<()>> {
         // We check whether the function exists in the typing phase
         match_nodes!(input.clone().into_children();
             [EQName(f), ExprSingle(a)..] => {
                 let args: Vec<_> = a.collect();
-                Ok(Expr::FunctionCall(f, args))
+                Ok(Expr::FunctionCall(f, args, ()))
             }
         )
     }
@@ -442,10 +443,10 @@ impl XpathParser {
     fn UnprefixedName(input: Node) -> Result<QName> {
         Ok(QName::new(input.as_str().to_string(), None, None))
     }
-    fn PrimaryExpr(input: Node) -> Result<Expr> {
+    fn PrimaryExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [Literal(lit)] => Expr::Literal(lit),
-            [VarRef(eq_name)] => Expr::VarRef(eq_name),
+            [Literal(lit)] => Expr::Literal(lit, ()),
+            [VarRef(eq_name)] => Expr::VarRef(eq_name, ()),
             [ParenthesizedExpr(e)] => e,
             [ContextItemExpr(e)] => e,
             [FunctionCall(e)] => e,
@@ -492,9 +493,9 @@ impl XpathParser {
             [EQName(eq)] => eq
         ))
     }
-    fn IfExpr(input: Node) -> Result<Expr> {
+    fn IfExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [Expr(i), ExprSingle(t), ExprSingle(e)] => Expr::IfThenElse(Box::new(i), Box::new(t), Box::new(e)),
+            [Expr(i), ExprSingle(t), ExprSingle(e)] => Expr::IfThenElse(Box::new(i), Box::new(t), Box::new(e), ()),
         ))
     }
 }
@@ -511,7 +512,7 @@ mod tests {
     fn int_literal1() {
         let context: StaticContext = Default::default();
         let output = context.parse("1234");
-        assert_eq!(output, Ok(Expr::Literal(Literal::Integer(1234))))
+        assert_eq!(output, Ok(Expr::Literal(Literal::Integer(1234), ())))
     }
 
     #[test]
@@ -520,9 +521,10 @@ mod tests {
         let output = context.parse("1234.56789");
         assert_eq!(
             output,
-            Ok(Expr::Literal(Literal::Decimal(
-                Decimal::from_str("1234.56789").unwrap()
-            )))
+            Ok(Expr::Literal(
+                Literal::Decimal(Decimal::from_str("1234.56789").unwrap()),
+                ()
+            ))
         )
     }
 
@@ -532,7 +534,7 @@ mod tests {
         let output = context.parse("'foo'");
         assert_eq!(
             output,
-            Ok(Expr::Literal(Literal::String("foo".to_string())))
+            Ok(Expr::Literal(Literal::String("foo".to_string()), ()))
         )
     }
 
@@ -542,7 +544,7 @@ mod tests {
         let output = context.parse("\"foo\"");
         assert_eq!(
             output,
-            Ok(Expr::Literal(Literal::String("foo".to_string())))
+            Ok(Expr::Literal(Literal::String("foo".to_string()), ()))
         )
     }
 
@@ -552,7 +554,7 @@ mod tests {
         let output = context.parse("'foo''bar'");
         assert_eq!(
             output,
-            Ok(Expr::Literal(Literal::String("foo'bar".to_string())))
+            Ok(Expr::Literal(Literal::String("foo'bar".to_string()), ()))
         )
     }
 
@@ -563,7 +565,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(
             output,
-            Ok(Expr::Literal(Literal::String("foo\"bar".to_string())))
+            Ok(Expr::Literal(Literal::String("foo\"bar".to_string()), ()))
         );
         assert_eq!(input, format!("{}", output.unwrap()))
     }
@@ -574,7 +576,7 @@ mod tests {
         let output = context.parse("\"foo''bar\"");
         assert_eq!(
             output,
-            Ok(Expr::Literal(Literal::String("foo''bar".to_string())))
+            Ok(Expr::Literal(Literal::String("foo''bar".to_string()), ()))
         )
     }
 
@@ -582,13 +584,13 @@ mod tests {
     fn comment1() {
         let context: StaticContext = Default::default();
         let output = context.parse("(::)()");
-        assert_eq!(output, Ok(Expr::Sequence(vec![])))
+        assert_eq!(output, Ok(Expr::Sequence(vec![], ())))
     }
     #[test]
     fn comment2() {
         let context: StaticContext = Default::default();
         let output = context.parse("(: foobar :)()");
-        assert_eq!(output, Ok(Expr::Sequence(vec![])))
+        assert_eq!(output, Ok(Expr::Sequence(vec![], ())))
     }
     #[test]
     fn comment3() {
@@ -600,7 +602,7 @@ mod tests {
     fn iws1() {
         let context: StaticContext = Default::default();
         let output = context.parse(" \n\n(: FIXME :)\r\n (: \n :)\n()");
-        assert_eq!(output, Ok(Expr::Sequence(vec![])))
+        assert_eq!(output, Ok(Expr::Sequence(vec![], ())))
     }
     #[test]
     fn sequence1() {
@@ -608,10 +610,13 @@ mod tests {
         let output = context.parse("1,'two'");
         assert_eq!(
             output,
-            Ok(Expr::Sequence(vec![
-                Expr::Literal(Literal::Integer(1)),
-                Expr::Literal(Literal::String("two".to_string()))
-            ]))
+            Ok(Expr::Sequence(
+                vec![
+                    Expr::Literal(Literal::Integer(1), ()),
+                    Expr::Literal(Literal::String("two".to_string()), ())
+                ],
+                ()
+            ))
         )
     }
 
@@ -622,9 +627,10 @@ mod tests {
         assert_eq!(
             output,
             Ok(Expr::IfThenElse(
-                Box::new(Expr::Literal(Literal::Integer(3))),
-                Box::new(Expr::Literal(Literal::Integer(1))),
-                Box::new(Expr::Literal(Literal::Integer(2)))
+                Box::new(Expr::Literal(Literal::Integer(3), ())),
+                Box::new(Expr::Literal(Literal::Integer(1), ())),
+                Box::new(Expr::Literal(Literal::Integer(2), ())),
+                ()
             ))
         )
     }
@@ -649,10 +655,13 @@ mod tests {
         let output = context.parse("1, 2");
         assert_eq!(
             output,
-            Ok(Expr::Sequence(vec![
-                Expr::Literal(Literal::Integer(1)),
-                Expr::Literal(Literal::Integer(2))
-            ]))
+            Ok(Expr::Sequence(
+                vec![
+                    Expr::Literal(Literal::Integer(1), ()),
+                    Expr::Literal(Literal::Integer(2), ())
+                ],
+                ()
+            ))
         )
     }
 
@@ -663,10 +672,13 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(
             output,
-            Ok(Expr::Sequence(vec![
-                Expr::Literal(Literal::Integer(1)),
-                Expr::Literal(Literal::Integer(2))
-            ]))
+            Ok(Expr::Sequence(
+                vec![
+                    Expr::Literal(Literal::Integer(1), ()),
+                    Expr::Literal(Literal::Integer(2), ())
+                ],
+                ()
+            ))
         );
         assert_eq!("(1, 2)", format!("{}", output.unwrap()))
     }
@@ -690,7 +702,11 @@ mod tests {
                     Some("http://example.com/".to_string()),
                     None
                 ),
-                vec![Expr::ContextItem, Expr::Literal(Literal::Integer(1))]
+                vec![
+                    Expr::ContextItem(()),
+                    Expr::Literal(Literal::Integer(1), ())
+                ],
+                ()
             ))
         );
         assert_eq!(input, format!("{}", output.unwrap()))
@@ -709,10 +725,13 @@ mod tests {
         let output = context.parse("1 or 0");
         assert_eq!(
             output,
-            Ok(Expr::Or(vec![
-                Expr::Literal(Literal::Integer(1)),
-                Expr::Literal(Literal::Integer(0))
-            ]))
+            Ok(Expr::Or(
+                vec![
+                    Expr::Literal(Literal::Integer(1), ()),
+                    Expr::Literal(Literal::Integer(0), ())
+                ],
+                ()
+            ))
         )
     }
     #[test]
@@ -721,10 +740,13 @@ mod tests {
         let output = context.parse("1 and 0");
         assert_eq!(
             output,
-            Ok(Expr::And(vec![
-                Expr::Literal(Literal::Integer(1)),
-                Expr::Literal(Literal::Integer(0))
-            ]))
+            Ok(Expr::And(
+                vec![
+                    Expr::Literal(Literal::Integer(1), ()),
+                    Expr::Literal(Literal::Integer(0), ())
+                ],
+                ()
+            ))
         )
     }
     #[test]
@@ -733,37 +755,45 @@ mod tests {
         let output = context.parse("1 or 2 and 0");
         assert_eq!(
             output,
-            Ok(Expr::Or(vec![
-                Expr::Literal(Literal::Integer(1)),
-                Expr::And(vec![
-                    Expr::Literal(Literal::Integer(2)),
-                    Expr::Literal(Literal::Integer(0))
-                ])
-            ]))
+            Ok(Expr::Or(
+                vec![
+                    Expr::Literal(Literal::Integer(1), ()),
+                    Expr::And(
+                        vec![
+                            Expr::Literal(Literal::Integer(2), ()),
+                            Expr::Literal(Literal::Integer(0), ())
+                        ],
+                        ()
+                    )
+                ],
+                ()
+            ))
         )
     }
     #[test]
     fn arith1() {
         let context: StaticContext = Default::default();
         use ArithmeticOp::{Minus, Plus};
-        use Expr::{Arithmetic, Literal as Lit};
         use Literal::Integer;
         let input = "1 - 2 + 3 - 4";
         let output = context.parse(input);
         assert_eq!(
             output,
-            Ok(Arithmetic(
-                Box::new(Arithmetic(
-                    Box::new(Arithmetic(
-                        Box::new(Lit(Integer(1))),
+            Ok(Expr::Arithmetic(
+                Box::new(Expr::Arithmetic(
+                    Box::new(Expr::Arithmetic(
+                        Box::new(Expr::Literal(Integer(1), ())),
                         Minus,
-                        Box::new(Lit(Integer(2)))
+                        Box::new(Expr::Literal(Integer(2), ())),
+                        ()
                     )),
                     Plus,
-                    Box::new(Lit(Integer(3)))
+                    Box::new(Expr::Literal(Integer(3), ())),
+                    ()
                 )),
                 Minus,
-                Box::new(Lit(Integer(4)))
+                Box::new(Expr::Literal(Integer(4), ())),
+                ()
             ))
         );
         assert_eq!(input, format!("{}", output.unwrap()))
