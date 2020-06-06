@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use xpath::runtime::DynamicContext;
-use xpath::xdm::XdmResult;
+use xpath::xdm::{QName, XdmResult};
 use xpath::{StaticContext, Xpath};
 
 #[test]
@@ -47,5 +47,51 @@ fn let1() -> XdmResult<()> {
     let xpath = Xpath::compile(&static_context, "let $i := 10, $j := 20 return $j+$i")?;
     let result = xpath.evaluate(&context)?;
     assert_eq!(result.integer()?, 30);
+    Ok(())
+}
+
+#[test]
+fn gen_compare1() -> XdmResult<()> {
+    let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let context: DynamicContext = static_context.new_dynamic_context();
+    let xpath = Xpath::compile(
+        &static_context,
+        "let $a := '1', $b := '2', $c := '2.0' return ($a, $b) = ($c, 3.0)",
+    )?;
+    let result = xpath.evaluate(&context)?;
+    assert!(!result.boolean()?);
+    Ok(())
+}
+
+#[test]
+fn gen_compare2() -> XdmResult<()> {
+    let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let context: DynamicContext = static_context.new_dynamic_context();
+    let xpath = Xpath::compile(
+        &static_context,
+        "let $a := '1', $b := '2', $c := '2.0' return ($a, $b) = ($c, 2.0)",
+    )?;
+    let result = xpath.evaluate(&context)?;
+    assert!(result.boolean()?);
+    Ok(())
+}
+
+#[test]
+fn gen_compare3() -> XdmResult<()> {
+    let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let context: DynamicContext = static_context.new_dynamic_context();
+    let xpath = Xpath::compile(&static_context, "(1, 2) = (2, 3)")?;
+    let result = xpath.evaluate(&context)?;
+    assert!(result.boolean()?);
+    Ok(())
+}
+
+#[test]
+fn gen_compare4() -> XdmResult<()> {
+    let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let context: DynamicContext = static_context.new_dynamic_context();
+    let xpath = Xpath::compile(&static_context, "(1, 2) != (2, 3)")?;
+    let result = xpath.evaluate(&context)?;
+    assert!(result.boolean()?);
     Ok(())
 }

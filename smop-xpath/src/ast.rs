@@ -3,7 +3,7 @@ use crate::runtime::CompiledExpr;
 use crate::types::{Item, KindTest};
 use crate::types::{Occurrence, SequenceType};
 use crate::xdm::*;
-use crate::xpath_functions_31::{decimal_compare, double_compare, string_compare};
+use crate::xpath_functions_31::{decimal_compare, double_compare, integer_compare, string_compare};
 use itertools::Itertools;
 use rust_decimal::Decimal;
 use std::borrow::Borrow;
@@ -26,10 +26,18 @@ pub enum Expr<T> {
     TreatAs(Box<Expr<T>>, SequenceType, T),
     Path(Box<Expr<T>>, Box<Expr<T>>, T),
     Step(Axis, NodeTest, Vec<Expr<T>>, T),
-    ValueComp(Box<Expr<T>>, ValueComp, Box<Expr<T>>, T),
+    ValueComp(Box<Expr<T>>, Comp, Box<Expr<T>>, T),
+    GeneralComp(Box<Expr<T>>, Comp, Box<Expr<T>>, T),
     Predicate(Box<Expr<T>>, Box<Expr<T>>, T),
     For(QName, Box<Expr<T>>, Box<Expr<T>>, T),
     Let(QName, Box<Expr<T>>, Box<Expr<T>>, T),
+    Quantified(Quantifier, Vec<(QName, Box<Expr<T>>)>, Box<Expr<T>>, T),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Quantifier {
+    Some,
+    Every,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -73,7 +81,7 @@ pub enum Literal {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ValueComp {
+pub enum Comp {
     EQ,
     NE,
     LT,
@@ -81,15 +89,27 @@ pub enum ValueComp {
     GT,
     GE,
 }
-impl Display for ValueComp {
+impl Comp {
+    pub fn general_str(&self) -> &'static str {
+        match self {
+            Comp::EQ => "=",
+            Comp::NE => "!=",
+            Comp::LT => "<",
+            Comp::LE => "<=",
+            Comp::GT => ">",
+            Comp::GE => ">=",
+        }
+    }
+}
+impl Display for Comp {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let s = match self {
-            ValueComp::EQ => "eq",
-            ValueComp::NE => "ne",
-            ValueComp::LT => "lt",
-            ValueComp::LE => "le",
-            ValueComp::GT => "gt",
-            ValueComp::GE => "ge",
+            Comp::EQ => "eq",
+            Comp::NE => "ne",
+            Comp::LT => "lt",
+            Comp::LE => "le",
+            Comp::GT => "gt",
+            Comp::GE => "ge",
         };
         write!(f, "{}", s)
     }
@@ -130,9 +150,11 @@ impl<T> Expr<T> {
             Expr::Path(_, _, t) => t,
             Expr::Step(_, _, _, t) => t,
             Expr::ValueComp(_, _, _, t) => t,
+            Expr::GeneralComp(_, _, _, t) => t,
             Expr::Predicate(_, _, t) => t,
             Expr::For(_, _, _, t) => t,
             Expr::Let(_, _, _, t) => t,
+            Expr::Quantified(_, _, _, t) => t,
         }
     }
 }
@@ -142,7 +164,6 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
         match self {
             Expr::Literal(l, _) => l.compile(),
             Expr::VarRef(qname, _) => Ok(CompiledExpr::new(move |c| {
-                println!("running {}", expr_string);
                 c.varref(&qname).ok_or_else(|| {
                     XdmError::xqtm("err:XPST0008", format!("variable `{}` not found", qname))
                 })
@@ -423,8 +444,51 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         (x1, Xdm::Decimal(d2)) => Ok(Xdm::Boolean(
                             vc.comparison_true(decimal_compare(x1.decimal()?.borrow(), &d2)),
                         )),
+                        (Xdm::Integer(i1), x2) => Ok(Xdm::Boolean(
+                            vc.comparison_true(integer_compare(&i1, x2.integer()?.borrow())),
+                        )),
+                        (x1, Xdm::Integer(i2)) => Ok(Xdm::Boolean(
+                            vc.comparison_true(integer_compare(x1.integer()?.borrow(), &i2)),
+                        )),
                         (a1, a2) => unimplemented!("{:?} {} {:?}", a1, vc, a2),
                     }
+                }))
+            }
+            Expr::GeneralComp(e1, vc, e2, _) => {
+                let c1 = e1.compile()?;
+                let c2 = e2.compile()?;
+                Ok(CompiledExpr::new(move |c| {
+                    let a1_seq = c1.execute(c)?.atomize()?;
+                    let a2_seq = c2.execute(c)?.atomize()?;
+                    let a2_vec: Vec<_> = a2_seq.into_iter().collect();
+                    let true_val = Ok(Xdm::Boolean(true));
+                    for ref a1 in a1_seq {
+                        for a2 in a2_vec.iter() {
+                            match (a1, a2) {
+                                (Xdm::String(s1), Xdm::String(s2)) => {
+                                    if vc.comparison_true(string_compare(s1.as_str(), s2.as_str()))
+                                    {
+                                        return true_val;
+                                    }
+                                }
+                                (Xdm::Double(_), _)
+                                | (Xdm::Decimal(_), _)
+                                | (Xdm::Integer(_), _)
+                                | (_, Xdm::Double(_))
+                                | (_, Xdm::Decimal(_))
+                                | (_, Xdm::Integer(_)) => {
+                                    if vc.comparison_true(double_compare(
+                                        a1.double()?.borrow(),
+                                        a2.double()?.borrow(),
+                                    )) {
+                                        return true_val;
+                                    }
+                                }
+                                (a1, a2) => unimplemented!("{:?} {} {:?}", a1, vc, a2),
+                            }
+                        }
+                    }
+                    return Ok(Xdm::Boolean(false));
                 }))
             }
             Expr::Predicate(e, p, _) => {
@@ -485,6 +549,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     r_compiled.execute(&context)
                 }))
             }
+            Expr::Quantified(quantifier, bindings, predicate, _) => unimplemented!(),
         }
     }
 }
@@ -626,6 +691,20 @@ impl Expr<()> {
                     (ret_type, ctx),
                 ))
             }
+            Expr::GeneralComp(e1, gc, e2, _) => {
+                let e1_typed = e1.type_(Rc::clone(&ctx))?;
+                let e2_typed = e2.type_(Rc::clone(&ctx))?;
+                let ret_type = SequenceType::Item(
+                    Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:boolean"))?),
+                    Occurrence::One,
+                );
+                Ok(Expr::GeneralComp(
+                    Box::new(e1_typed),
+                    gc,
+                    Box::new(e2_typed),
+                    (ret_type, ctx),
+                ))
+            }
             Expr::Predicate(e, p, _) => {
                 let e_typed = e.type_(Rc::clone(&ctx))?;
                 let p_typed = p.type_(Rc::clone(&ctx))?;
@@ -667,6 +746,7 @@ impl Expr<()> {
                     (e_type, ctx),
                 ))
             }
+            Expr::Quantified(quantifier, bindings, predicate, _) => unimplemented!(),
         }
     }
 }
@@ -734,9 +814,11 @@ impl<T> Display for Expr<T> {
                 Ok(())
             }
             Expr::ValueComp(e1, vc, e2, _) => write!(f, "{} {} {}", e1, vc, e2),
+            Expr::GeneralComp(e1, gc, e2, _) => write!(f, "{} {} {}", e1, gc.general_str(), e2),
             Expr::Predicate(e, p, _) => write!(f, "{}[{}]", e, p),
             Expr::For(qname, bs, ret, _) => write!(f, "for ${} in {} return {}", qname, bs, ret),
             Expr::Let(qname, bs, ret, _) => write!(f, "let ${} := {} return {}", qname, bs, ret),
+            Expr::Quantified(quantifier, bindings, predicate, _) => unimplemented!(),
         }
     }
 }
@@ -779,21 +861,21 @@ impl Literal {
         }
     }
 }
-impl ValueComp {
+impl Comp {
     fn comparison_true(&self, c: i8) -> bool {
         match (self, c) {
-            (ValueComp::EQ, 0) => true,
-            (ValueComp::EQ, _) => false,
-            (ValueComp::NE, 0) => false,
-            (ValueComp::NE, _) => true,
-            (ValueComp::LT, -1) => true,
-            (ValueComp::LT, _) => false,
-            (ValueComp::LE, 1) => false,
-            (ValueComp::LE, _) => true,
-            (ValueComp::GT, 1) => true,
-            (ValueComp::GT, _) => false,
-            (ValueComp::GE, -1) => false,
-            (ValueComp::GE, _) => true,
+            (Comp::EQ, 0) => true,
+            (Comp::EQ, _) => false,
+            (Comp::NE, 0) => false,
+            (Comp::NE, _) => true,
+            (Comp::LT, -1) => true,
+            (Comp::LT, _) => false,
+            (Comp::LE, 1) => false,
+            (Comp::LE, _) => true,
+            (Comp::GT, 1) => true,
+            (Comp::GT, _) => false,
+            (Comp::GE, -1) => false,
+            (Comp::GE, _) => true,
         }
     }
 }

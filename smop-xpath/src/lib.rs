@@ -190,6 +190,39 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn value_compare2() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let input = "1 eq 1";
+        let xpath = Xpath::compile(&static_context, input)?;
+        let result = xpath.evaluate(&context)?;
+        assert!(result.boolean()?);
+        Ok(())
+    }
+    #[test]
+    fn general_compare1() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let input = "'a' >= 'b'";
+        let expr = static_context.parse(input)?;
+        let result = expr.type_(Rc::clone(&static_context))?.t().0.to_string();
+        assert_eq!(result, "xs:boolean".to_string());
+        let xpath = Xpath::compile(&static_context, input)?;
+        let result = xpath.evaluate(&context)?;
+        assert!(!result.boolean()?);
+        Ok(())
+    }
+    #[test]
+    fn general_compare2() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let input = "(1, 2) > (1, 1)";
+        let xpath = Xpath::compile(&static_context, input)?;
+        let result = xpath.evaluate(&context)?;
+        assert!(result.boolean()?);
+        Ok(())
+    }
+    #[test]
     fn roxml1() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let doc = r##"<root>

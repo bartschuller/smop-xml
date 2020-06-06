@@ -35,7 +35,6 @@ impl<'a, 'input> DynamicContext<'a, 'input> {
         ret
     }
     pub fn varref(&self, qname: &QName) -> Option<Xdm<'a, 'input>> {
-        println!("fetching ${}: {:?}", qname, self.variables.get(qname));
         self.variables.get(qname).cloned()
     }
     pub fn set_variable(&mut self, qname: QName, value: Xdm<'a, 'input>) {

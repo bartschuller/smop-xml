@@ -4,9 +4,7 @@ use crate::types::{Occurrence, SequenceType};
 use crate::xdm::{NodeSeq, QName, Xdm};
 use crate::StaticContext;
 
-
 use rust_decimal::Decimal;
-
 
 pub(crate) fn register(ctx: &mut StaticContext) {
     let xs_boolean = QName::wellknown("xs:boolean");
@@ -130,6 +128,9 @@ pub(crate) fn double_compare(d1: &f64, d2: &f64) -> i8 {
 }
 pub(crate) fn decimal_compare(d1: &Decimal, d2: &Decimal) -> i8 {
     d1.cmp(d2) as i8
+}
+pub(crate) fn integer_compare(i1: &i64, i2: &i64) -> i8 {
+    i1.cmp(i2) as i8
 }
 
 #[cfg(test)]

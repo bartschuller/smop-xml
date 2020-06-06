@@ -1,4 +1,4 @@
-use crate::ast::{ArithmeticOp, Axis, Expr, Literal, NodeTest, ValueComp};
+use crate::ast::{ArithmeticOp, Axis, Comp, Expr, Literal, NodeTest, Quantifier};
 use crate::context::StaticContext;
 use crate::types::{Item, KindTest, Occurrence, SequenceType};
 use crate::xdm::{QName, XdmError};
@@ -62,6 +62,7 @@ impl XpathParser {
         Ok(match_nodes!(input.into_children();
             [ForExpr(e)] => e,
             [LetExpr(e)] => e,
+            [QuantifiedExpr(e)] => e,
             [IfExpr(e)] => e,
             [OrExpr(e)] => e,
         ))
@@ -69,18 +70,18 @@ impl XpathParser {
     fn ForExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [SimpleForClause(bs), ExprSingle(e)] => bs.into_iter().rev().fold(e, |e,b|{
-                Expr::For(b.0, Box::new(b.1), Box::new(e), ())
+                Expr::For(b.0, b.1, Box::new(e), ())
             }),
         ))
     }
-    fn SimpleForClause(input: Node) -> Result<Vec<(QName, Expr<()>)>> {
+    fn SimpleForClause(input: Node) -> Result<Vec<(QName, Box<Expr<()>>)>> {
         Ok(match_nodes!(input.into_children();
             [SimpleForBinding(b)..] => b.collect(),
         ))
     }
-    fn SimpleForBinding(input: Node) -> Result<(QName, Expr<()>)> {
+    fn SimpleForBinding(input: Node) -> Result<(QName, Box<Expr<()>>)> {
         Ok(match_nodes!(input.into_children();
-            [EQName(qn), ExprSingle(e)] => (qn, e),
+            [EQName(qn), ExprSingle(e)] => (qn, Box::new(e)),
         ))
     }
     fn LetExpr(input: Node) -> Result<Expr<()>> {
@@ -100,6 +101,19 @@ impl XpathParser {
             [EQName(qn), ExprSingle(e)] => (qn, e),
         ))
     }
+    fn QuantifiedExpr(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [SomeOrEvery(se), SimpleForBinding(b).., ExprSingle(p)] =>
+              Expr::Quantified(se, b.collect(), Box::new(p), ()),
+        ))
+    }
+    fn SomeOrEvery(input: Node) -> Result<Quantifier> {
+        Ok(match input.as_str() {
+            "some" => Quantifier::Some,
+            "every" => Quantifier::Every,
+            &_ => unreachable!(),
+        })
+    }
     fn OrExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [AndExpr(expr)] => expr,
@@ -118,25 +132,36 @@ impl XpathParser {
     }
     fn ComparisonExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [StringConcatExpr(e)] => e, // FIXME
-            [StringConcatExpr(e1), ValueComp(c), StringConcatExpr(e2)] => {
-                Expr::ValueComp(Box::new(e1), c, Box::new(e2), ())
-            }
-            //[StringConcatExpr(e1), GeneralComp(c), StringConcatExpr(e2)] => , // FIXME
+            [StringConcatExpr(e)] => e,
+            [StringConcatExpr(e1), ValueComp(c), StringConcatExpr(e2)] =>
+                Expr::ValueComp(Box::new(e1), c, Box::new(e2), ()),
+            [StringConcatExpr(e1), GeneralComp(c), StringConcatExpr(e2)] =>
+                Expr::GeneralComp(Box::new(e1), c, Box::new(e2), ()),
+            //[StringConcatExpr(e1), NodeComp(c), StringConcatExpr(e2)] => , // FIXME
         ))
     }
-    fn ValueComp(input: Node) -> Result<ValueComp> {
+    fn ValueComp(input: Node) -> Result<Comp> {
         Ok(match input.as_str() {
-            "eq" => ValueComp::EQ,
-            "ne" => ValueComp::NE,
-            "lt" => ValueComp::LT,
-            "le" => ValueComp::LE,
-            "gt" => ValueComp::GT,
-            "ge" => ValueComp::GE,
+            "eq" => Comp::EQ,
+            "ne" => Comp::NE,
+            "lt" => Comp::LT,
+            "le" => Comp::LE,
+            "gt" => Comp::GT,
+            "ge" => Comp::GE,
             &_ => unreachable!(),
         })
     }
-    //fn GeneralComp(input: Node) -> Result {}
+    fn GeneralComp(input: Node) -> Result<Comp> {
+        Ok(match input.as_str() {
+            "=" => Comp::EQ,
+            "!=" => Comp::NE,
+            "<" => Comp::LT,
+            "<=" => Comp::LE,
+            ">" => Comp::GT,
+            ">=" => Comp::GE,
+            &_ => unreachable!(),
+        })
+    }
     fn StringConcatExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [RangeExpr(e)] => e, // FIXME
@@ -835,6 +860,13 @@ mod tests {
         assert_eq!(input, format!("{}", output.unwrap()))
     }
     #[test]
+    fn comparison2() {
+        let context: StaticContext = Default::default();
+        let input = "1 = 2";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
     fn predicate1() {
         let context: StaticContext = Default::default();
         let input = "child::a[2]";
@@ -879,5 +911,21 @@ mod tests {
         let equiv = "let $x := 2 return let $y := 3 return $x + $y";
         let output = context.parse(input);
         assert_eq!(equiv, format!("{}", output.unwrap()))
+    }
+    #[test]
+    #[ignore]
+    fn quant1() {
+        let context: StaticContext = Default::default();
+        let input = "some $x in (1, 2, 3), $y in (2, 3, 4) satisfies $x + $y = 4";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    #[ignore]
+    fn quant2() {
+        let context: StaticContext = Default::default();
+        let input = "every $x in (1, 2, 3), $y in (2, 3, 4) satisfies $x + $y = 4";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
     }
 }

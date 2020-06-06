@@ -7,6 +7,7 @@ use rust_decimal::prelude::{ToPrimitive, Zero};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::error::Error;
+use std::f64::NAN;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -177,7 +178,7 @@ impl Error for XdmError {}
 
 impl From<roxmltree::Error> for XdmError {
     fn from(re: roxmltree::Error) -> Self {
-        XdmError::xqtm("err:FODC0006", re.to_string().as_str())
+        XdmError::xqtm("err:FODC0006", re.to_string())
     }
 }
 impl Display for XdmError {
@@ -285,6 +286,7 @@ impl Xdm<'_, '_> {
             Xdm::Decimal(d) => Ok(d.to_f64().unwrap()),
             Xdm::Integer(i) => Ok(*i as f64),
             Xdm::Double(d) => Ok(*d),
+            Xdm::String(s) => Ok(s.parse::<f64>().unwrap_or(NAN)),
             _ => todo!("finish double conversion"),
         }
     }
@@ -384,8 +386,7 @@ impl<'a, 'input: 'a> IntoIterator for Xdm<'a, 'input> {
 
 #[cfg(test)]
 mod tests {
-    use crate::xdm::{QName};
-    
+    use crate::xdm::QName;
 
     #[test]
     fn qname1() {
