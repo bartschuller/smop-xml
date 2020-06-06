@@ -29,6 +29,7 @@ pub enum Expr<T> {
     ValueComp(Box<Expr<T>>, ValueComp, Box<Expr<T>>, T),
     Predicate(Box<Expr<T>>, Box<Expr<T>>, T),
     For(QName, Box<Expr<T>>, Box<Expr<T>>, T),
+    Let(QName, Box<Expr<T>>, Box<Expr<T>>, T),
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -131,6 +132,7 @@ impl<T> Expr<T> {
             Expr::ValueComp(_, _, _, t) => t,
             Expr::Predicate(_, _, t) => t,
             Expr::For(_, _, _, t) => t,
+            Expr::Let(_, _, _, t) => t,
         }
     }
 }
@@ -460,15 +462,11 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                 let rc = ret_expr.compile()?;
 
                 Ok(CompiledExpr::new(move |c| {
-                    println!("running {}", expr_string);
                     let binding_seq = ic.execute(c)?;
-                    println!("ranging over {:?}", binding_seq);
                     let mut result: Vec<Xdm> = Vec::new();
                     for val in binding_seq {
                         let context = c.clone_with_variable(qname.clone(), val);
-                        println!("going to execute with variables={:?}", context.variables);
                         let ret_val = rc.execute(&context)?;
-                        println!("{} {:?}", qname, ret_val);
                         result.extend(ret_val.into_iter());
                     }
                     if result.len() == 1 {
@@ -476,6 +474,15 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     } else {
                         Ok(Xdm::Sequence(result))
                     }
+                }))
+            }
+            Expr::Let(qname, binding_seq, ret_expr, _) => {
+                let b_compiled = binding_seq.compile()?;
+                let r_compiled = ret_expr.compile()?;
+                Ok(CompiledExpr::new(move |c| {
+                    let val = b_compiled.execute(c)?;
+                    let context = c.clone_with_variable(qname.clone(), val);
+                    r_compiled.execute(&context)
                 }))
             }
         }
@@ -646,6 +653,20 @@ impl Expr<()> {
                     (e_type, ctx),
                 ))
             }
+            Expr::Let(qname, bs, e, _) => {
+                let bs_typed = bs.type_(Rc::clone(&ctx))?;
+                let bi_type = bs_typed.t().0.clone();
+                let mut new_ctx = (&*ctx).clone();
+                new_ctx.set_variable_type(qname.clone(), bi_type);
+                let e_typed = e.type_(Rc::new(new_ctx))?;
+                let e_type = e_typed.t().0.clone();
+                Ok(Expr::Let(
+                    qname,
+                    Box::new(bs_typed),
+                    Box::new(e_typed),
+                    (e_type, ctx),
+                ))
+            }
         }
     }
 }
@@ -715,6 +736,7 @@ impl<T> Display for Expr<T> {
             Expr::ValueComp(e1, vc, e2, _) => write!(f, "{} {} {}", e1, vc, e2),
             Expr::Predicate(e, p, _) => write!(f, "{}[{}]", e, p),
             Expr::For(qname, bs, ret, _) => write!(f, "for ${} in {} return {}", qname, bs, ret),
+            Expr::Let(qname, bs, ret, _) => write!(f, "let ${} := {} return {}", qname, bs, ret),
         }
     }
 }

@@ -321,4 +321,13 @@ mod tests {
         assert_eq!(result, "xs:integer".to_string());
         Ok(())
     }
+    #[test]
+    fn let1() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let input = "let $i := 'a' return $i";
+        let expr = static_context.parse(input)?;
+        let result = expr.type_(static_context)?.t().0.to_string();
+        assert_eq!(result, "xs:string".to_string());
+        Ok(())
+    }
 }

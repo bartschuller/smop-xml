@@ -5,13 +5,19 @@ Xpath = { SOI ~ Expr ~ EOI }
 // 6
 Expr = { ExprSingle ~ ("," ~ ExprSingle)* }
 // 7
-ExprSingle = { ForExpr | IfExpr | OrExpr }
+ExprSingle = { ForExpr | LetExpr | IfExpr | OrExpr }
 // 8
 ForExpr = { SimpleForClause ~ "return" ~ ExprSingle }
 // 9
 SimpleForClause = { "for" ~ SimpleForBinding ~ ("," ~ SimpleForBinding)* }
 // 10
 SimpleForBinding = { "$" ~ VarName ~ "in" ~ ExprSingle }
+// 11
+LetExpr = { SimpleLetClause ~ "return" ~ ExprSingle }
+// 12
+SimpleLetClause = { "let" ~ SimpleLetBinding ~ ("," ~ SimpleLetBinding)* }
+// 13
+SimpleLetBinding = { "$" ~ VarName ~ ":=" ~ ExprSingle }
 // 15
 IfExpr = { "if" ~ "(" ~ Expr ~ ")" ~ "then" ~ ExprSingle ~ "else" ~ ExprSingle }
 // 16

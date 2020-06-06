@@ -61,14 +61,12 @@ impl XpathParser {
     fn ExprSingle(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [ForExpr(e)] => e,
+            [LetExpr(e)] => e,
             [IfExpr(e)] => e,
             [OrExpr(e)] => e,
         ))
     }
     fn ForExpr(input: Node) -> Result<Expr<()>> {
-        // let e: Expr = unreachable!();
-        // let bs: Vec<(QName, Expr)> = unreachable!();
-        // let ret = bs.into_iter().rev().fold(e, |e,b|Expr::For(b.0, Box::new(b.1), Box::new(e)));
         Ok(match_nodes!(input.into_children();
             [SimpleForClause(bs), ExprSingle(e)] => bs.into_iter().rev().fold(e, |e,b|{
                 Expr::For(b.0, Box::new(b.1), Box::new(e), ())
@@ -81,6 +79,23 @@ impl XpathParser {
         ))
     }
     fn SimpleForBinding(input: Node) -> Result<(QName, Expr<()>)> {
+        Ok(match_nodes!(input.into_children();
+            [EQName(qn), ExprSingle(e)] => (qn, e),
+        ))
+    }
+    fn LetExpr(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [SimpleLetClause(bs), ExprSingle(e)] => bs.into_iter().rev().fold(e, |e,b|{
+                Expr::Let(b.0, Box::new(b.1), Box::new(e), ())
+            }),
+        ))
+    }
+    fn SimpleLetClause(input: Node) -> Result<Vec<(QName, Expr<()>)>> {
+        Ok(match_nodes!(input.into_children();
+            [SimpleLetBinding(b)..] => b.collect(),
+        ))
+    }
+    fn SimpleLetBinding(input: Node) -> Result<(QName, Expr<()>)> {
         Ok(match_nodes!(input.into_children();
             [EQName(qn), ExprSingle(e)] => (qn, e),
         ))
@@ -847,6 +862,21 @@ mod tests {
                                $j in (1, $i)
                            return ($i + $j)";
         let equiv = "for $i in (10, 20) return for $j in (1, $i) return $i + $j";
+        let output = context.parse(input);
+        assert_eq!(equiv, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn let1() {
+        let context: StaticContext = Default::default();
+        let input = "let $x := 2 return $x";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn let2() {
+        let context: StaticContext = Default::default();
+        let input = "let $x := 2, $y := 3 return $x + $y";
+        let equiv = "let $x := 2 return let $y := 3 return $x + $y";
         let output = context.parse(input);
         assert_eq!(equiv, format!("{}", output.unwrap()))
     }
