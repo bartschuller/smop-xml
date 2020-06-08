@@ -164,7 +164,8 @@ impl XpathParser {
     }
     fn StringConcatExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [RangeExpr(e)] => e, // FIXME
+            [RangeExpr(e)] => e,
+            [RangeExpr(es)..] => Expr::Concat(es.collect(), ())
         ))
     }
     fn RangeExpr(input: Node) -> Result<Expr<()>> {
@@ -913,7 +914,6 @@ mod tests {
         assert_eq!(equiv, format!("{}", output.unwrap()))
     }
     #[test]
-    #[ignore]
     fn quant1() {
         let context: StaticContext = Default::default();
         let input = "some $x in (1, 2, 3), $y in (2, 3, 4) satisfies $x + $y = 4";
@@ -921,10 +921,16 @@ mod tests {
         assert_eq!(input, format!("{}", output.unwrap()))
     }
     #[test]
-    #[ignore]
     fn quant2() {
         let context: StaticContext = Default::default();
         let input = "every $x in (1, 2, 3), $y in (2, 3, 4) satisfies $x + $y = 4";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn string_concat1() {
+        let context: StaticContext = Default::default();
+        let input = r#""con" || "cat" || "enate""#;
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }

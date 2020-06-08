@@ -21,6 +21,7 @@ pub enum Expr<T> {
     FunctionCall(QName, Vec<Expr<T>>, T),
     Or(Vec<Expr<T>>, T),
     And(Vec<Expr<T>>, T),
+    Concat(Vec<Expr<T>>, T),
     Arithmetic(Box<Expr<T>>, ArithmeticOp, Box<Expr<T>>, T),
     InstanceOf(Box<Expr<T>>, SequenceType, T),
     TreatAs(Box<Expr<T>>, SequenceType, T),
@@ -39,7 +40,15 @@ pub enum Quantifier {
     Some,
     Every,
 }
-
+impl Display for Quantifier {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Quantifier::Some => "some",
+            Quantifier::Every => "every",
+        };
+        write!(f, "{}", s)
+    }
+}
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Axis {
     // forward
@@ -144,6 +153,7 @@ impl<T> Expr<T> {
             Expr::FunctionCall(_, _, t) => t,
             Expr::Or(_, t) => t,
             Expr::And(_, t) => t,
+            Expr::Concat(_, t) => t,
             Expr::Arithmetic(_, _, _, t) => t,
             Expr::InstanceOf(_, _, t) => t,
             Expr::TreatAs(_, _, t) => t,
@@ -228,6 +238,18 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
             }
             Expr::Or(_, _) => todo!("implement Or"),
             Expr::And(_, _) => todo!("implement And"),
+            Expr::Concat(v, _) => {
+                let v_c: XdmResult<Vec<_>> = v.into_iter().map(|x| x.compile()).collect();
+                let v_c = v_c?;
+                Ok(CompiledExpr::new(move |c| {
+                    let strings: XdmResult<Vec<_>> = v_c
+                        .iter()
+                        .map(|e| e.execute(c).map(|x| x.string()))
+                        .collect();
+                    let strings: XdmResult<Vec<_>> = strings?.into_iter().collect();
+                    Ok(Xdm::String(strings?.concat()))
+                }))
+            }
             Expr::Arithmetic(l, o, r, t) => match t.0 {
                 SequenceType::EmptySequence => {
                     println!("warning: compiling away arithmetic op to empty sequence");
@@ -549,7 +571,30 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     r_compiled.execute(&context)
                 }))
             }
-            Expr::Quantified(quantifier, bindings, predicate, _) => unimplemented!(),
+            Expr::Quantified(quantifier, bindings, predicate, _) => {
+                let bs_compiled: XdmResult<Vec<(QName, CompiledExpr)>> = bindings
+                    .into_iter()
+                    .map(|(q, b)| b.compile().map(|comp| (q, comp)))
+                    .collect();
+                let bs_compiled = bs_compiled?;
+                let pred_compiled = predicate.compile()?;
+                let default_return_value = match quantifier {
+                    Quantifier::Some => false,
+                    Quantifier::Every => true,
+                };
+                Ok(CompiledExpr::new(move |c| {
+                    // for every bs_compiled:
+                    // - execute
+                    // - create a new context
+                    // - set  variable in context
+                    // use context for the next bs or if last, for the pred
+                    // this is already ok for inside the inner loop:
+                    if pred_compiled.execute(c)?.boolean()? != default_return_value {
+                        return Ok(Xdm::Boolean(!default_return_value));
+                    }
+                    Ok(Xdm::Boolean(default_return_value))
+                }))
+            }
         }
     }
 }
@@ -626,6 +671,20 @@ impl Expr<()> {
                 let v_typed: XdmResult<Vec<_>> =
                     v.into_iter().map(|a| a.type_(Rc::clone(&ctx))).collect();
                 Ok(Expr::And(v_typed?, todo!("implement type_")))
+            }
+            Expr::Concat(v, _) => {
+                let v_typed: XdmResult<Vec<_>> =
+                    v.into_iter().map(|a| a.type_(Rc::clone(&ctx))).collect();
+                Ok(Expr::Concat(
+                    v_typed?,
+                    (
+                        SequenceType::Item(
+                            Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:string"))?),
+                            Occurrence::One,
+                        ),
+                        ctx,
+                    ),
+                ))
             }
             Expr::Arithmetic(l, op, r, _) => {
                 let t1 = l.type_(Rc::clone(&ctx))?;
@@ -718,7 +777,7 @@ impl Expr<()> {
             Expr::For(qname, bs, e, _) => {
                 let bs_typed = bs.type_(Rc::clone(&ctx))?;
                 let bi_type = match bs_typed.t().0.clone() {
-                    SequenceType::EmptySequence => unreachable!(),
+                    SequenceType::EmptySequence => SequenceType::EmptySequence,
                     SequenceType::Item(it, _o) => SequenceType::Item(it, Occurrence::One),
                 };
                 let mut new_ctx = (&*ctx).clone();
@@ -746,7 +805,36 @@ impl Expr<()> {
                     (e_type, ctx),
                 ))
             }
-            Expr::Quantified(quantifier, bindings, predicate, _) => unimplemented!(),
+            Expr::Quantified(quantifier, bindings, predicate, _) => {
+                let mut curr_ctx = Rc::clone(&ctx);
+                let last_binding = bindings.len() - 1;
+                let mut new_ctx: StaticContext;
+                let mut bs_typed: Vec<(QName, Box<Expr<(SequenceType, Rc<StaticContext>)>>)> =
+                    Vec::with_capacity(bindings.len());
+                for x in bindings {
+                    let (var, expr) = x;
+                    let binding_type = expr.type_(Rc::clone(&curr_ctx))?;
+                    let bi_type = match binding_type.t().0.clone() {
+                        SequenceType::EmptySequence => SequenceType::EmptySequence,
+                        SequenceType::Item(it, _o) => SequenceType::Item(it, Occurrence::One),
+                    };
+                    bs_typed.push((var.clone(), Box::new(binding_type)));
+                    new_ctx = (&*curr_ctx).clone();
+                    new_ctx.set_variable_type(var, bi_type);
+                    curr_ctx = Rc::new(new_ctx);
+                }
+                let result_type = SequenceType::Item(
+                    Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:boolean"))?),
+                    Occurrence::One,
+                );
+                let pred_typed = predicate.type_(Rc::clone(&curr_ctx))?;
+                Ok(Expr::Quantified(
+                    quantifier,
+                    bs_typed,
+                    Box::new(pred_typed),
+                    (result_type, curr_ctx),
+                ))
+            }
         }
     }
 }
@@ -802,6 +890,7 @@ impl<T> Display for Expr<T> {
             }
             Expr::Or(v, _) => write!(f, "{}", v.iter().format(" or ")),
             Expr::And(v, _) => write!(f, "{}", v.iter().format(" and ")),
+            Expr::Concat(v, _) => write!(f, "{}", v.iter().format(" || ")),
             Expr::Arithmetic(e1, o, e2, _) => write!(f, "{} {} {}", e1, o, e2),
             Expr::InstanceOf(e, t, _) => write!(f, "{} instance of {}", e, t),
             Expr::TreatAs(e, t, _) => write!(f, "{} treat as {}", e, t),
@@ -818,7 +907,18 @@ impl<T> Display for Expr<T> {
             Expr::Predicate(e, p, _) => write!(f, "{}[{}]", e, p),
             Expr::For(qname, bs, ret, _) => write!(f, "for ${} in {} return {}", qname, bs, ret),
             Expr::Let(qname, bs, ret, _) => write!(f, "let ${} := {} return {}", qname, bs, ret),
-            Expr::Quantified(quantifier, bindings, predicate, _) => unimplemented!(),
+            Expr::Quantified(quantifier, bindings, predicate, _) => {
+                write!(f, "{} ", quantifier)?;
+                let last = bindings.len() - 1;
+                for x in bindings.iter().enumerate() {
+                    let (i, (var, expr)) = x;
+                    write!(f, "${} in {}", var, expr)?;
+                    if i < last {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, " satisfies {}", predicate)
+            }
         }
     }
 }

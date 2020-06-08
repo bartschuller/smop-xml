@@ -95,3 +95,55 @@ fn gen_compare4() -> XdmResult<()> {
     assert!(result.boolean()?);
     Ok(())
 }
+
+#[test]
+#[ignore]
+fn quantified1() -> XdmResult<()> {
+    let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let context: DynamicContext = static_context.new_dynamic_context();
+    let xpath = Xpath::compile(
+        &static_context,
+        "some $x in (1, 2, 3), $y in (2, 3, 4) satisfies $x + $y = 4",
+    )?;
+    let result = xpath.evaluate(&context)?;
+    assert!(result.boolean()?);
+    Ok(())
+}
+
+#[test]
+#[ignore]
+fn quantified2() -> XdmResult<()> {
+    let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let context: DynamicContext = static_context.new_dynamic_context();
+    let xpath = Xpath::compile(
+        &static_context,
+        "every $x in (1, 2, 3), $y in (2, 3, 4) satisfies $x + $y = 4",
+    )?;
+    let result = xpath.evaluate(&context)?;
+    assert!(!result.boolean()?);
+    Ok(())
+}
+
+#[test]
+#[ignore]
+fn quantified3() -> XdmResult<()> {
+    let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let context: DynamicContext = static_context.new_dynamic_context();
+    let xpath = Xpath::compile(
+        &static_context,
+        "every $a in (1, 2, 3), $b in ($a, 4) satisfies $b gt 0",
+    )?;
+    let result = xpath.evaluate(&context)?;
+    assert!(result.boolean()?);
+    Ok(())
+}
+
+#[test]
+fn concat1() -> XdmResult<()> {
+    let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let context: DynamicContext = static_context.new_dynamic_context();
+    let xpath = Xpath::compile(&static_context, r#""con" || "cat" || "en" || 8"#)?;
+    let result = xpath.evaluate(&context)?;
+    assert_eq!(result.string()?, "concaten8");
+    Ok(())
+}
