@@ -42,6 +42,8 @@ pub struct XpathParser;
 
 #[pest_consume::parser]
 impl XpathParser {
+    // Numbers refer to the XPath 3.1 grammar
+    // 1
     pub fn Xpath(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [Expr(expr), EOI(_)] => expr,
@@ -50,6 +52,21 @@ impl XpathParser {
     fn EOI(_input: Node) -> Result<()> {
         Ok(())
     }
+    // 3
+    fn Param(input: Node) -> Result<(QName, Option<SequenceType>)> {
+        Ok(match_nodes!(input.into_children();
+            [EQName(qname), SequenceType(st)] => (qname, Some(st)),
+            [EQName(qname)] => (qname, None),
+        ))
+    }
+    // 3
+    fn EnclosedExpr(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [Expr(e)] => e,
+            [] => Expr::Sequence(vec![], ()),
+        ))
+    }
+    // 6
     fn Expr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [ExprSingle(expr)] => expr,
@@ -58,6 +75,7 @@ impl XpathParser {
             }
         ))
     }
+    // 7
     fn ExprSingle(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [ForExpr(e)] => e,
@@ -67,6 +85,7 @@ impl XpathParser {
             [OrExpr(e)] => e,
         ))
     }
+    // 8
     fn ForExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [SimpleForClause(bs), ExprSingle(e)] => bs.into_iter().rev().fold(e, |e,b|{
@@ -74,16 +93,19 @@ impl XpathParser {
             }),
         ))
     }
+    // 9
     fn SimpleForClause(input: Node) -> Result<Vec<(QName, Box<Expr<()>>)>> {
         Ok(match_nodes!(input.into_children();
             [SimpleForBinding(b)..] => b.collect(),
         ))
     }
+    // 10
     fn SimpleForBinding(input: Node) -> Result<(QName, Box<Expr<()>>)> {
         Ok(match_nodes!(input.into_children();
             [EQName(qn), ExprSingle(e)] => (qn, Box::new(e)),
         ))
     }
+    // 11
     fn LetExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [SimpleLetClause(bs), ExprSingle(e)] => bs.into_iter().rev().fold(e, |e,b|{
@@ -91,16 +113,19 @@ impl XpathParser {
             }),
         ))
     }
+    // 12
     fn SimpleLetClause(input: Node) -> Result<Vec<(QName, Expr<()>)>> {
         Ok(match_nodes!(input.into_children();
             [SimpleLetBinding(b)..] => b.collect(),
         ))
     }
+    // 13
     fn SimpleLetBinding(input: Node) -> Result<(QName, Expr<()>)> {
         Ok(match_nodes!(input.into_children();
             [EQName(qn), ExprSingle(e)] => (qn, e),
         ))
     }
+    // 14
     fn QuantifiedExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [SomeOrEvery(se), SimpleForBinding(b).., ExprSingle(p)] =>
@@ -114,6 +139,13 @@ impl XpathParser {
             &_ => unreachable!(),
         })
     }
+    // 15
+    fn IfExpr(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [Expr(i), ExprSingle(t), ExprSingle(e)] => Expr::IfThenElse(Box::new(i), Box::new(t), Box::new(e), ()),
+        ))
+    }
+    // 16
     fn OrExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [AndExpr(expr)] => expr,
@@ -122,6 +154,7 @@ impl XpathParser {
             }
         ))
     }
+    // 17
     fn AndExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [ComparisonExpr(expr)] => expr,
@@ -130,6 +163,7 @@ impl XpathParser {
             }
         ))
     }
+    // 18
     fn ComparisonExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [StringConcatExpr(e)] => e,
@@ -140,42 +174,21 @@ impl XpathParser {
             //[StringConcatExpr(e1), NodeComp(c), StringConcatExpr(e2)] => , // FIXME
         ))
     }
-    fn ValueComp(input: Node) -> Result<Comp> {
-        Ok(match input.as_str() {
-            "eq" => Comp::EQ,
-            "ne" => Comp::NE,
-            "lt" => Comp::LT,
-            "le" => Comp::LE,
-            "gt" => Comp::GT,
-            "ge" => Comp::GE,
-            &_ => unreachable!(),
-        })
-    }
-    fn GeneralComp(input: Node) -> Result<Comp> {
-        Ok(match input.as_str() {
-            "=" => Comp::EQ,
-            "!=" => Comp::NE,
-            "<" => Comp::LT,
-            "<=" => Comp::LE,
-            ">" => Comp::GT,
-            ">=" => Comp::GE,
-            &_ => unreachable!(),
-        })
-    }
+    // 19
     fn StringConcatExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [RangeExpr(e)] => e,
             [RangeExpr(es)..] => Expr::Concat(es.collect(), ())
         ))
     }
+    // 20
     fn RangeExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [AdditiveExpr(e)] => e, // FIXME
+            [AdditiveExpr(e)] => e,
+            [AdditiveExpr(e1), AdditiveExpr(e2)] => Expr::Range(Box::new(e1), Box::new(e2), ()),
         ))
     }
-    //   A - B + C - D
-    // is equivalent to
-    //   ((A - B) + C) - D
+    // 21
     fn AdditiveExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [MultiplicativeExpr(e)] => e,
@@ -196,58 +209,110 @@ impl XpathParser {
             &_ => unreachable!(),
         })
     }
+    // 22
     fn MultiplicativeExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [UnionExpr(e)] => e, // FIXME
+            [UnionExpr(e)] => e,
+            [UnionExpr(e1), MultiplicativeExpr1(oe)..] => {
+                oe.fold(e1, |a, (op, b)| Expr::Arithmetic(Box::new(a), op, Box::new(b), ()))
+            }
         ))
     }
+    fn MultiplicativeExpr1(input: Node) -> Result<(ArithmeticOp, Expr<()>)> {
+        Ok(match_nodes!(input.into_children();
+            [MultiplicativeOp(op), UnionExpr(e)] => (op, e),
+        ))
+    }
+    fn MultiplicativeOp(input: Node) -> Result<ArithmeticOp> {
+        Ok(match input.as_str() {
+            "*" => ArithmeticOp::Mul,
+            "div" => ArithmeticOp::Div,
+            "idiv" => ArithmeticOp::Idiv,
+            "mod" => ArithmeticOp::Mod,
+            &_ => unreachable!(),
+        })
+    }
+    // 23
     fn UnionExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [IntersectExceptExpr(e)] => e, // FIXME
         ))
     }
+    // 24
     fn IntersectExceptExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [InstanceofExpr(e)] => e, // FIXME
         ))
     }
+    // 25
     fn InstanceofExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [TreatExpr(e)] => e,
             [TreatExpr(e), SequenceType(t)] => Expr::InstanceOf(Box::new(e), t, ()),
         ))
     }
+    // 26
     fn TreatExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [CastableExpr(e)] => e,
             [CastableExpr(e), SequenceType(st)] => Expr::TreatAs(Box::new(e), st, ()),
         ))
     }
+    // 27
     fn CastableExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [CastExpr(e)] => e, // FIXME
         ))
     }
+    // 28
     fn CastExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [ArrowExpr(e)] => e, // FIXME
         ))
     }
+    // 29
     fn ArrowExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [UnaryExpr(e)] => e, // FIXME
         ))
     }
+    // 30
     fn UnaryExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [SimpleMapExpr(e)] => e, // FIXME
         ))
     }
+    // 32
+    fn GeneralComp(input: Node) -> Result<Comp> {
+        Ok(match input.as_str() {
+            "=" => Comp::EQ,
+            "!=" => Comp::NE,
+            "<" => Comp::LT,
+            "<=" => Comp::LE,
+            ">" => Comp::GT,
+            ">=" => Comp::GE,
+            &_ => unreachable!(),
+        })
+    }
+    // 33
+    fn ValueComp(input: Node) -> Result<Comp> {
+        Ok(match input.as_str() {
+            "eq" => Comp::EQ,
+            "ne" => Comp::NE,
+            "lt" => Comp::LT,
+            "le" => Comp::LE,
+            "gt" => Comp::GT,
+            "ge" => Comp::GE,
+            &_ => unreachable!(),
+        })
+    }
+    // 35
     fn SimpleMapExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [PathExpr(e)] => e, // FIXME
         ))
     }
+    // 36
     fn PathExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [InitialSlash(_), RelativePathExpr(e)] => {
@@ -276,6 +341,7 @@ impl XpathParser {
     fn InitialSlash(_input: Node) -> Result<()> {
         Ok(())
     }
+    // 37
     fn RelativePathExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [StepExpr(e)] => e,
@@ -296,29 +362,42 @@ impl XpathParser {
     fn SlashSlash(_input: Node) -> Result<bool> {
         Ok(true)
     }
+    // 38
     fn StepExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [PostfixExpr(e)] => e, // FIXME
             [AxisStep(e)] => e, // FIXME
         ))
     }
+    // 39
     fn AxisStep(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [ReverseStep(s), PredicateList(p)] => Expr::Step(s.0, s.1, p, ()),
             [ForwardStep(s), PredicateList(p)] => Expr::Step(s.0, s.1, p, ()),
         ))
     }
-    fn ReverseStep(input: Node) -> Result<(Axis, NodeTest)> {
-        Ok(match_nodes!(input.into_children();
-            [ReverseAxis(a), NodeTest(t)] => (a, t),
-        ))
-    }
+    // 40
     fn ForwardStep(input: Node) -> Result<(Axis, NodeTest)> {
         Ok(match_nodes!(input.into_children();
             [ForwardAxis(a), NodeTest(t)] => (a, t),
             [AbbrevForwardStep(at)] => (at.0, at.1),
         ))
     }
+    // 41
+    fn ForwardAxis(input: Node) -> Result<Axis> {
+        Ok(match input.as_str() {
+            "child" => Axis::Child,
+            "descendant" => Axis::Descendant,
+            "attribute" => Axis::Attribute,
+            "self" => Axis::Self_,
+            "descendant-or-self" => Axis::DescendantOrSelf,
+            "following-sibling" => Axis::FollowingSibling,
+            "following" => Axis::Following,
+            "namespace" => Axis::Namespace,
+            _ => unreachable!(),
+        })
+    }
+    // 42
     fn AbbrevForwardStep(input: Node) -> Result<(Axis, NodeTest)> {
         Ok(match_nodes!(input.into_children();
             [NodeTest(t)] => (Axis::Child, t),
@@ -328,40 +407,31 @@ impl XpathParser {
     fn AttributeIndicator(_input: Node) -> Result<()> {
         Ok(())
     }
-    fn ForwardAxis(input: Node) -> Result<Axis> {
-        Ok(match input.as_str() {
-            "child" => Axis::Child,
-            "attribute" => Axis::Attribute,
-            "self" => Axis::Self_,
-            _ => unimplemented!(),
-        })
+    // 43
+    fn ReverseStep(input: Node) -> Result<(Axis, NodeTest)> {
+        Ok(match_nodes!(input.into_children();
+            [ReverseAxis(a), NodeTest(t)] => (a, t),
+        ))
     }
+    // 44
     fn ReverseAxis(input: Node) -> Result<Axis> {
         Ok(match input.as_str() {
             "parent" => Axis::Parent,
+            "ancestor" => Axis::Ancestor,
+            "preceding-sibling" => Axis::PrecedingSibling,
+            "preceding" => Axis::Preceding,
+            "ancestor-or-self" => Axis::AncestorOrSelf,
             _ => unreachable!(),
         })
     }
+    // 46
     fn NodeTest(input: Node) -> Result<NodeTest> {
         Ok(match_nodes!(input.into_children();
             [NameTest(qname)] => NodeTest::NameTest(qname),
             [KindTest(kind)] => NodeTest::KindTest(kind),
         ))
     }
-    fn KindTest(input: Node) -> Result<KindTest> {
-        Ok(match_nodes!(input.into_children();
-            [AnyKindTest(kt)] => kt,
-            [DocumentTest(kt)] => kt,
-        ))
-    }
-    fn DocumentTest(input: Node) -> Result<KindTest> {
-        Ok(match_nodes!(input.into_children();
-            [] => KindTest::Document,
-        ))
-    }
-    fn AnyKindTest(_input: Node) -> Result<KindTest> {
-        Ok(KindTest::AnyKind)
-    }
+    // 47
     fn NameTest(input: Node) -> Result<QName> {
         let sc = input.user_data().clone();
         Ok(match_nodes!(input.into_children();
@@ -371,11 +441,7 @@ impl XpathParser {
             }
         ))
     }
-    fn PredicateList(input: Node) -> Result<Vec<Expr<()>>> {
-        Ok(match_nodes!(input.into_children();
-            [Predicate(expr)..] => expr.collect(),
-        ))
-    }
+    // 49
     fn PostfixExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [PrimaryExpr(e)] => e,
@@ -383,11 +449,127 @@ impl XpathParser {
             // FIXME generalize for more predicates and other stuff
         ))
     }
+    // 51
+    fn PredicateList(input: Node) -> Result<Vec<Expr<()>>> {
+        Ok(match_nodes!(input.into_children();
+            [Predicate(expr)..] => expr.collect(),
+        ))
+    }
+    // 52
     fn Predicate(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [Expr(expr)] => expr,
         ))
     }
+    // 56
+    fn PrimaryExpr(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [Literal(lit)] => Expr::Literal(lit, ()),
+            [VarRef(eq_name)] => Expr::VarRef(eq_name, ()),
+            [ParenthesizedExpr(e)] => e,
+            [ContextItemExpr(e)] => e,
+            [FunctionItemExpr(e)] => e,
+            [MapConstructor(e)] => e,
+            [ArrayConstructor(e)] => e,
+            [FunctionCall(e)] => e,
+            [UnaryLookup(e)] => e,
+        ))
+    }
+    // 57
+    fn Literal(input: Node) -> Result<Literal> {
+        Ok(match_nodes!(input.into_children();
+            [DoubleLiteral(lit)] => lit,
+            [DecimalLiteral(lit)] => lit,
+            [IntegerLiteral(lit)] => lit,
+            [StringLiteral(lit)] => lit,
+        ))
+    }
+    // 59
+    fn VarRef(input: Node) -> Result<QName> {
+        Ok(match_nodes!(input.into_children();
+            [EQName(eq)] => eq
+        ))
+    }
+    // 61
+    fn ParenthesizedExpr(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [Expr(e)] => e,
+            [] => Expr::Sequence(vec![], ())
+        ))
+    }
+    // 62
+    fn ContextItemExpr(_input: Node) -> Result<Expr<()>> {
+        Ok(Expr::ContextItem(()))
+    }
+    // 63
+    fn FunctionCall(input: Node) -> Result<Expr<()>> {
+        // We check whether the function exists in the typing phase
+        match_nodes!(input.clone().into_children();
+            [EQName(f), ExprSingle(a)..] => {
+                let args: Vec<_> = a.collect();
+                Ok(Expr::FunctionCall(f, args, ()))
+            }
+        )
+    }
+    // 66
+    fn FunctionItemExpr(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [NamedFunctionRef(e)] => unimplemented!(),
+            [InlineFunctionExpr(e)] => e,
+        ))
+    }
+    // 67
+    fn NamedFunctionRef(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [EQName(qname), IntegerLiteral(i)] => unimplemented!(),
+        ))
+    }
+    // 68
+    fn InlineFunctionExpr(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [ParamListMaybe(pl), AsTypeMaybe(st), EnclosedExpr(e)] => {
+                Expr::InlineFunction(pl, st, Box::new(e), ())
+            }
+        ))
+    }
+    fn ParamListMaybe(input: Node) -> Result<Vec<(QName, Option<SequenceType>)>> {
+        Ok(match_nodes!(input.into_children();
+            [Param(p)..] => p.collect(),
+            [] => vec![],
+        ))
+    }
+    fn AsTypeMaybe(input: Node) -> Result<Option<SequenceType>> {
+        Ok(match_nodes!(input.into_children();
+            [SequenceType(st)] => Some(st),
+            [] => None,
+        ))
+    }
+    // 69
+    fn MapConstructor(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [MapConstructorEntry(es)..] => Expr::Map(es.collect(), ()),
+        ))
+    }
+    // 70
+    fn MapConstructorEntry(input: Node) -> Result<(Expr<()>, Expr<()>)> {
+        Ok(match_nodes!(input.into_children();
+            [ExprSingle(k), ExprSingle(v)] => (k, v),
+        ))
+    }
+    // 73
+    fn ArrayConstructor(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [ExprSingle(es)..] => Expr::ArraySquare(es.collect(), ()),
+            [EnclosedExpr(e)] => Expr::ArrayCurly(Box::new(e), ()),
+        ))
+    }
+    // 76
+    fn UnaryLookup(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [NamedFunctionRef(e)] => unimplemented!(),
+        ))
+    }
+    // 79
     fn SequenceType(input: Node) -> Result<SequenceType> {
         Ok(match_nodes!(input.into_children();
             [EmptySequence(st)] => st,
@@ -398,22 +580,7 @@ impl XpathParser {
     fn EmptySequence(_input: Node) -> Result<SequenceType> {
         Ok(SequenceType::EmptySequence)
     }
-    fn ItemType(input: Node) -> Result<Item> {
-        Ok(match_nodes!(input.into_children();
-            [Item(it)] => it,
-            [AtomicOrUnionType(it)] => it,
-            [KindTest(kt)] => Item::KindTest(kt),
-        ))
-    }
-    fn Item(_input: Node) -> Result<Item> {
-        Ok(Item::Item)
-    }
-    fn AtomicOrUnionType(input: Node) -> Result<Item> {
-        let sc = input.user_data();
-        Ok(match_nodes!(input.children();
-            [EQName(qname)] => Item::AtomicOrUnion(sc.schema_type(&qname).map_err(|e|input.error(e.message))?),
-        ))
-    }
+    // 80
     fn OccurrenceIndicator(input: Node) -> Result<Occurrence> {
         Ok(match input.as_str() {
             "?" => Occurrence::Optional,
@@ -422,94 +589,62 @@ impl XpathParser {
             &_ => unreachable!(),
         })
     }
-    fn ParenthesizedExpr(input: Node) -> Result<Expr<()>> {
+    // 81
+    fn ItemType(input: Node) -> Result<Item> {
         Ok(match_nodes!(input.into_children();
-            [Expr(e)] => e,
-            [] => Expr::Sequence(vec![], ())
+            [Item(it)] => it,
+            [AtomicOrUnionType(it)] => it,
+            [KindTest(kt)] => Item::KindTest(kt),
+            // FIXME
         ))
     }
-    fn ContextItemExpr(_input: Node) -> Result<Expr<()>> {
-        Ok(Expr::ContextItem(()))
+    fn Item(_input: Node) -> Result<Item> {
+        Ok(Item::Item)
     }
-    fn FunctionCall(input: Node) -> Result<Expr<()>> {
-        // We check whether the function exists in the typing phase
-        match_nodes!(input.clone().into_children();
-            [EQName(f), ExprSingle(a)..] => {
-                let args: Vec<_> = a.collect();
-                Ok(Expr::FunctionCall(f, args, ()))
-            }
-        )
+    // 82
+    fn AtomicOrUnionType(input: Node) -> Result<Item> {
+        let sc = input.user_data();
+        Ok(match_nodes!(input.children();
+            [EQName(qname)] => Item::AtomicOrUnion(sc.schema_type(&qname).map_err(|e|input.error(e.message))?),
+        ))
     }
+    // 83
+    fn KindTest(input: Node) -> Result<KindTest> {
+        Ok(match_nodes!(input.into_children();
+            [AnyKindTest(kt)] => kt,
+            [DocumentTest(kt)] => kt,
+        ))
+    }
+    // 84
+    fn AnyKindTest(_input: Node) -> Result<KindTest> {
+        Ok(KindTest::AnyKind)
+    }
+    // 85
+    fn DocumentTest(input: Node) -> Result<KindTest> {
+        Ok(match_nodes!(input.into_children();
+            [] => KindTest::Document,
+        ))
+    }
+    // 112
     fn EQName(input: Node) -> Result<QName> {
         Ok(match_nodes!(input.into_children();
             [URIQualifiedName(q)] => q,
             [QName(q)] => q,
         ))
     }
-    fn URIQualifiedName(input: Node) -> Result<QName> {
-        Ok(match_nodes!(input.into_children();
-            [BracedURILiteralContent(ns), NCName(name)] => QName::new(name, Some(ns), None),
-        ))
-    }
-    fn BracedURILiteralContent(input: Node) -> Result<String> {
-        Ok(input.as_str().to_string())
-    }
-    fn NCName(input: Node) -> Result<String> {
-        Ok(input.as_str().to_string())
-    }
-    fn QName(input: Node) -> Result<QName> {
-        Ok(match_nodes!(input.into_children();
-            [PrefixedName(q)] => q,
-            [UnprefixedName(q)] => q,
-        ))
-    }
-    fn PrefixedName(input: Node) -> Result<QName> {
-        let sc = input.user_data().clone();
-        Ok(match_nodes!(input.into_children();
-            [Prefix(p), LocalPart(l)] => QName::new(l, Some(sc.namespace(&p).unwrap()), Some(p)),
-        ))
-    }
-    fn Prefix(input: Node) -> Result<String> {
-        let sc = input.user_data();
-        let prefix = input.as_str();
-        if sc.prefix_defined(prefix) {
-            Ok(prefix.to_string())
-        } else {
-            Err(input.error("prefix not found in static context"))
-        }
-    }
-    fn LocalPart(input: Node) -> Result<String> {
-        Ok(input.as_str().to_string())
-    }
-    fn UnprefixedName(input: Node) -> Result<QName> {
-        Ok(QName::new(input.as_str().to_string(), None, None))
-    }
-    fn PrimaryExpr(input: Node) -> Result<Expr<()>> {
-        Ok(match_nodes!(input.into_children();
-            [Literal(lit)] => Expr::Literal(lit, ()),
-            [VarRef(eq_name)] => Expr::VarRef(eq_name, ()),
-            [ParenthesizedExpr(e)] => e,
-            [ContextItemExpr(e)] => e,
-            [FunctionCall(e)] => e,
-        ))
-    }
-    fn Literal(input: Node) -> Result<Literal> {
-        Ok(match_nodes!(input.into_children();
-            [DoubleLiteral(lit)] => lit,
-            [DecimalLiteral(lit)] => lit,
-            [IntegerLiteral(lit)] => lit,
-            [StringLiteral(lit)] => lit,
-        ))
-    }
+    // 113
     fn IntegerLiteral(input: Node) -> Result<Literal> {
         Ok(Literal::Integer(input.as_str().parse().unwrap()))
     }
-    fn DoubleLiteral(input: Node) -> Result<Literal> {
-        Ok(Literal::Double(input.as_str().parse().unwrap()))
-    }
+    // 114
     fn DecimalLiteral(input: Node) -> Result<Literal> {
         Ok(Literal::Decimal(Decimal::from_str(input.as_str()).unwrap()))
     }
+    // 115
+    fn DoubleLiteral(input: Node) -> Result<Literal> {
+        Ok(Literal::Double(input.as_str().parse().unwrap()))
+    }
+    // 116
     fn StringLiteral(input: Node) -> Result<Literal> {
         // we matched the complete string literal, with outer quotes and possibly escaped quotes.
         // Get the inner string and unescape where needed.
@@ -529,15 +664,52 @@ impl XpathParser {
         };
         Ok(Literal::String(unescaped))
     }
-    fn VarRef(input: Node) -> Result<QName> {
+    // 117
+    fn URIQualifiedName(input: Node) -> Result<QName> {
         Ok(match_nodes!(input.into_children();
-            [EQName(eq)] => eq
+            [BracedURILiteralContent(ns), NCName(name)] => QName::new(name, Some(ns), None),
         ))
     }
-    fn IfExpr(input: Node) -> Result<Expr<()>> {
+    // 118
+    fn BracedURILiteralContent(input: Node) -> Result<String> {
+        Ok(input.as_str().to_string())
+    }
+    // 122
+    fn QName(input: Node) -> Result<QName> {
         Ok(match_nodes!(input.into_children();
-            [Expr(i), ExprSingle(t), ExprSingle(e)] => Expr::IfThenElse(Box::new(i), Box::new(t), Box::new(e), ()),
+            [PrefixedName(q)] => q,
+            [UnprefixedName(q)] => q,
         ))
+    }
+    // 123
+    fn NCName(input: Node) -> Result<String> {
+        Ok(input.as_str().to_string())
+    }
+    // Numbers refer to the grammar in REC-xml-names
+    // 8
+    fn PrefixedName(input: Node) -> Result<QName> {
+        let sc = input.user_data().clone();
+        Ok(match_nodes!(input.into_children();
+            [Prefix(p), LocalPart(l)] => QName::new(l, Some(sc.namespace(&p).unwrap()), Some(p)),
+        ))
+    }
+    // 9
+    fn UnprefixedName(input: Node) -> Result<QName> {
+        Ok(QName::new(input.as_str().to_string(), None, None))
+    }
+    // 10
+    fn Prefix(input: Node) -> Result<String> {
+        let sc = input.user_data();
+        let prefix = input.as_str();
+        if sc.prefix_defined(prefix) {
+            Ok(prefix.to_string())
+        } else {
+            Err(input.error("prefix not found in static context"))
+        }
+    }
+    // 11
+    fn LocalPart(input: Node) -> Result<String> {
+        Ok(input.as_str().to_string())
     }
 }
 
@@ -854,6 +1026,13 @@ mod tests {
         assert_eq!(input, format!("{}", output.unwrap()))
     }
     #[test]
+    fn path2() {
+        let context: StaticContext = Default::default();
+        let input = "ancestor-or-self::a/parent::b/child::c";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
     fn comparison1() {
         let context: StaticContext = Default::default();
         let input = "1 eq 2";
@@ -931,6 +1110,57 @@ mod tests {
     fn string_concat1() {
         let context: StaticContext = Default::default();
         let input = r#""con" || "cat" || "enate""#;
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn range1() {
+        let context: StaticContext = Default::default();
+        let input = "1 to 5";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn array1() {
+        let context: StaticContext = Default::default();
+        let input = r#"[1, "two", []]"#;
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn array2() {
+        let context: StaticContext = Default::default();
+        let input = r#"array {1, "two", []}"#;
+        let equiv = r#"array {(1, "two", [])}"#;
+        let output = context.parse(input);
+        assert_eq!(equiv, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn array3() {
+        let context: StaticContext = Default::default();
+        let input = r#"array {}"#;
+        let equiv = r#"array {()}"#;
+        let output = context.parse(input);
+        assert_eq!(equiv, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn map1() {
+        let context: StaticContext = Default::default();
+        let input = r#"map {"key": "value", 1.2: 5e-6}"#;
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn anon_function1() {
+        let context: StaticContext = Default::default();
+        let input = "function($a) { $a }";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn anon_function2() {
+        let context: StaticContext = Default::default();
+        let input = "function($a as xs:double, $b as xs:double) as xs:double { $a * $b }";
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }

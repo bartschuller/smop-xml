@@ -33,6 +33,16 @@ pub enum Expr<T> {
     For(QName, Box<Expr<T>>, Box<Expr<T>>, T),
     Let(QName, Box<Expr<T>>, Box<Expr<T>>, T),
     Quantified(Quantifier, Vec<(QName, Box<Expr<T>>)>, Box<Expr<T>>, T),
+    Range(Box<Expr<T>>, Box<Expr<T>>, T),
+    ArraySquare(Vec<Expr<T>>, T),
+    ArrayCurly(Box<Expr<T>>, T),
+    Map(Vec<(Expr<T>, Expr<T>)>, T),
+    InlineFunction(
+        Vec<(QName, Option<SequenceType>)>,
+        Option<SequenceType>,
+        Box<Expr<T>>,
+        T,
+    ),
 }
 
 #[derive(Debug, PartialEq)]
@@ -79,6 +89,10 @@ pub enum NodeTest {
 pub enum ArithmeticOp {
     Plus,
     Minus,
+    Mul,
+    Div,
+    Idiv,
+    Mod,
 }
 
 #[derive(Debug, PartialEq)]
@@ -128,6 +142,10 @@ impl Display for ArithmeticOp {
         match self {
             ArithmeticOp::Plus => f.write_str("+"),
             ArithmeticOp::Minus => f.write_str("-"),
+            ArithmeticOp::Mul => f.write_str("*"),
+            ArithmeticOp::Div => f.write_str("div"),
+            ArithmeticOp::Idiv => f.write_str("idiv"),
+            ArithmeticOp::Mod => f.write_str("mod"),
         }
     }
 }
@@ -136,7 +154,7 @@ impl Display for Literal {
         match self {
             Literal::Integer(i) => write!(f, "{}", i),
             Literal::Decimal(d) => write!(f, "{}", d),
-            Literal::Double(d) => write!(f, "{}", d),
+            Literal::Double(d) => write!(f, "{:e}", d),
             Literal::String(s) => write!(f, "\"{}\"", s.replace("\"", "\"\"")),
         }
     }
@@ -165,6 +183,11 @@ impl<T> Expr<T> {
             Expr::For(_, _, _, t) => t,
             Expr::Let(_, _, _, t) => t,
             Expr::Quantified(_, _, _, t) => t,
+            Expr::Range(_, _, t) => t,
+            Expr::ArraySquare(_, t) => t,
+            Expr::ArrayCurly(_, t) => t,
+            Expr::Map(_, t) => t,
+            Expr::InlineFunction(_, _, _, t) => t,
         }
     }
 }
@@ -595,6 +618,11 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     Ok(Xdm::Boolean(default_return_value))
                 }))
             }
+            Expr::Range(_, _, _) => unimplemented!(),
+            Expr::ArraySquare(_, _) => unimplemented!(),
+            Expr::ArrayCurly(_, _) => unimplemented!(),
+            Expr::Map(_, _) => unimplemented!(),
+            Expr::InlineFunction(_, _, _, _) => unimplemented!(),
         }
     }
 }
@@ -835,6 +863,11 @@ impl Expr<()> {
                     (result_type, curr_ctx),
                 ))
             }
+            Expr::Range(_, _, _) => unimplemented!(),
+            Expr::ArraySquare(_, _) => unimplemented!(),
+            Expr::ArrayCurly(_, _) => unimplemented!(),
+            Expr::Map(_, _) => unimplemented!(),
+            Expr::InlineFunction(_, _, _, _) => unimplemented!(),
         }
     }
 }
@@ -918,6 +951,29 @@ impl<T> Display for Expr<T> {
                     }
                 }
                 write!(f, " satisfies {}", predicate)
+            }
+            Expr::Range(from, to, _) => write!(f, "{} to {}", from, to),
+            Expr::ArraySquare(v, _) => write!(f, "[{}]", v.iter().format(", ")),
+            Expr::ArrayCurly(e, _) => write!(f, "array {{{}}}", e),
+            Expr::Map(v, _) => write!(
+                f,
+                "map {{{}}}",
+                v.iter()
+                    .format_with(", ", |kv, f| { f(&format_args!("{}: {}", kv.0, kv.1)) })
+            ),
+            Expr::InlineFunction(v, ost, b, _) => {
+                let vs = v.iter().format_with(", ", |kv, f| {
+                    f(&kv
+                        .1
+                        .as_ref()
+                        .map(|t| format!("${} as {}", kv.0, t))
+                        .unwrap_or_else(|| format!("${}", kv.0)))
+                });
+                let st = ost
+                    .as_ref()
+                    .map(|st| format!("as {} ", st))
+                    .unwrap_or("".to_string());
+                write!(f, "function({}) {}{{ {} }}", vs, st, b)
             }
         }
     }

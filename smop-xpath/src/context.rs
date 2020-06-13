@@ -7,6 +7,22 @@ use crate::xdm::{QName, XdmError, XdmResult};
 use im::HashMap;
 use std::rc::Rc;
 
+pub struct Context<'c> {
+    pub static_context: Rc<StaticContext>,
+    pub dynamic_context: DynamicContext<'c, 'c>,
+}
+
+impl Context<'_> {
+    pub fn new() -> Self {
+        let sc: Rc<StaticContext> = Rc::new(Default::default());
+        let dc = sc.new_dynamic_context();
+        Context {
+            static_context: sc,
+            dynamic_context: dc,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct StaticContext {
     namespaces: HashMap<String, String>,

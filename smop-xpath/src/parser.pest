@@ -2,6 +2,14 @@
 // Numbers refer to the XPath 3.1 grammar
 // 1
 Xpath = { SOI ~ Expr ~ EOI }
+// 2
+ParamList = _{ Param ~ ("," ~ Param)* }
+// 3
+Param = { "$" ~ EQName ~ TypeDeclaration? }
+// 4
+FunctionBody = _{ EnclosedExpr }
+// 5
+EnclosedExpr = { "{" ~ Expr? ~ "}" }
 // 6
 Expr = { ExprSingle ~ ("," ~ ExprSingle)* }
 // 7
@@ -40,9 +48,11 @@ RangeExpr = { AdditiveExpr ~ ( "to" ~ AdditiveExpr )? }
 // 21
 AdditiveExpr = { MultiplicativeExpr ~ AdditiveExpr1* }
 AdditiveExpr1 = { AdditiveOp ~ MultiplicativeExpr }
-AdditiveOp = { ("+" | "-") }
+AdditiveOp = { "+" | "-" }
 // 22
-MultiplicativeExpr = { UnionExpr ~ ( ("*" | "div" | "idiv" | "mod") ~ UnionExpr )* }
+MultiplicativeExpr = { UnionExpr ~ MultiplicativeExpr1* }
+MultiplicativeExpr1 = { MultiplicativeOp ~ UnionExpr }
+MultiplicativeOp = { "*" | "div" | "idiv" | "mod" }
 // 23
 UnionExpr = { IntersectExceptExpr ~ ( ("union" | "|") ~ IntersectExceptExpr )* }
 // 24
@@ -93,11 +103,7 @@ AttributeIndicator = { "@" }
 // 43
 ReverseStep = { (ReverseAxis ~ ColonColon ~ NodeTest) | AbbrevReverseStep }
 // 44
-ReverseAxis = { ("parent" ~ "::")
-              | ("ancestor" ~ "::")
-              | ("preceding-sibling" ~ "::")
-              | ("preceding" ~ "::")
-              | ("ancestor-or-self" ~ "::") }
+ReverseAxis = { "parent" | "ancestor-or-self" | "ancestor" | "preceding-sibling" | "preceding" }
 // 45
 AbbrevReverseStep = { ".." }
 // 46
@@ -124,7 +130,15 @@ KeySpecifier = { NCName | IntegerLiteral | ParenthesizedExpr | "*" }
 // 55
 ArrowFunctionSpecifier = { EQName | VarRef | ParenthesizedExpr }
 // 56
-PrimaryExpr = { Literal | VarRef | ParenthesizedExpr | ContextItemExpr | FunctionCall }
+PrimaryExpr = { Literal
+              | VarRef
+              | ParenthesizedExpr
+              | ContextItemExpr
+              | FunctionItemExpr
+              | MapConstructor
+              | ArrayConstructor
+              | FunctionCall
+              | UnaryLookup }
 // 57
 Literal = { DoubleLiteral | DecimalLiteral | IntegerLiteral | StringLiteral }
 // 59
@@ -141,8 +155,34 @@ FunctionCall = { EQName ~ ArgumentList }
 Argument = _{ ExprSingle | ArgumentPlaceholder }
 // 65
 ArgumentPlaceholder = { "?" }
+// 66
+FunctionItemExpr = { NamedFunctionRef | InlineFunctionExpr }
+// 67
+NamedFunctionRef = { EQName ~ "#" ~ IntegerLiteral }
+// 68
+InlineFunctionExpr = { "function" ~ "(" ~ ParamListMaybe ~ ")" ~ AsTypeMaybe ~ FunctionBody }
+ParamListMaybe = { ParamList? }
+AsTypeMaybe = { ("as" ~ SequenceType)? }
+// 69
+MapConstructor = { "map" ~ "{" ~ (MapConstructorEntry ~ ("," ~ MapConstructorEntry)*)? ~ "}" }
+// 70
+MapConstructorEntry = { MapKeyExpr ~ ":" ~ MapValueExpr }
+// 71
+MapKeyExpr = _{ ExprSingle }
+// 72
+MapValueExpr = _{ ExprSingle }
+// 73
+ArrayConstructor = { SquareArrayConstructor | CurlyArrayConstructor }
+// 74
+SquareArrayConstructor = _{ "[" ~ (ExprSingle ~ ("," ~ ExprSingle)*)? ~ "]" }
+// 75
+CurlyArrayConstructor = _{ "array" ~ EnclosedExpr }
+// 76
+UnaryLookup = { "?" ~ KeySpecifier }
 // 77
 SingleType = { SimpleTypeName ~ "?"? }
+// 78
+TypeDeclaration = _{ "as" ~ SequenceType }
 // 79
 SequenceType = { EmptySequence | (ItemType ~ OccurrenceIndicator?) }
 EmptySequence = { ( "empty-sequence" ~ "(" ~ ")" ) }
@@ -247,21 +287,18 @@ Quot = { "\"" }
 // 120
 EscapeApos = { "''" }
 Apos = { "'" }
+// 121
+COMMENT = _{ "(:" ~ (CommentContents | COMMENT)* ~ ":)" }
 // 122
 QName = { PrefixedName | UnprefixedName }
 // 123
 NCName = @{ NameStartChar ~ NameChar* }
 // 125
 Digits = @{ ASCII_DIGIT+ }
-
-WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
-// [121]    	Comment 	   ::=    	"(:" (CommentContents | Comment)* ":)" 	/* ws: explicit */
-   // 				/* gn: comments */
-   // [126]    	CommentContents 	   ::=    	(Char+ - (Char* ('(:' | ':)') Char*))
-// 121
-COMMENT = _{ "(:" ~ (CommentContents | COMMENT)* ~ ":)" }
 // 126
 CommentContents = { ( !("(:" | ":)") ~ ANY)+ }
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
 // Numbers refer to the grammar in REC-xml-names
 // 8
