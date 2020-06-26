@@ -5,6 +5,8 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU32;
 use std::rc::Rc;
+use std::ops::Deref;
+use std::borrow::Cow;
 
 // An implementation of https://www.w3.org/TR/xpath-datamodel-31/
 
@@ -55,6 +57,39 @@ impl Display for QName {
     }
 }
 
+type Range = std::ops::Range<usize>;
+
+/// A short range.
+///
+/// Just like Range, but only for `u32` and copyable.
+#[derive(Clone, Copy, Debug)]
+struct ShortRange {
+    start: u32,
+    end: u32,
+}
+
+impl From<Range> for ShortRange {
+    #[inline]
+    fn from(range: Range) -> Self {
+        // Casting to `u32` should be safe since we have a 4GiB input data limit.
+        debug_assert!(range.start <= std::u32::MAX as usize);
+        debug_assert!(range.end <= std::u32::MAX as usize);
+        ShortRange::new(range.start as u32, range.end as u32)
+    }
+}
+
+impl ShortRange {
+    #[inline]
+    fn new(start: u32, end: u32) -> Self {
+        ShortRange { start, end }
+    }
+
+    #[inline]
+    fn to_urange(self) -> Range {
+        self.start as usize .. self.end as usize
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Debug, PartialOrd)]
 pub struct Idx(NonZeroU32);
 
@@ -83,6 +118,81 @@ impl From<usize> for Idx {
     #[inline]
     fn from(id: usize) -> Self {
         Idx::new(id as u32)
+    }
+}
+
+/// A namespace.
+///
+/// Contains URI and *prefix* pair.
+#[derive(Clone, PartialEq, Debug)]
+pub struct Namespace {
+    name: Option<String>,
+    uri: String,
+}
+
+impl Namespace {
+    /// Returns namespace name/prefix.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let doc = roxmltree::Document::parse(
+    ///     "<e xmlns:n='http://www.w3.org'/>"
+    /// ).unwrap();
+    ///
+    /// assert_eq!(doc.root_element().namespaces()[0].name(), Some("n"));
+    /// ```
+    ///
+    /// ```
+    /// let doc = roxmltree::Document::parse(
+    ///     "<e xmlns='http://www.w3.org'/>"
+    /// ).unwrap();
+    ///
+    /// assert_eq!(doc.root_element().namespaces()[0].name(), None);
+    /// ```
+    #[inline]
+    pub fn name(&self) -> Option<&String> {
+        self.name.as_ref()
+    }
+
+    /// Returns namespace URI.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let doc = roxmltree::Document::parse(
+    ///     "<e xmlns:n='http://www.w3.org'/>"
+    /// ).unwrap();
+    ///
+    /// assert_eq!(doc.root_element().namespaces()[0].uri(), "http://www.w3.org");
+    /// ```
+    #[inline]
+    pub fn uri(&self) -> &str {
+        self.uri.as_ref()
+    }
+}
+
+struct Namespaces(Vec<Namespace>);
+
+impl Namespaces {
+    #[inline]
+    fn push_ns(&mut self, name: Option<String>, uri: String) {
+        debug_assert_ne!(name, Some(""));
+        self.0.push(Namespace { name, uri });
+    }
+
+    #[inline]
+    fn exists(&self, start: usize, prefix: Option<&str>) -> bool {
+        self[start..].iter().any(|ns| ns.name == prefix)
+    }
+}
+
+impl Deref for Namespaces {
+    type Target = Vec<Namespace>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

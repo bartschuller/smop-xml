@@ -4,7 +4,7 @@ use std::fmt;
 use std::mem;
 use std::str;
 
-use crate::nod::{Attribute, Document, Idx, NodeData, NodeKind, QName, NS_XMLNS_URI, NS_XML_URI};
+use crate::nod::{Attribute, Document, Idx, NodeData, NodeKind, QName, NS_XMLNS_URI, NS_XML_URI, ShortRange, Namespaces};
 use std::collections::HashMap;
 use xmlparser::{self, Reference, StrSpan, Stream, TextPos};
 
@@ -208,12 +208,12 @@ impl Document {
 
     fn append(
         &mut self,
-        parent_id: NodeId,
+        parent_id: Idx,
         kind: NodeKind,
         range: ShortRange,
         pd: &mut ParserData,
-    ) -> NodeId {
-        let new_child_id = NodeId::from(self.nodes.len());
+    ) -> Idx {
+        let new_child_id = Idx::from(self.nodes.len());
 
         let appending_element = match kind {
             NodeKind::Element { .. } => true,
@@ -239,7 +239,7 @@ impl Document {
         pd.awaiting_subtree.clear();
 
         if !appending_element {
-            pd.awaiting_subtree.push(NodeId::from(self.nodes.len() - 1));
+            pd.awaiting_subtree.push(Idx::from(self.nodes.len() - 1));
         }
 
         new_child_id
@@ -255,7 +255,7 @@ struct ParserData<'input> {
     attrs_start_idx: usize,
     ns_start_idx: usize,
     tmp_attrs: Vec<AttributeData<'input>>,
-    awaiting_subtree: Vec<NodeId>,
+    awaiting_subtree: Vec<Idx>,
     entities: Vec<Entity<'input>>,
     buffer: TextBuffer,
     after_text: bool,
@@ -466,7 +466,7 @@ fn parse(text: &str) -> Result<Document, Error> {
 
 fn process_tokens<'input>(
     parser: xmlparser::Tokenizer<'input>,
-    mut parent_id: NodeId,
+    mut parent_id: Idx,
     loop_detector: &mut LoopDetector,
     tag_name: &mut TagNameSpan<'input>,
     pd: &mut ParserData<'input>,
@@ -638,7 +638,7 @@ fn process_element<'input>(
     tag_name: TagNameSpan<'input>,
     end_token: xmlparser::ElementEnd<'input>,
     token_span: StrSpan<'input>,
-    parent_id: &mut NodeId,
+    parent_id: &mut Idx,
     pd: &mut ParserData<'input>,
     doc: &mut Document,
 ) -> Result<(), Error> {
@@ -749,7 +749,7 @@ fn process_element<'input>(
     Ok(())
 }
 
-fn resolve_namespaces(start_idx: usize, parent_id: NodeId, doc: &mut Document) -> ShortRange {
+fn resolve_namespaces(start_idx: usize, parent_id: Idx, doc: &mut Document) -> ShortRange {
     if let NodeKind::Element { ref namespaces, .. } = doc.nodes[parent_id.get_usize()].kind {
         let parent_ns = namespaces.clone();
         if start_idx == doc.namespaces.len() {
@@ -793,11 +793,7 @@ fn resolve_attributes<'input>(
 
         // We do not store attribute prefixes since `ExpandedNameOwned::prefix`
         // is used only for closing tags matching during parsing.
-        let attr_name = ExpandedNameOwned {
-            ns,
-            prefix: "",
-            name: attr.local.as_str(),
-        };
+        let attr_name = QName::new(attr.local.to_string(), ns.map(|s|s.to_string()), None);
 
         // Check for duplicated attributes.
         if doc.attrs[start_idx..]
@@ -823,7 +819,7 @@ fn resolve_attributes<'input>(
 
 fn process_text<'input>(
     text: StrSpan<'input>,
-    parent_id: NodeId,
+    parent_id: Idx,
     loop_detector: &mut LoopDetector,
     pd: &mut ParserData<'input>,
     doc: &mut Document,
@@ -917,7 +913,7 @@ fn process_text<'input>(
 
 fn append_text<'input>(
     text: Cow<'input, str>,
-    parent_id: NodeId,
+    parent_id: Idx,
     range: ShortRange,
     after_text: bool,
     doc: &mut Document,
