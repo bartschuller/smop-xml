@@ -1,4 +1,4 @@
-use crate::ast::{ArithmeticOp, Axis, Comp, Expr, Literal, NodeTest, Quantifier};
+use crate::ast::{ArithmeticOp, Axis, Comp, Expr, Literal, NodeComp, NodeTest, Quantifier};
 use crate::context::StaticContext;
 use crate::types::{Item, KindTest, Occurrence, SequenceType};
 use crate::xdm::{QName, XdmError};
@@ -171,7 +171,8 @@ impl XpathParser {
                 Expr::ValueComp(Box::new(e1), c, Box::new(e2), ()),
             [StringConcatExpr(e1), GeneralComp(c), StringConcatExpr(e2)] =>
                 Expr::GeneralComp(Box::new(e1), c, Box::new(e2), ()),
-            //[StringConcatExpr(e1), NodeComp(c), StringConcatExpr(e2)] => , // FIXME
+            [StringConcatExpr(e1), NodeComp(c), StringConcatExpr(e2)] =>
+                Expr::NodeComp(Box::new(e1), c, Box::new(e2), ()),
         ))
     }
     // 19
@@ -303,6 +304,14 @@ impl XpathParser {
             "le" => Comp::LE,
             "gt" => Comp::GT,
             "ge" => Comp::GE,
+            &_ => unreachable!(),
+        })
+    }
+    fn NodeComp(input: Node) -> Result<NodeComp> {
+        Ok(match input.as_str() {
+            "is" => NodeComp::Is,
+            "<<" => NodeComp::Before,
+            ">>" => NodeComp::After,
             &_ => unreachable!(),
         })
     }
@@ -1043,6 +1052,20 @@ mod tests {
     fn comparison2() {
         let context: StaticContext = Default::default();
         let input = "1 = 2";
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn comparison3() {
+        let context: StaticContext = Default::default();
+        let input = r#"child::book[attribute::isbn = "9876543210123"] << child::book[attribute::isbn = "9876543210120"]"#;
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn comparison4() {
+        let context: StaticContext = Default::default();
+        let input = r#"child::book[attribute::isbn = "9876543210123"] is child::book/child::title[. = "How to Cook"]"#;
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }

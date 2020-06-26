@@ -39,8 +39,8 @@ OrExpr = { AndExpr ~ ( "or" ~ AndExpr )* }
 AndExpr = { ComparisonExpr ~ ( "and" ~ ComparisonExpr )* }
 // 18
 ComparisonExpr = { StringConcatExpr ~ ( (ValueComp
-                                       | GeneralComp
-                                       | NodeComp) ~ StringConcatExpr )? }
+                                       | NodeComp
+                                       | GeneralComp) ~ StringConcatExpr )? }
 // 19
 StringConcatExpr = { RangeExpr ~ ( "||" ~ RangeExpr )* }
 // 20

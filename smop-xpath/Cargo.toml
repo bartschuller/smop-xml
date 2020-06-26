@@ -4,8 +4,6 @@ version = "0.1.0"
 authors = ["Bart Schuller <bart.schuller@gmail.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 rust_decimal = "^1.4"
 roxmltree = "^0.11"
@@ -16,3 +14,4 @@ pest_ascii_tree = "^0.1"
 itertools = "^0.9"
 num-traits = "^0.2"
 im = "^15"
+xmlparser = "^0.13"

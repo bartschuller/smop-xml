@@ -29,6 +29,7 @@ pub enum Expr<T> {
     Step(Axis, NodeTest, Vec<Expr<T>>, T),
     ValueComp(Box<Expr<T>>, Comp, Box<Expr<T>>, T),
     GeneralComp(Box<Expr<T>>, Comp, Box<Expr<T>>, T),
+    NodeComp(Box<Expr<T>>, NodeComp, Box<Expr<T>>, T),
     Predicate(Box<Expr<T>>, Box<Expr<T>>, T),
     For(QName, Box<Expr<T>>, Box<Expr<T>>, T),
     Let(QName, Box<Expr<T>>, Box<Expr<T>>, T),
@@ -137,6 +138,22 @@ impl Display for Comp {
         write!(f, "{}", s)
     }
 }
+#[derive(Debug, PartialEq)]
+pub enum NodeComp {
+    Is,
+    Before,
+    After,
+}
+impl Display for NodeComp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            NodeComp::Is => "is",
+            NodeComp::Before => "<<",
+            NodeComp::After => ">>",
+        };
+        write!(f, "{}", s)
+    }
+}
 impl Display for ArithmeticOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -179,6 +196,7 @@ impl<T> Expr<T> {
             Expr::Step(_, _, _, t) => t,
             Expr::ValueComp(_, _, _, t) => t,
             Expr::GeneralComp(_, _, _, t) => t,
+            Expr::NodeComp(_, _, _, t) => t,
             Expr::Predicate(_, _, t) => t,
             Expr::For(_, _, _, t) => t,
             Expr::Let(_, _, _, t) => t,
@@ -536,6 +554,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     return Ok(Xdm::Boolean(false));
                 }))
             }
+            Expr::NodeComp(_e1, _nc, _e2, _) => unimplemented!(),
             Expr::Predicate(e, p, _) => {
                 let ce = e.compile()?;
                 let cp = p.compile()?;
@@ -792,6 +811,20 @@ impl Expr<()> {
                     (ret_type, ctx),
                 ))
             }
+            Expr::NodeComp(e1, gc, e2, _) => {
+                let e1_typed = e1.type_(Rc::clone(&ctx))?;
+                let e2_typed = e2.type_(Rc::clone(&ctx))?;
+                let ret_type = SequenceType::Item(
+                    Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:boolean"))?),
+                    Occurrence::Optional,
+                );
+                Ok(Expr::NodeComp(
+                    Box::new(e1_typed),
+                    gc,
+                    Box::new(e2_typed),
+                    (ret_type, ctx),
+                ))
+            }
             Expr::Predicate(e, p, _) => {
                 let e_typed = e.type_(Rc::clone(&ctx))?;
                 let p_typed = p.type_(Rc::clone(&ctx))?;
@@ -937,6 +970,7 @@ impl<T> Display for Expr<T> {
             }
             Expr::ValueComp(e1, vc, e2, _) => write!(f, "{} {} {}", e1, vc, e2),
             Expr::GeneralComp(e1, gc, e2, _) => write!(f, "{} {} {}", e1, gc.general_str(), e2),
+            Expr::NodeComp(e1, nc, e2, _) => write!(f, "{} {} {}", e1, nc, e2),
             Expr::Predicate(e, p, _) => write!(f, "{}[{}]", e, p),
             Expr::For(qname, bs, ret, _) => write!(f, "for ${} in {} return {}", qname, bs, ret),
             Expr::Let(qname, bs, ret, _) => write!(f, "let ${} := {} return {}", qname, bs, ret),
