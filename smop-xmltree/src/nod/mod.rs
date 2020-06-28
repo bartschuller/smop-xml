@@ -1,12 +1,12 @@
 mod parse;
-mod parse_bart;
+//mod parse_bart;
+use crate::option_ext::OptionExt;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU32;
-use std::rc::Rc;
 use std::ops::Deref;
-use std::borrow::Cow;
+use std::rc::Rc;
 
 // An implementation of https://www.w3.org/TR/xpath-datamodel-31/
 
@@ -63,7 +63,7 @@ type Range = std::ops::Range<usize>;
 ///
 /// Just like Range, but only for `u32` and copyable.
 #[derive(Clone, Copy, Debug)]
-struct ShortRange {
+pub struct ShortRange {
     start: u32,
     end: u32,
 }
@@ -86,7 +86,7 @@ impl ShortRange {
 
     #[inline]
     fn to_urange(self) -> Range {
-        self.start as usize .. self.end as usize
+        self.start as usize..self.end as usize
     }
 }
 
@@ -136,7 +136,7 @@ impl Namespace {
     /// # Examples
     ///
     /// ```
-    /// let doc = roxmltree::Document::parse(
+    /// let doc = smop_xmltree::nod::Document::parse(
     ///     "<e xmlns:n='http://www.w3.org'/>"
     /// ).unwrap();
     ///
@@ -144,7 +144,7 @@ impl Namespace {
     /// ```
     ///
     /// ```
-    /// let doc = roxmltree::Document::parse(
+    /// let doc = smop_xmltree::nod::Document::parse(
     ///     "<e xmlns='http://www.w3.org'/>"
     /// ).unwrap();
     ///
@@ -160,7 +160,7 @@ impl Namespace {
     /// # Examples
     ///
     /// ```
-    /// let doc = roxmltree::Document::parse(
+    /// let doc = smop_xmltree::nod::Document::parse(
     ///     "<e xmlns:n='http://www.w3.org'/>"
     /// ).unwrap();
     ///
@@ -177,13 +177,13 @@ struct Namespaces(Vec<Namespace>);
 impl Namespaces {
     #[inline]
     fn push_ns(&mut self, name: Option<String>, uri: String) {
-        debug_assert_ne!(name, Some(""));
+        debug_assert_ne!(name.as_str(), Some(""));
         self.0.push(Namespace { name, uri });
     }
 
     #[inline]
     fn exists(&self, start: usize, prefix: Option<&str>) -> bool {
-        self[start..].iter().any(|ns| ns.name == prefix)
+        self[start..].iter().any(|ns| ns.name.as_str() == prefix)
     }
 }
 
@@ -216,7 +216,28 @@ impl Document {
             id,
         }
     }
+
+    /// Returns the root element of the document.
+    ///
+    /// Unlike `root`, will return a first element node.
+    ///
+    /// The root element always exists.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let doc = smop_xmltree::nod::Document::parse("<!-- comment --><e/>").unwrap();
+    /// assert!(doc.root_element().has_tag_name("e"));
+    /// ```
+    #[inline]
+    pub fn root_element(self: &Rc<Self>) -> Node {
+        // `expect` is safe, because the `Document` is guarantee to have at least one element.
+        self.root()
+            .first_element_child()
+            .expect("XML documents must contain a root element")
+    }
 }
+
 impl fmt::Debug for Document {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
@@ -236,8 +257,8 @@ pub enum NodeKind {
         namespaces: ShortRange,
     },
     Attribute(),
-    Text(),
-    PI(),
+    Text(Idx),
+    PI(PI),
     Comment(),
 }
 #[derive(Debug, Clone)]
@@ -269,6 +290,14 @@ pub struct Attribute {
     value_range: ShortRange,
 }
 
+/// A processing instruction.
+#[derive(Clone, Copy, PartialEq, Debug)]
+#[allow(missing_docs)]
+pub struct PI {
+    target: Idx,        // into strings
+    value: Option<Idx>, // into strings
+}
+
 #[derive(Debug)]
 pub struct Node {
     document: Rc<Document>,
@@ -281,16 +310,22 @@ impl PartialEq for Node {
 }
 
 impl Node {
-    pub fn node_kind(&self) -> NodeType {
+    pub fn node_type(&self) -> NodeType {
         match self.d().kind {
             NodeKind::Document => NodeType::Document,
             NodeKind::Element { .. } => NodeType::Element,
             NodeKind::Attribute() => NodeType::Attribute,
-            NodeKind::Text() => NodeType::Text,
-            NodeKind::PI() => NodeType::PI,
+            NodeKind::Text(_) => NodeType::Text,
+            NodeKind::PI(_) => NodeType::PI,
             NodeKind::Comment() => NodeType::Comment,
         }
     }
+    /// Checks that node is an element node.
+    #[inline]
+    pub fn is_element(&self) -> bool {
+        self.node_type() == NodeType::Element
+    }
+
     pub fn parent(&self) -> Option<Node> {
         self.d().parent.as_ref().map(|id| self.document.node(*id))
     }
@@ -326,6 +361,11 @@ impl Node {
                 }
             })
     }
+
+    /// Returns the first element child of this node.
+    pub fn first_element_child(&self) -> Option<Self> {
+        self.children().find(|n| n.is_element())
+    }
 }
 
 #[derive(Debug)]
@@ -350,21 +390,18 @@ impl Iterator for Children {
 
 #[cfg(test)]
 mod tests {
-    use crate::nod::{parse_bart, Document, NodeType};
+    use crate::nod::{parse, Document, NodeType};
 
     #[test]
-    fn parse1() -> Result<(), parse_bart::Error> {
+    fn parse1() -> Result<(), parse::Error> {
         let text = r#"<pre:foo></bar>"#;
         let err = Document::parse(text).unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "mismatched start and end tags: pre:foo vs bar"
-        );
+        assert_eq!(err.to_string(), "an unknown namespace prefix 'pre' at 1:2");
         let text = r#"<foo><bar/></foo>"#;
         let doc = Document::parse(text)?;
         println!("\n{:?}\n", doc);
         let root = doc.root();
-        assert_eq!(root.node_kind(), NodeType::Document);
+        assert_eq!(root.node_type(), NodeType::Document);
         assert_eq!(root.parent(), None);
         let last_child = root.last_child();
         println!("{:?}", last_child);
@@ -374,7 +411,7 @@ mod tests {
         let first = children.next();
         assert!(first.is_some());
         let first = first.unwrap();
-        assert_eq!(first.node_kind(), NodeType::Element);
+        assert_eq!(first.node_type(), NodeType::Element);
         Ok(())
     }
 }
