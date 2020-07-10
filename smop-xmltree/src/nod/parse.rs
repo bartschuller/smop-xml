@@ -4,11 +4,10 @@ use std::fmt;
 use std::str;
 
 use crate::nod::{
-    Attribute, Document, Idx, Namespaces, NodeData, NodeKind, QName, ShortRange, NS_XMLNS_URI,
-    NS_XML_URI, PI,
+    Document, Idx, Namespaces, NodeData, NodeKind, QName, ShortRange, NS_XMLNS_URI, NS_XML_URI, PI,
 };
 use std::collections::HashMap;
-use xmlparser::{self, Reference, StrSpan, Stream, TextPos};
+use xmlparser::{self, ElementEnd, Reference, StrSpan, Stream, TextPos};
 
 /// A list of all possible errors.
 #[derive(Debug)]
@@ -201,7 +200,7 @@ impl Document {
     ///
     /// ```
     /// let doc = smop_xmltree::nod::Document::parse("<e/>").unwrap();
-    /// assert_eq!(doc.descendants().count(), 2); // root node + `e` element node
+    /// assert_eq!(doc.root().descendants_or_self().count(), 2); // root node + `e` element node
     /// ```
     #[inline]
     pub fn parse(text: &str) -> Result<Rc<Document>, Error> {
@@ -213,14 +212,12 @@ impl Document {
         parent_id: Idx,
         kind: NodeKind,
         range: ShortRange,
-        pd: &mut ParserData,
+        pd_awaiting_subtree: &mut Vec<Idx>,
     ) -> Idx {
         let new_child_id = Idx::from(self.nodes.len());
 
-        let appending_element = match kind {
-            NodeKind::Element { .. } => true,
-            _ => false,
-        };
+        let appending_element = kind.is_element();
+        let appending_attribute = kind.is_attribute();
 
         self.nodes.push(NodeData {
             parent: Some(parent_id),
@@ -231,17 +228,26 @@ impl Document {
             range,
         });
 
-        let last_child_id = self.nodes[parent_id.get_usize()].last_child;
-        self.nodes[new_child_id.get_usize()].prev_sibling = last_child_id;
-        self.nodes[parent_id.get_usize()].last_child = Some(new_child_id);
+        if appending_attribute {
+            let previous_attribute = new_child_id.get_usize() - 1;
+            if self.nodes[previous_attribute].kind.is_attribute() {
+                self.nodes[new_child_id.get_usize()].prev_sibling =
+                    Some(Idx::from(previous_attribute));
+                self.nodes[previous_attribute].next_subtree = Some(new_child_id);
+            }
+        } else {
+            let last_child_id = self.nodes[parent_id.get_usize()].last_child;
+            self.nodes[new_child_id.get_usize()].prev_sibling = last_child_id;
+            self.nodes[parent_id.get_usize()].last_child = Some(new_child_id);
 
-        pd.awaiting_subtree.iter().for_each(|id| {
-            self.nodes[id.get_usize()].next_subtree = Some(new_child_id);
-        });
-        pd.awaiting_subtree.clear();
+            pd_awaiting_subtree.iter().for_each(|id| {
+                self.nodes[id.get_usize()].next_subtree = Some(new_child_id);
+            });
+            pd_awaiting_subtree.clear();
 
-        if !appending_element {
-            pd.awaiting_subtree.push(Idx::from(self.nodes.len() - 1));
+            if !appending_element {
+                pd_awaiting_subtree.push(Idx::from(self.nodes.len() - 1));
+            }
         }
 
         new_child_id
@@ -254,7 +260,7 @@ struct Entity<'input> {
 }
 
 struct ParserData<'input> {
-    attrs_start_idx: usize,
+    //attrs_start_idx: usize,
     ns_start_idx: usize,
     tmp_attrs: Vec<AttributeData<'input>>,
     awaiting_subtree: Vec<Idx>,
@@ -264,29 +270,28 @@ struct ParserData<'input> {
     qnames: HashMap<QName, Idx>,
     strings: HashMap<String, Idx>,
 }
-impl ParserData<'_> {
-    pub(crate) fn qname_idx(
-        &mut self,
-        doc: &mut Document,
-        name: &str,
-        ns: Option<Cow<str>>,
-        prefix: Option<&str>,
-    ) -> Idx {
-        let qname = QName::new(
-            name.to_string(),
-            ns.map(String::from),
-            prefix.map(String::from),
-        );
-        let idx = self.qnames.get(&qname);
-        if idx.is_some() {
-            *idx.unwrap()
-        } else {
-            let idx_usize = doc.qnames.len();
-            let idx = Idx::new(idx_usize as u32);
-            doc.qnames.push(qname.clone());
-            self.qnames.insert(qname, idx);
-            idx
-        }
+
+pub(crate) fn qname_idx(
+    qnames_hash: &mut HashMap<QName, Idx>,
+    doc_qnames: &mut Vec<QName>,
+    name: &str,
+    ns: Option<Cow<str>>,
+    prefix: Option<&str>,
+) -> Idx {
+    let qname = QName::new(
+        name.to_string(),
+        ns.map(String::from),
+        prefix.map(String::from),
+    );
+    let idx = qnames_hash.get(&qname);
+    if idx.is_some() {
+        *idx.unwrap()
+    } else {
+        let idx_usize = doc_qnames.len();
+        let idx = Idx::new(idx_usize as u32);
+        doc_qnames.push(qname.clone());
+        qnames_hash.insert(qname, idx);
+        idx
     }
 }
 
@@ -412,7 +417,6 @@ fn parse(text: &str) -> Result<Rc<Document>, Error> {
     }
 
     let mut pd = ParserData {
-        attrs_start_idx: 0,
         ns_start_idx: 1,
         tmp_attrs: Vec::with_capacity(16),
         entities: Vec::new(),
@@ -431,8 +435,7 @@ fn parse(text: &str) -> Result<Rc<Document>, Error> {
     let mut doc = Document {
         strings: vec![],
         qnames: vec![],
-        nodes: Vec::with_capacity(nodes_capacity),
-        attrs: Vec::with_capacity(attributes_capacity),
+        nodes: Vec::with_capacity(nodes_capacity + attributes_capacity),
         namespaces: Namespaces(Vec::new()),
     };
 
@@ -463,7 +466,6 @@ fn parse(text: &str) -> Result<Rc<Document>, Error> {
     )?;
 
     doc.nodes.shrink_to_fit();
-    doc.attrs.shrink_to_fit();
     doc.namespaces.0.shrink_to_fit();
 
     let doc = Rc::new(doc);
@@ -495,15 +497,16 @@ fn process_tokens<'input>(
                 let value =
                     content.map(|v| string_idx(&mut pd.strings, &mut doc.strings, v.as_str()));
                 let pi = NodeKind::PI(PI { target, value });
-                doc.append(parent_id, pi, span.range().into(), pd);
+                doc.append(parent_id, pi, span.range().into(), &mut pd.awaiting_subtree);
             }
             xmlparser::Token::Comment { text, span } => {
-                // doc.append(
-                //     parent_id,
-                //     NodeKind::Comment(text.as_str()),
-                //     span.range().into(),
-                //     pd,
-                // );
+                let string_idx = string_idx(&mut pd.strings, &mut doc.strings, text.as_str());
+                doc.append(
+                    parent_id,
+                    NodeKind::Comment(string_idx),
+                    span.range().into(),
+                    &mut pd.awaiting_subtree,
+                );
             }
             xmlparser::Token::Text { text } => {
                 process_text(text, parent_id, loop_detector, pd, doc, doc_text)?;
@@ -673,37 +676,54 @@ fn process_element<'input>(
     let namespaces = resolve_namespaces(pd.ns_start_idx, *parent_id, doc);
     pd.ns_start_idx = doc.namespaces.len();
 
-    let attributes = resolve_attributes(
-        pd.attrs_start_idx,
-        namespaces.clone(),
-        //&mut pd.tmp_attrs,
-        doc,
-        text,
-        pd,
-    )?;
-    pd.attrs_start_idx = doc.attrs.len();
-    pd.tmp_attrs.clear();
-
-    match end_token {
-        xmlparser::ElementEnd::Empty => {
+    let new_element_id: Option<Idx> = match end_token {
+        ElementEnd::Open | ElementEnd::Empty => {
             let tag_ns_uri = get_ns_by_prefix(doc, namespaces.clone(), tag_name.prefix, text)?;
             let prefix = if tag_name.prefix.as_str() == "" {
                 None
             } else {
                 Some(tag_name.prefix.as_str())
             };
-            let qname_idx = pd.qname_idx(doc, tag_name.name.as_str(), tag_ns_uri, prefix);
+            let qname_idx = qname_idx(
+                &mut pd.qnames,
+                &mut doc.qnames,
+                tag_name.name.as_str(),
+                tag_ns_uri,
+                prefix,
+            );
             let new_element_id = doc.append(
                 *parent_id,
                 NodeKind::Element {
                     qname: qname_idx,
-                    attributes,
+                    num_attributes: 0,
                     namespaces,
                 },
                 (tag_name.span.start()..token_span.end()).into(),
-                pd,
+                &mut pd.awaiting_subtree,
             );
-            pd.awaiting_subtree.push(new_element_id);
+            let final_num_attributes =
+                resolve_attributes(new_element_id, namespaces.clone(), doc, text, pd)?;
+            if let NodeKind::Element {
+                qname,
+                num_attributes: _,
+                namespaces,
+            } = doc.nodes[new_element_id.get_usize()].kind
+            {
+                doc.nodes[new_element_id.get_usize()].kind = NodeKind::Element {
+                    qname,
+                    num_attributes: final_num_attributes,
+                    namespaces,
+                }
+            }
+            pd.tmp_attrs.clear();
+            Some(new_element_id)
+        }
+        ElementEnd::Close(_, _) => None,
+    };
+
+    match end_token {
+        xmlparser::ElementEnd::Empty => {
+            pd.awaiting_subtree.push(new_element_id.unwrap());
         }
         xmlparser::ElementEnd::Close(prefix, local) => {
             let prefix = if prefix.as_str() == "" {
@@ -733,23 +753,7 @@ fn process_element<'input>(
             }
         }
         xmlparser::ElementEnd::Open => {
-            let tag_ns_uri = get_ns_by_prefix(doc, namespaces.clone(), tag_name.prefix, text)?;
-            let prefix = if tag_name.prefix.as_str() == "" {
-                None
-            } else {
-                Some(tag_name.prefix.as_str())
-            };
-            let qname_idx = pd.qname_idx(doc, tag_name.name.as_str(), tag_ns_uri, prefix);
-            *parent_id = doc.append(
-                *parent_id,
-                NodeKind::Element {
-                    qname: qname_idx,
-                    attributes,
-                    namespaces,
-                },
-                (tag_name.span.start()..token_span.end()).into(),
-                pd,
-            );
+            *parent_id = new_element_id.unwrap();
         }
     }
 
@@ -777,18 +781,19 @@ fn resolve_namespaces(start_idx: usize, parent_id: Idx, doc: &mut Document) -> S
     (start_idx..doc.namespaces.len()).into()
 }
 
+// returns number of attributes
 fn resolve_attributes<'input>(
-    start_idx: usize,
+    element_id: Idx,
     namespaces: ShortRange,
-    //tmp_attrs: &mut [AttributeData<'input>],
     doc: &mut Document,
     text: &'input str,
     pd: &mut ParserData,
-) -> Result<ShortRange, Error> {
+) -> Result<u32, Error> {
+    let start_idx = doc.nodes.len();
     let tmp_attrs = &mut pd.tmp_attrs;
 
     if tmp_attrs.is_empty() {
-        return Ok(ShortRange::new(0, 0));
+        return Ok(0);
     }
 
     for attr in tmp_attrs {
@@ -804,30 +809,40 @@ fn resolve_attributes<'input>(
             get_ns_by_prefix(doc, namespaces.clone(), attr.prefix, text)?
         };
 
-        // We do not store attribute prefixes since `ExpandedNameOwned::prefix`
-        // is used only for closing tags matching during parsing.
-        let attr_name = QName::new(attr.local.to_string(), ns.map(|s| s.to_string()), None);
-
-        // Check for duplicated attributes.
-        if doc.attrs[start_idx..]
-            .iter()
-            .any(|attr| attr.name == attr_name)
-        {
-            let pos = err_pos_from_qname(text, attr.prefix, attr.local);
-            return Err(Error::DuplicatedAttribute(attr.local.to_string(), pos));
-        }
+        let attr_name_idx = qname_idx(
+            &mut pd.qnames,
+            &mut doc.qnames,
+            attr.local.as_str(),
+            ns,
+            if attr.prefix.is_empty() {
+                None
+            } else {
+                Some(attr.prefix.as_str())
+            },
+        );
+        // TODO Check for duplicated attributes.
+        // if doc.nodes[start_idx..]
+        //     .iter()
+        //     .any(|attr| attr.name == attr_name)
+        // {
+        //     let pos = err_pos_from_qname(text, attr.prefix, attr.local);
+        //     return Err(Error::DuplicatedAttribute(attr.local.to_string(), pos));
+        // }
 
         let value_string_idx = string_idx(&mut pd.strings, &mut doc.strings, attr.value.borrow());
-        doc.attrs.push(Attribute {
-            name: attr_name,
-            // Takes a value from a slice without consuming the slice.
-            value: value_string_idx,
-            range: attr.range.clone(),
-            value_range: attr.value_range.clone(),
-        });
+
+        doc.append(
+            element_id,
+            NodeKind::Attribute {
+                qname: attr_name_idx,
+                value: value_string_idx,
+            },
+            attr.value_range.clone(),
+            &mut pd.awaiting_subtree,
+        );
     }
 
-    Ok((start_idx..doc.attrs.len()).into())
+    Ok((doc.nodes.len() - start_idx) as u32)
 }
 
 fn process_text<'input>(
@@ -952,7 +967,12 @@ fn append_text<'input>(
         }
     } else {
         let text_string_idx = string_idx(&mut pd.strings, &mut doc.strings, text.borrow());
-        doc.append(parent_id, NodeKind::Text(text_string_idx), range, pd);
+        doc.append(
+            parent_id,
+            NodeKind::Text(text_string_idx),
+            range,
+            &mut pd.awaiting_subtree,
+        );
     }
 }
 

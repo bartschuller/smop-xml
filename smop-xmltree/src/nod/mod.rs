@@ -1,5 +1,4 @@
-mod parse;
-//mod parse_bart;
+pub mod parse;
 use crate::option_ext::OptionExt;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -17,7 +16,7 @@ pub const NS_XML_URI: &str = "http://www.w3.org/XML/1998/namespace";
 pub const NS_XMLNS_URI: &str = "http://www.w3.org/2000/xmlns/";
 
 // https://www.w3.org/TR/xpath-datamodel-31/#qnames-and-notations
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct QName {
     pub name: String,
     pub ns: Option<String>,
@@ -33,6 +32,26 @@ impl QName {
     pub fn new(name: String, ns: Option<String>, prefix: Option<String>) -> Self {
         assert!(!(prefix.is_some() && ns.is_none()));
         QName { name, ns, prefix }
+    }
+    pub fn wellknown(s: &str) -> Self {
+        let colon = s.find(':').unwrap();
+        let prefix = &s[..colon];
+        let name = &s[colon + 1..];
+        let ns = match prefix {
+            "xs" => "http://www.w3.org/2001/XMLSchema",
+            "fn" => "http://www.w3.org/2005/xpath-functions",
+            &_ => panic!("not so well known prefix: {}", prefix),
+        };
+        QName {
+            name: name.to_string(),
+            ns: Some(ns.to_string()),
+            prefix: Some(prefix.to_string()),
+        }
+    }
+}
+impl PartialEq for QName {
+    fn eq(&self, other: &Self) -> bool {
+        self.name.eq(&other.name) && self.ns.eq(&other.ns)
     }
 }
 impl Eq for QName {}
@@ -54,6 +73,27 @@ impl Display for QName {
         } else {
             write!(f, "{}", self.name)
         }
+    }
+}
+
+impl From<&QName> for QName {
+    #[inline]
+    fn from(v: &QName) -> Self {
+        v.clone()
+    }
+}
+
+impl From<&str> for QName {
+    #[inline]
+    fn from(v: &str) -> Self {
+        QName::new(v.to_string(), None, None)
+    }
+}
+
+impl From<(&str, &str)> for QName {
+    #[inline]
+    fn from(v: (&str, &str)) -> Self {
+        QName::new(v.1.to_string(), Some(v.0.to_string()), None)
     }
 }
 
@@ -151,8 +191,8 @@ impl Namespace {
     /// assert_eq!(doc.root_element().namespaces()[0].name(), None);
     /// ```
     #[inline]
-    pub fn name(&self) -> Option<&String> {
-        self.name.as_ref()
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_str()
     }
 
     /// Returns namespace URI.
@@ -200,7 +240,6 @@ pub struct Document {
     strings: Vec<String>,
     qnames: Vec<QName>,
     nodes: Vec<NodeData>,
-    attrs: Vec<Attribute>,
     namespaces: Namespaces,
 }
 
@@ -242,8 +281,8 @@ impl fmt::Debug for Document {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "document[\n  strings: {:?}\n  qnames: {:?}\n  nodes: {:?}\n]",
-            self.strings, self.qnames, self.nodes
+            "document[\n  strings: {:?}\n  qnames: {:?}\n  nodes: {:?}\n  namespaces: {:?}\n]",
+            self.strings, self.qnames, self.nodes, "TODO"
         )
     }
 }
@@ -253,14 +292,40 @@ pub enum NodeKind {
     Document,
     Element {
         qname: Idx,
-        attributes: ShortRange,
+        num_attributes: u32,
         namespaces: ShortRange,
     },
-    Attribute(),
+    Attribute {
+        qname: Idx,
+        value: Idx, // into strings
+    },
     Text(Idx),
     PI(PI),
-    Comment(),
+    Comment(Idx),
 }
+
+impl NodeKind {
+    #[inline]
+    fn node_type(&self) -> NodeType {
+        match self {
+            NodeKind::Document => NodeType::Document,
+            NodeKind::Element { .. } => NodeType::Element,
+            NodeKind::Attribute { .. } => NodeType::Attribute,
+            NodeKind::Text(_) => NodeType::Text,
+            NodeKind::PI(_) => NodeType::PI,
+            NodeKind::Comment(_) => NodeType::Comment,
+        }
+    }
+    #[inline]
+    pub fn is_element(&self) -> bool {
+        self.node_type() == NodeType::Element
+    }
+    #[inline]
+    pub fn is_attribute(&self) -> bool {
+        self.node_type() == NodeType::Attribute
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct NodeData {
     parent: Option<Idx>,
@@ -281,15 +346,6 @@ pub enum NodeType {
     Comment,
 }
 
-/// An attribute.
-#[derive(Clone)]
-pub struct Attribute {
-    name: QName,
-    value: Idx, // into strings
-    range: ShortRange,
-    value_range: ShortRange,
-}
-
 /// A processing instruction.
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[allow(missing_docs)]
@@ -298,7 +354,7 @@ pub struct PI {
     value: Option<Idx>, // into strings
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Node {
     document: Rc<Document>,
     id: Idx,
@@ -310,15 +366,9 @@ impl PartialEq for Node {
 }
 
 impl Node {
+    #[inline]
     pub fn node_type(&self) -> NodeType {
-        match self.d().kind {
-            NodeKind::Document => NodeType::Document,
-            NodeKind::Element { .. } => NodeType::Element,
-            NodeKind::Attribute() => NodeType::Attribute,
-            NodeKind::Text(_) => NodeType::Text,
-            NodeKind::PI(_) => NodeType::PI,
-            NodeKind::Comment() => NodeType::Comment,
-        }
+        self.d().kind.node_type()
     }
     /// Checks that node is an element node.
     #[inline]
@@ -335,13 +385,32 @@ impl Node {
             last: self.last_child(),
         }
     }
+    /// Returns an iterator over this node and its descendants.
+    #[inline]
+    pub fn descendants_or_self(&self) -> Descendants {
+        Descendants::new(self)
+    }
+
     #[inline]
     fn d(&self) -> &NodeData {
         self.document.nodes.get(self.id.get_usize()).unwrap()
     }
+    #[inline]
+    fn num_attributes(&self) -> u32 {
+        match self.d().kind {
+            NodeKind::Document => 0,
+            NodeKind::Element { num_attributes, .. } => num_attributes,
+            NodeKind::Attribute { .. } => 0,
+            NodeKind::Text(_) => 0,
+            NodeKind::PI(_) => 0,
+            NodeKind::Comment(_) => 0,
+        }
+    }
     fn first_child(&self) -> Option<Node> {
-        self.last_child()
-            .map(|_| self.document.node(Idx::new(self.id.get() + 1)))
+        self.last_child().map(|_| {
+            self.document
+                .node(Idx::new(self.id.get() + self.num_attributes() + 1))
+        })
     }
     fn last_child(&self) -> Option<Node> {
         self.d().last_child.map(|id| self.document.node(id))
@@ -366,6 +435,90 @@ impl Node {
     pub fn first_element_child(&self) -> Option<Self> {
         self.children().find(|n| n.is_element())
     }
+
+    /// Checks that node has a specified tag name.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let doc = smop_xmltree::nod::Document::parse("<e xmlns='http://www.w3.org'/>").unwrap();
+    ///
+    /// assert!(doc.root_element().has_tag_name("e"));
+    /// assert!(doc.root_element().has_tag_name(("http://www.w3.org", "e")));
+    ///
+    /// assert!(!doc.root_element().has_tag_name("b"));
+    /// assert!(!doc.root_element().has_tag_name(("http://www.w4.org", "e")));
+    /// ```
+    pub fn has_tag_name<N>(&self, name: N) -> bool
+    where
+        N: Into<QName>,
+    {
+        let name = name.into();
+
+        match self.d().kind {
+            NodeKind::Element { ref qname, .. } => {
+                let qname = &self.document.qnames[qname.get_usize()];
+                match name.ns {
+                    Some(_) => qname == &name,
+                    None => qname.name == name.name,
+                }
+            }
+            _ => false,
+        }
+    }
+
+    fn first_attribute(&self) -> Option<Node> {
+        if self.num_attributes() == 0 {
+            None
+        } else {
+            Some(self.document.node(Idx::new(self.id.get() + 1)))
+        }
+    }
+    fn last_attribute(&self) -> Option<Node> {
+        self.first_attribute().map(|node| {
+            self.document
+                .node(Idx::new(node.id.get() + self.num_attributes()))
+        })
+    }
+
+    /// Returns element's attributes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let doc = smop_xmltree::nod::Document::parse(
+    ///     "<e xmlns:n='http://www.w3.org' a='b' n:a='c'/>"
+    /// ).unwrap();
+    ///
+    /// assert_eq!(doc.root_element().attributes().count(), 2);
+    /// ```
+    pub fn attributes(&self) -> Children {
+        Children {
+            first: self.first_attribute(),
+            last: self.last_attribute(),
+        }
+    }
+
+    /// Returns element's namespaces.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let doc = smop_xmltree::nod::Document::parse(
+    ///     "<e xmlns:n='http://www.w3.org'/>"
+    /// ).unwrap();
+    ///
+    /// assert_eq!(doc.root_element().namespaces().len(), 1);
+    /// ```
+    #[inline]
+    pub fn namespaces(&self) -> &[Namespace] {
+        match self.d().kind {
+            NodeKind::Element { ref namespaces, .. } => {
+                &self.document.namespaces[namespaces.to_urange()]
+            }
+            _ => &[],
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -385,6 +538,54 @@ impl Iterator for Children {
             self.first = res.as_ref().and_then(Node::next_sibling)
         }
         res
+    }
+}
+
+/// Iterator over a node and its descendants.
+#[derive(Clone)]
+pub struct Descendants {
+    doc: Rc<Document>,
+    current: Idx,
+    until: Idx,
+}
+
+impl Descendants {
+    #[inline]
+    fn new(start: &Node) -> Self {
+        Self {
+            doc: Rc::clone(&start.document),
+            current: start.id,
+            until: start.d().next_subtree.unwrap_or_else(|| {
+                let mut unt = start.document.nodes.len();
+                while start.document.nodes[unt - 1].kind.is_attribute() {
+                    unt -= 1;
+                }
+                println!("unt={}", unt);
+                Idx::from(unt)
+            }),
+        }
+    }
+}
+
+impl Iterator for Descendants {
+    type Item = Node;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = if self.current == self.until {
+            None
+        } else {
+            Some(self.doc.node(self.current))
+        };
+
+        if next.is_some() {
+            let mut new_idx = self.current.get_usize() + 1;
+            while new_idx != self.until.get_usize() && self.doc.nodes[new_idx].kind.is_attribute() {
+                new_idx += 1;
+            }
+            self.current = Idx::from(new_idx);
+        }
+        next
     }
 }
 
