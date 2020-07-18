@@ -1,3 +1,3 @@
 pub mod nod;
-mod option_ext;
+pub mod option_ext;
 pub use nod::parse::Error;

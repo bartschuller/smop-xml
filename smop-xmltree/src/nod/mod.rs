@@ -306,7 +306,7 @@ pub enum NodeKind {
 
 impl NodeKind {
     #[inline]
-    fn node_type(&self) -> NodeType {
+    fn node_kind(&self) -> NodeType {
         match self {
             NodeKind::Document => NodeType::Document,
             NodeKind::Element { .. } => NodeType::Element,
@@ -318,11 +318,11 @@ impl NodeKind {
     }
     #[inline]
     pub fn is_element(&self) -> bool {
-        self.node_type() == NodeType::Element
+        self.node_kind() == NodeType::Element
     }
     #[inline]
     pub fn is_attribute(&self) -> bool {
-        self.node_type() == NodeType::Attribute
+        self.node_kind() == NodeType::Attribute
     }
 }
 
@@ -366,25 +366,17 @@ impl PartialEq for Node {
 }
 
 impl Node {
-    #[inline]
-    pub fn node_type(&self) -> NodeType {
-        self.d().kind.node_type()
+    /// Return the `Rc<Document>` for this node
+    pub fn document(&self) -> Rc<Document> {
+        Rc::clone(&self.document)
     }
+
     /// Checks that node is an element node.
     #[inline]
     pub fn is_element(&self) -> bool {
-        self.node_type() == NodeType::Element
+        self.node_kind() == NodeType::Element
     }
 
-    pub fn parent(&self) -> Option<Node> {
-        self.d().parent.as_ref().map(|id| self.document.node(*id))
-    }
-    pub fn children(&self) -> Children {
-        Children {
-            first: self.first_child(),
-            last: self.last_child(),
-        }
-    }
     /// Returns an iterator over this node and its descendants.
     #[inline]
     pub fn descendants_or_self(&self) -> Descendants {
@@ -481,24 +473,6 @@ impl Node {
         })
     }
 
-    /// Returns element's attributes.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let doc = smop_xmltree::nod::Document::parse(
-    ///     "<e xmlns:n='http://www.w3.org' a='b' n:a='c'/>"
-    /// ).unwrap();
-    ///
-    /// assert_eq!(doc.root_element().attributes().count(), 2);
-    /// ```
-    pub fn attributes(&self) -> Children {
-        Children {
-            first: self.first_attribute(),
-            last: self.last_attribute(),
-        }
-    }
-
     /// Returns element's namespaces.
     ///
     /// # Examples
@@ -519,6 +493,107 @@ impl Node {
             _ => &[],
         }
     }
+
+    // XDM
+    /// The attributes accessor returns the attributes of a node as an iterator containing zero or more Attribute Nodes.
+    /// The order of Attribute Nodes is stable but implementation dependent.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let doc = smop_xmltree::nod::Document::parse(
+    ///     "<e xmlns:n='http://www.w3.org' a='b' n:a='c'/>"
+    /// ).unwrap();
+    ///
+    /// assert_eq!(doc.root_element().attributes().count(), 2);
+    /// ```
+    pub fn attributes(&self) -> Children {
+        Children {
+            first: self.first_attribute(),
+            last: self.last_attribute(),
+        }
+    }
+
+    // base_uri
+
+    /// The children accessor returns the children of a node as an iterator containing zero or more nodes.
+    pub fn children(&self) -> Children {
+        Children {
+            first: self.first_child(),
+            last: self.last_child(),
+        }
+    }
+
+    // document_uri
+    // is_id
+    // is_idrefs
+    // namespace_nodes
+    // nilled
+
+    /// The node_kind accessor returns an enum identifying the kind of node. It will be one of the following, depending on the kind of node: “attribute”, “comment”, “document”, “element”, “namespace” “processing-instruction”, or “text”.
+    #[inline]
+    pub fn node_kind(&self) -> NodeType {
+        self.d().kind.node_kind()
+    }
+
+    /// The node_name accessor returns the name of the node
+    pub fn node_name(&self) -> Option<QName> {
+        match self.d().kind {
+            NodeKind::Element { ref qname, .. } | NodeKind::Attribute { ref qname, .. } => {
+                Some(self.document.qnames[qname.get_usize()].clone())
+            }
+            NodeKind::PI(ref pi) => Some(QName::new(
+                self.document.strings[pi.target.get_usize()].clone(),
+                None,
+                None,
+            )),
+            _ => None,
+        }
+    }
+
+    /// The parent accessor returns the parent of a node
+    pub fn parent(&self) -> Option<Node> {
+        self.d().parent.as_ref().map(|id| self.document.node(*id))
+    }
+
+    /// The string_value accessor returns the string value of a node.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let doc = smop_xmltree::nod::Document::parse(
+    ///     "<r><e>Hello</e> <e><i>World</i></e><!-- nope --></r>"
+    /// ).unwrap();
+    ///
+    /// assert_eq!(doc.root().string_value().as_str(), "Hello World");
+    /// ```
+    pub fn string_value(&self) -> String {
+        match self.d().kind {
+            NodeKind::Document | NodeKind::Element { .. } => {
+                let mut s = String::new();
+                let mut it = self.descendants_or_self();
+                it.next();
+                for n in it {
+                    match n.d().kind {
+                        NodeKind::Text(idx) => {
+                            s.push_str(self.document.strings[idx.get_usize()].as_str())
+                        }
+                        _ => {}
+                    }
+                }
+                s
+            }
+            NodeKind::Attribute { value, .. } => self.document.strings[value.get_usize()].clone(),
+            NodeKind::Text(idx) | NodeKind::Comment(idx) => {
+                self.document.strings[idx.get_usize()].clone()
+            }
+            NodeKind::PI(pi) => pi.value.map_or(String::new(), |idx| {
+                self.document.strings[idx.get_usize()].clone()
+            }),
+        }
+    }
+    // type_name
+    // typed_value
 }
 
 #[derive(Debug)]
@@ -602,7 +677,7 @@ mod tests {
         let doc = Document::parse(text)?;
         println!("\n{:?}\n", doc);
         let root = doc.root();
-        assert_eq!(root.node_type(), NodeType::Document);
+        assert_eq!(root.node_kind(), NodeType::Document);
         assert_eq!(root.parent(), None);
         let last_child = root.last_child();
         println!("{:?}", last_child);
@@ -612,7 +687,7 @@ mod tests {
         let first = children.next();
         assert!(first.is_some());
         let first = first.unwrap();
-        assert_eq!(first.node_type(), NodeType::Element);
+        assert_eq!(first.node_kind(), NodeType::Element);
         Ok(())
     }
 }
