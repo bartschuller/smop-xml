@@ -1,7 +1,9 @@
 extern crate clap;
 
 mod runner;
+mod smop;
 mod sxd;
+use smop::SmopRunner;
 use sxd::SXDRunner;
 mod driver;
 mod model;
@@ -36,7 +38,7 @@ fn main() {
     let environments: HashMap<String, EnvironmentSpec> = envs
         .iter()
         .map(|node| {
-            let env = EnvironmentSpec::new(node);
+            let env = EnvironmentSpec::new(node, Path::new(catalog));
             (env.name.as_deref().unwrap().to_string(), env)
         })
         .collect();
@@ -56,8 +58,9 @@ fn main() {
 
     println!("{} envs, {} test sets", envs.len(), test_sets.len());
 
-    let package = Package::new();
-    let sxd_runner = Box::new(SXDRunner::new(&package));
-    let driver = Driver::new(sxd_runner);
+    //let package = Package::new();
+    //let sxd_runner = Box::new(SXDRunner::new(&package));
+    let smop_runner = Box::new(SmopRunner::new());
+    let driver = Driver::new(smop_runner);
     driver.run_tests(&environments, &test_sets);
 }

@@ -1,5 +1,7 @@
 use crate::model::{Dependency, EnvironmentSpec, TestSet};
+use crate::runner::Environment;
 use crate::runner::TestRunner;
+use smop_xmltree::option_ext::OptionExt;
 use std::collections::HashMap;
 
 pub(crate) struct Driver<R: TestRunner> {
@@ -36,10 +38,16 @@ impl<R: TestRunner> Driver<R> {
                             .unwrap_or_else(|| &global_environments[s])
                     },
                 );
-                //let mut environment = self.runner.new_environment();
-                //...
+                //println!("env spec: {:?}", environment_spec);
+                let mut environment = self.runner.new_environment();
+                for source in &environment_spec.sources {
+                    if source.role.as_str() == Some(".") {
+                        environment.set_context_document(source.file.as_str())
+                    } else {
+                    }
+                }
                 print!("{}: {}", case.name, case.test);
-                let result = self.runner.evaluate(case.test.as_str());
+                let result = self.runner.evaluate(&environment, case.test.as_str());
                 let result = self
                     .runner
                     .check(&result, &case.result)

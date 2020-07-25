@@ -1,6 +1,6 @@
 use roxmltree::Node;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use Dependency::{
     Calendar, DefaultLanguage, Feature, FormatIntegerSequence, Language, Limits, Spec,
     UnicodeNormalizationForm, UnicodeVersion, XmlVersion, XsdVersion,
@@ -13,18 +13,24 @@ use SpecType::{
 pub struct EnvironmentSpec {
     pub(crate) name: Option<String>,
     pub(crate) reference: Option<String>,
+    pub(crate) sources: Vec<Source>,
 }
 impl EnvironmentSpec {
-    pub(crate) fn new(node: &Node) -> Self {
+    pub(crate) fn new(node: &Node, file: &Path) -> Self {
         let name = node.attribute("name").map(|s| s.to_string());
         let reference = node.attribute("ref").map(|s| s.to_string());
-        EnvironmentSpec { name, reference }
+        let sources = Source::find_sources(node, file);
+        EnvironmentSpec {
+            name,
+            reference,
+            sources,
+        }
     }
-    pub(crate) fn find_environments(node: &Node) -> Vec<EnvironmentSpec> {
+    pub(crate) fn find_environments(node: &Node, file: &Path) -> Vec<EnvironmentSpec> {
         node.children()
             .filter_map(|n| {
                 if n.is_element() && n.has_tag_name("environment") {
-                    Some(EnvironmentSpec::new(&n))
+                    Some(EnvironmentSpec::new(&n, file))
                 } else {
                     None
                 }
@@ -33,6 +39,34 @@ impl EnvironmentSpec {
     }
 }
 
+#[derive(Debug)]
+pub struct Source {
+    pub(crate) role: Option<String>,
+    pub(crate) file: String,
+}
+
+impl Source {
+    pub(crate) fn new(node: &Node, base_file: &Path) -> Self {
+        let file = node.attribute("file").map(|s| s.to_string()).unwrap();
+        let path = base_file.parent().unwrap_or(Path::new(".")).join(file);
+        let role = node.attribute("role").map(|s| s.to_string());
+        Source {
+            role,
+            file: path.to_string_lossy().to_string(),
+        }
+    }
+    pub(crate) fn find_sources(node: &Node, file: &Path) -> Vec<Source> {
+        node.children()
+            .filter_map(|n| {
+                if n.is_element() && n.has_tag_name("source") {
+                    Some(Source::new(&n, file))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+}
 #[derive(Debug)]
 pub enum Assertion {
     Assert(String),
@@ -146,7 +180,7 @@ impl TestCase {
             })
             .unwrap_or("")
             .into();
-        let mut environments = EnvironmentSpec::find_environments(node);
+        let mut environments = EnvironmentSpec::find_environments(node, file);
         assert!(environments.len() <= 1);
         let environment = environments.pop();
         let dependencies: Vec<Dependency> = Dependency::find_dependencies(node);
@@ -298,7 +332,7 @@ impl TestSet {
         let test_set = doc.root_element();
         let dependencies: Vec<Dependency> = Dependency::find_dependencies(&test_set);
         let environments: HashMap<String, EnvironmentSpec> =
-            EnvironmentSpec::find_environments(&test_set)
+            EnvironmentSpec::find_environments(&test_set, file)
                 .into_iter()
                 .map(|env| (env.name.as_deref().unwrap().to_string(), env))
                 .collect();
