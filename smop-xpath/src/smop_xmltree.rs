@@ -1,19 +1,18 @@
-
-use roxmltree::Node;
+use smop_xmltree::nod::Node;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
 #[derive(Clone)]
-pub struct AxisIter<'a, 'input: 'a> {
-    node: Option<Node<'a, 'input>>,
-    next: fn(&Node<'a, 'input>) -> Option<Node<'a, 'input>>,
+pub struct AxisIter {
+    node: Option<Node>,
+    next: fn(&Node) -> Option<Node>,
     pub(crate) position: usize,
     // can be computed lazily only when needed
     last: Option<usize>,
 }
 
-impl<'a, 'input: 'a> Iterator for AxisIter<'a, 'input> {
-    type Item = Node<'a, 'input>;
+impl Iterator for AxisIter {
+    type Item = Node;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -23,22 +22,22 @@ impl<'a, 'input: 'a> Iterator for AxisIter<'a, 'input> {
     }
 }
 
-impl<'a, 'input: 'a> Debug for AxisIter<'a, 'input> {
+impl Debug for AxisIter {
     fn fmt(&self, _f: &mut Formatter<'_>) -> fmt::Result {
         unimplemented!()
     }
 }
 
-impl<'a, 'input: 'a> PartialEq for AxisIter<'a, 'input> {
+impl PartialEq for AxisIter {
     fn eq(&self, _other: &Self) -> bool {
         unimplemented!()
     }
 }
 #[cfg(test)]
 mod tests {
-    use crate::roxml::AxisIter;
-    use crate::xdm::{XdmResult};
-    use roxmltree::Document;
+    use crate::smop_xmltree::AxisIter;
+    use crate::xdm::XdmResult;
+    use smop_xmltree::nod::Document;
 
     #[test]
     fn iterators1() -> XdmResult<()> {
@@ -46,9 +45,9 @@ mod tests {
         let root = doc.root();
         let mut d = root.children();
         let d = d.next().unwrap();
-        assert_eq!(d.tag_name().name(), "d");
+        assert_eq!(d.node_name().unwrap().name.as_str(), "d");
         let _es = d.children().enumerate();
-        let _attrs = d.attributes().iter();
+        let _attrs = d.attributes();
         Ok(())
     }
 
@@ -64,7 +63,7 @@ mod tests {
         };
         let mut d = root.children();
         let d = d.next().unwrap();
-        assert_eq!(d.tag_name().name(), "d");
+        assert_eq!(d.node_name().unwrap().name.as_str(), "d");
         let _es = d.children().enumerate();
 
         Ok(())

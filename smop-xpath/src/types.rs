@@ -1,5 +1,6 @@
-use crate::xdm::XdmResult;
+use crate::xdm::{XdmError, XdmResult};
 use crate::StaticContext;
+use smop_xmltree::nod::QName;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
@@ -18,10 +19,9 @@ pub enum Item {
     MapTest,
     ArrayTest,
     AtomicOrUnion(Rc<SchemaType>),
-    ParenthesizedItemType,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum KindTest {
     Document,
     Element,
@@ -31,7 +31,6 @@ pub enum KindTest {
     PI,
     Comment,
     Text,
-    NamespaceNode,
     AnyKind,
 }
 
@@ -46,7 +45,6 @@ impl Display for KindTest {
             KindTest::PI => write!(f, "processing-instruction()"),
             KindTest::Comment => write!(f, "comment()"),
             KindTest::Text => write!(f, "text()"),
-            KindTest::NamespaceNode => write!(f, "namespace-node()"),
             KindTest::AnyKind => write!(f, "node()"),
         }
     }
@@ -97,6 +95,32 @@ impl SequenceType {
             SequenceType::add(ctx, &st1?, st2)
         })
     }
+    pub(crate) fn atomize(&self, ctx: &Rc<StaticContext>) -> XdmResult<Self> {
+        Ok(match self {
+            SequenceType::EmptySequence => SequenceType::EmptySequence,
+            SequenceType::Item(i, o) => SequenceType::Item(
+                match i {
+                    Item::KindTest(_) => any_atomic_type(ctx),
+                    Item::Item => any_atomic_type(ctx),
+                    Item::FunctionTest | Item::MapTest => {
+                        return Err(XdmError::xqtm(
+                            "FOTY0013",
+                            "The argument to fn:data() contains a function item",
+                        ))
+                    }
+                    Item::ArrayTest => any_atomic_type(ctx),
+                    Item::AtomicOrUnion(st) => Item::AtomicOrUnion(Rc::clone(st)),
+                },
+                o.clone(),
+            ),
+        })
+    }
+}
+fn any_atomic_type(ctx: &Rc<StaticContext>) -> Item {
+    Item::AtomicOrUnion(
+        ctx.schema_type(&QName::wellknown("xs:anyAtomicType"))
+            .unwrap(),
+    )
 }
 impl Display for SequenceType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -114,7 +138,10 @@ impl Item {
             (Item::AtomicOrUnion(t1), Item::AtomicOrUnion(t2)) => {
                 Item::AtomicOrUnion(SchemaType::lub(t1, t2))
             }
-            (_, _) => unimplemented!("lub for other Item types"),
+            (i1, i2) => {
+                println!("lub for other Item types: {}, {}", i1, i2);
+                Item::Item
+            }
         })
     }
 }
@@ -235,6 +262,21 @@ mod tests {
         let type_ = ast.type_(sc);
         let res = type_?.t().0.to_string();
         assert_eq!("xs:integer+", res);
+        Ok(())
+    }
+
+    #[test]
+    #[ignore]
+    fn types2() -> XdmResult<()> {
+        let sc: Rc<StaticContext> = Rc::new(Default::default());
+        let ast = sc.parse("1 * foo")?;
+        let type_ = ast.type_(Rc::clone(&sc));
+        let res = type_?.t().0.to_string();
+        assert_eq!("xs:integer", res);
+        let ast = sc.parse("foo")?;
+        let type_ = ast.type_(Rc::clone(&sc));
+        let res = type_?.t().0.to_string();
+        assert_eq!("item()+", res);
         Ok(())
     }
 }

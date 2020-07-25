@@ -68,7 +68,7 @@ CastExpr = { ArrowExpr ~ ( "cast" ~ "as" ~ SingleType )? }
 // 29
 ArrowExpr = { UnaryExpr ~ ( "=>" ~ ArrowFunctionSpecifier ~ ArgumentList )* }
 // 30
-UnaryExpr = { ("-" | "+")* ~ ValueExpr }
+UnaryExpr = { AdditiveOp* ~ ValueExpr }
 // 31
 ValueExpr = _{ SimpleMapExpr }
 // 32
@@ -80,12 +80,12 @@ NodeComp = { "is" | "<<" | ">>" }
 // 35
 SimpleMapExpr = { PathExpr ~ ( "!" ~ PathExpr )* }
 // 36
-PathExpr = { (InitialSlash ~ RelativePathExpr?) | (InitialSlashSlash ~ RelativePathExpr) | RelativePathExpr }
+PathExpr = { (InitialSlashSlash ~ RelativePathExpr) | (InitialSlash ~ RelativePathExpr?) | RelativePathExpr }
 InitialSlash = { "/" }
 InitialSlashSlash = { "//" }
 // 37
 RelativePathExpr = { StepExpr ~ SlashStep* }
-SlashStep = { (Slash | SlashSlash) ~ StepExpr }
+SlashStep = { (SlashSlash | Slash) ~ StepExpr }
 Slash = { "/" }
 SlashSlash = { "//" }
 // 38
@@ -95,7 +95,7 @@ AxisStep = { (ReverseStep | ForwardStep) ~ PredicateList }
 // 40
 ForwardStep = { (ForwardAxis ~ ColonColon ~ NodeTest) | AbbrevForwardStep }
 // 41
-ForwardAxis = { "child" | "descendant" | "attribute" | "self" | "descendant-or-self" | "following-sibling" | "following" | "namespace" }
+ForwardAxis = { "child" | "descendant-or-self" | "descendant" | "attribute" | "self"  | "following-sibling" | "following" | "namespace" }
 ColonColon = _{ "::" }
 // 42
 AbbrevForwardStep = { AttributeIndicator? ~ NodeTest }
@@ -107,14 +107,15 @@ ReverseAxis = { "parent" | "ancestor-or-self" | "ancestor" | "preceding-sibling"
 // 45
 AbbrevReverseStep = { ".." }
 // 46
-NodeTest = { KindTest | NameTest }
+NodeTest = { KindTest | Wildcard | EQName }
 // 47
-NameTest = { EQName | Wildcard }
+// NameTest = { EQName | Wildcard }
 // 48
-Wildcard = ${ "*"
-           | (NCName ~ ":*")
-           | ("*:" ~ NCName)
-           | (BracedURILiteral ~ "*") }
+Wildcard = ${ Star
+           | (NCName ~ ":" ~ Star)
+           | (Star ~ ":" ~ NCName)
+           | (BracedURILiteral ~ Star) }
+Star = { "*" }
 // 49
 PostfixExpr = { PrimaryExpr ~ (Predicate | ArgumentList | Lookup)* }
 // 50
@@ -148,9 +149,9 @@ VarName = _{ EQName }
 // 61
 ParenthesizedExpr = { "(" ~ Expr? ~ ")" }
 // 62
-ContextItemExpr = { "." }
+ContextItemExpr = ${ "." ~ !"." }
 // 63
-FunctionCall = { EQName ~ ArgumentList }
+FunctionCall = { FunctionCallEQName ~ ArgumentList }
 // 64
 Argument = _{ ExprSingle | ArgumentPlaceholder }
 // 65
@@ -268,6 +269,7 @@ TypedArrayTest = { "array" ~ "(" ~ SequenceType ~ ")" }
 ParenthesizedItemType = { "(" ~ ItemType ~ ")" }
 // 112
 EQName = { URIQualifiedName | QName }
+FunctionCallEQName = { URIQualifiedName | FunctionCallQName }
 // 113
 IntegerLiteral = @{ Digits }
 // 114
@@ -291,6 +293,7 @@ Apos = { "'" }
 COMMENT = _{ "(:" ~ (CommentContents | COMMENT)* ~ ":)" }
 // 122
 QName = { PrefixedName | UnprefixedName }
+FunctionCallQName = { PrefixedName | FunctionCallUnprefixedName }
 // 123
 NCName = @{ NameStartChar ~ NameChar* }
 // 125
@@ -300,11 +303,33 @@ CommentContents = { ( !("(:" | ":)") ~ ANY)+ }
 
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
+ReservedFunctionNames = {
+    "array"
+    | "attribute"
+    | "comment"
+    | "document-node"
+    | "element"
+    | "empty-sequence"
+    | "function"
+    | "if"
+    | "item"
+    | "map"
+    | "namespace-node"
+    | "node"
+    | "processing-instruction"
+    | "schema-attribute"
+    | "schema-element"
+    | "switch"
+    | "text"
+    | "typeswitch"
+}
+
 // Numbers refer to the grammar in REC-xml-names
 // 8
 PrefixedName = { Prefix ~ ":" ~ LocalPart }
 // 9
 UnprefixedName = @{ LocalPart }
+FunctionCallUnprefixedName = @{ !ReservedFunctionNames ~ LocalPart }
 // 10
 Prefix = @{ NCName }
 // 11

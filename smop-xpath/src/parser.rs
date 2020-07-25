@@ -1,12 +1,15 @@
-use crate::ast::{ArithmeticOp, Axis, Comp, Expr, Literal, NodeComp, NodeTest, Quantifier};
+use crate::ast::{
+    ArithmeticOp, Axis, CombineOp, Comp, Expr, Literal, NodeComp, NodeTest, Quantifier, Wildcard,
+};
 use crate::context::StaticContext;
 use crate::types::{Item, KindTest, Occurrence, SequenceType};
-use crate::xdm::{QName, XdmError};
+use crate::xdm::XdmError;
 use pest_consume::*;
 use rust_decimal::Decimal;
+use smop_xmltree::nod::QName;
 use std::str::FromStr;
 
-pub type Result<T> = std::result::Result<T, Error<Rule>>;
+pub type Result<T> = std::result::Result<T, pest::error::Error<Rule>>;
 type Node<'i, 's_ctx> = pest_consume::Node<'i, Rule, &'s_ctx StaticContext>;
 
 impl<R> From<XdmError> for pest::error::Error<R> {
@@ -17,8 +20,8 @@ impl<R> From<XdmError> for pest::error::Error<R> {
 
 pub(crate) fn parse(ctx: &StaticContext, input: &str) -> Result<Expr<()>> {
     let root = XpathParser::parse_with_userdata(Rule::Xpath, input, ctx);
-    let root2 = root.clone();
-    pest_ascii_tree::print_ascii_tree(root2.map(|n| n.as_pairs().to_owned()));
+    //let root2 = root.clone();
+    //pest_ascii_tree::print_ascii_tree(root2.map(|n| n.as_pairs().to_owned()));
     let root = root?.single()?;
     let parse = XpathParser::Xpath(root);
     parse.map_err(|e| {
@@ -236,7 +239,10 @@ impl XpathParser {
     // 23
     fn UnionExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [IntersectExceptExpr(e)] => e, // FIXME
+            [IntersectExceptExpr(e)] => e,
+            [IntersectExceptExpr(e1), IntersectExceptExpr(es)..] => {
+                es.fold(e1, |a, b| Expr::Combine(Box::new(a), CombineOp::Union, Box::new(b), ()))
+            }
         ))
     }
     // 24
@@ -280,7 +286,14 @@ impl XpathParser {
     // 30
     fn UnaryExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [SimpleMapExpr(e)] => e, // FIXME
+            [SimpleMapExpr(e)] => e,
+            [AdditiveOp(os).., SimpleMapExpr(e)] => {
+                if os.into_iter().filter(|o| *o == ArithmeticOp::Minus).count() % 2 == 1 {
+                    Expr::UnaryMinus(Box::new(e), ())
+                } else {
+                    e
+                }
+            }
         ))
     }
     // 32
@@ -324,30 +337,37 @@ impl XpathParser {
     // 36
     fn PathExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
+            [InitialSlashSlash(_), RelativePathExpr(e)] => {
+                Expr::Path(
+                    Box::new(Expr::Path(
+                        Box::new(slash_ast()),
+                        Box::new(Expr::Step(
+                            Axis::DescendantOrSelf,
+                            NodeTest::KindTest(KindTest::AnyKind),
+                            vec![],
+                            (),
+                        )),
+                        (),
+                    )),
+                    Box::new(e),
+                    (),
+                )
+            },
             [InitialSlash(_), RelativePathExpr(e)] => {
                 Expr::Path(
-                    Box::new(Expr::TreatAs(
-                        Box::new(Expr::FunctionCall(
-                            QName::wellknown("fn:root"),
-                            vec![Expr::Step(
-                                Axis::Self_,
-                                NodeTest::KindTest(KindTest::AnyKind),
-                                vec![],
-                                ()
-                            )],
-                            ()
-                        )),
-                        SequenceType::Item(Item::KindTest(KindTest::Document), Occurrence::One),
-                        ()
-                    )),
+                    Box::new(slash_ast()),
                     Box::new(e),
                     ()
                 )
             },
+            [InitialSlash(_)] => slash_ast(),
             [RelativePathExpr(e)] => e, // FIXME
         ))
     }
     fn InitialSlash(_input: Node) -> Result<()> {
+        Ok(())
+    }
+    fn InitialSlashSlash(_input: Node) -> Result<()> {
         Ok(())
     }
     // 37
@@ -402,7 +422,7 @@ impl XpathParser {
             "descendant-or-self" => Axis::DescendantOrSelf,
             "following-sibling" => Axis::FollowingSibling,
             "following" => Axis::Following,
-            "namespace" => Axis::Namespace,
+            "namespace" => return Err(input.error("err:XPST0010 namespace axis is not supported")),
             _ => unreachable!(),
         })
     }
@@ -420,6 +440,7 @@ impl XpathParser {
     fn ReverseStep(input: Node) -> Result<(Axis, NodeTest)> {
         Ok(match_nodes!(input.into_children();
             [ReverseAxis(a), NodeTest(t)] => (a, t),
+            [AbbrevReverseStep(_)] => (Axis::Parent, NodeTest::KindTest(KindTest::AnyKind)),
         ))
     }
     // 44
@@ -433,22 +454,39 @@ impl XpathParser {
             _ => unreachable!(),
         })
     }
+    // 45
+    fn AbbrevReverseStep(_input: Node) -> Result<()> {
+        Ok(())
+    }
     // 46
     fn NodeTest(input: Node) -> Result<NodeTest> {
-        Ok(match_nodes!(input.into_children();
-            [NameTest(qname)] => NodeTest::NameTest(qname),
-            [KindTest(kind)] => NodeTest::KindTest(kind),
-        ))
-    }
-    // 47
-    fn NameTest(input: Node) -> Result<QName> {
         let sc = input.user_data().clone();
         Ok(match_nodes!(input.into_children();
             [EQName(mut qname)] => {
                 sc.qname_for_element(&mut qname);
-                qname
-            }
+                NodeTest::NameTest(qname)
+            },
+            [Wildcard(wildcard)] => NodeTest::WildcardTest(wildcard),
+            [KindTest(kind)] => NodeTest::KindTest(kind),
         ))
+    }
+    // 48
+    fn Wildcard(input: Node) -> Result<Wildcard> {
+        let sc = input.user_data().clone();
+        let prefix = "";
+        Ok(match_nodes!(input.clone().into_children();
+            [Star(_)] => Wildcard::Any,
+            [NCName(prefix), Star(_)] =>
+                match sc.namespace(prefix.as_str()) {
+                    None => return Err(input.error("err:XPST0081 prefix not found")),
+                    Some(ns) => Wildcard::AnyInNs(ns),
+                },
+            [Star(_), NCName(name)] => Wildcard::AnyWithLocalName(name),
+            [BracedURILiteralContent(ns), Star(_)] => Wildcard::AnyInNs(ns),
+        ))
+    }
+    fn Star(_input: Node) -> Result<()> {
+        Ok(())
     }
     // 49
     fn PostfixExpr(input: Node) -> Result<Expr<()>> {
@@ -514,7 +552,7 @@ impl XpathParser {
     fn FunctionCall(input: Node) -> Result<Expr<()>> {
         // We check whether the function exists in the typing phase
         match_nodes!(input.clone().into_children();
-            [EQName(f), ExprSingle(a)..] => {
+            [FunctionCallEQName(f), ExprSingle(a)..] => {
                 let args: Vec<_> = a.collect();
                 Ok(Expr::FunctionCall(f, args, ()))
             }
@@ -622,6 +660,8 @@ impl XpathParser {
         Ok(match_nodes!(input.into_children();
             [AnyKindTest(kt)] => kt,
             [DocumentTest(kt)] => kt,
+            [ElementTest(kt)] => kt,
+            [TextTest(kt)] => kt,
         ))
     }
     // 84
@@ -631,7 +671,22 @@ impl XpathParser {
     // 85
     fn DocumentTest(input: Node) -> Result<KindTest> {
         Ok(match_nodes!(input.into_children();
-            [] => KindTest::Document,
+            [] => KindTest::Document, // FIXME
+        ))
+    }
+    // 86
+    fn TextTest(input: Node) -> Result<KindTest> {
+        Ok(KindTest::Text)
+    }
+    // 88
+    fn NamespaceNodeTest(input: Node) -> Result<KindTest> {
+        Err(input.error("err:XPST0010 namespace axis is not supported"))
+    }
+    // 94
+    // ElementTest = { "element" ~ "(" ~ (ElementNameOrWildcard ~ ("," ~ TypeName ~ "?"?)?)? ~ ")" }
+    fn ElementTest(input: Node) -> Result<KindTest> {
+        Ok(match_nodes!(input.into_children();
+            [] => KindTest::Element, // FIXME
         ))
     }
     // 112
@@ -641,13 +696,25 @@ impl XpathParser {
             [QName(q)] => q,
         ))
     }
+    fn FunctionCallEQName(input: Node) -> Result<QName> {
+        Ok(match_nodes!(input.into_children();
+            [URIQualifiedName(q)] => q,
+            [FunctionCallQName(q)] => q,
+        ))
+    }
     // 113
     fn IntegerLiteral(input: Node) -> Result<Literal> {
-        Ok(Literal::Integer(input.as_str().parse().unwrap()))
+        match input.as_str().parse() {
+            Ok(i) => Ok(Literal::Integer(i)),
+            Err(e) => Err(input.error(format!("err:FOAR0002 {}", e.to_string()))),
+        }
     }
     // 114
     fn DecimalLiteral(input: Node) -> Result<Literal> {
-        Ok(Literal::Decimal(Decimal::from_str(input.as_str()).unwrap()))
+        match Decimal::from_str(input.as_str()) {
+            Ok(d) => Ok(Literal::Decimal(d)),
+            Err(e) => Err(input.error(format!("err:FOAR0002 {}", e.to_string()))),
+        }
     }
     // 115
     fn DoubleLiteral(input: Node) -> Result<Literal> {
@@ -690,6 +757,12 @@ impl XpathParser {
             [UnprefixedName(q)] => q,
         ))
     }
+    fn FunctionCallQName(input: Node) -> Result<QName> {
+        Ok(match_nodes!(input.into_children();
+            [PrefixedName(q)] => q,
+            [FunctionCallUnprefixedName(q)] => q,
+        ))
+    }
     // 123
     fn NCName(input: Node) -> Result<String> {
         Ok(input.as_str().to_string())
@@ -704,6 +777,9 @@ impl XpathParser {
     }
     // 9
     fn UnprefixedName(input: Node) -> Result<QName> {
+        Ok(QName::new(input.as_str().to_string(), None, None))
+    }
+    fn FunctionCallUnprefixedName(input: Node) -> Result<QName> {
         Ok(QName::new(input.as_str().to_string(), None, None))
     }
     // 10
@@ -722,12 +798,32 @@ impl XpathParser {
     }
 }
 
+fn slash_ast() -> Expr<()> {
+    Expr::TreatAs(
+        Box::new(Expr::FunctionCall(
+            QName::wellknown("fn:root"),
+            vec![Expr::Step(
+                Axis::Self_,
+                NodeTest::KindTest(KindTest::AnyKind),
+                vec![],
+                (),
+            )],
+            (),
+        )),
+        SequenceType::Item(Item::KindTest(KindTest::Document), Occurrence::One),
+        (),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::StaticContext;
     use crate::ast::{ArithmeticOp, Expr, Literal};
-    use crate::xdm::QName;
+    use crate::context::ExpandedName;
+    use crate::xdm::XdmError;
     use rust_decimal::Decimal;
+    use smop_xmltree::nod::QName;
+    use std::rc::Rc;
     use std::str::FromStr;
 
     #[test]
@@ -735,6 +831,15 @@ mod tests {
         let context: StaticContext = Default::default();
         let output = context.parse("1234");
         assert_eq!(output, Ok(Expr::Literal(Literal::Integer(1234), ())))
+    }
+    #[test]
+    fn int_literal2() {
+        let context: StaticContext = Default::default();
+        let output = context.parse("999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999");
+        assert_eq!(
+            output.expect_err("expected an error").code,
+            ExpandedName::new("http://www.w3.org/2005/xqt-errors", "FOAR0002")
+        )
     }
 
     #[test]
@@ -1186,5 +1291,55 @@ mod tests {
         let input = "function($a as xs:double, $b as xs:double) as xs:double { $a * $b }";
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn slash1() {
+        let context: StaticContext = Default::default();
+        let input = "/";
+        let output = context.parse(input);
+        assert_eq!(
+            "fn:root(self::node()) treat as document-node()",
+            format!("{}", output.unwrap())
+        )
+    }
+    #[test]
+    fn slashslash1() {
+        let context: StaticContext = Default::default();
+        let input = "fn:count(//center/child::*)";
+        let output = context.parse(input);
+        assert_eq!(
+            "fn:count(fn:root(self::node()) treat as document-node()/descendant-or-self::node()/child::center/child::*)",
+            format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn dotdot1() {
+        let context: StaticContext = Default::default();
+        let input = "..";
+        let output = context.parse(input);
+        assert_eq!("parent::node()", format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn kindtest1() {
+        let context: StaticContext = Default::default();
+        let input = "text()";
+        let output = context.parse(input);
+        let typed = output.unwrap().type_(Rc::new(context));
+        assert_eq!("child::text()", format!("{}", typed.unwrap()))
+    }
+    #[test]
+    fn kindtest2() {
+        let context: StaticContext = Default::default();
+        let input = "center/node()";
+        let output = context.parse(input);
+        let typed = output.unwrap().type_(Rc::new(context));
+        assert_eq!("child::center/child::node()", format!("{}", typed.unwrap()))
+    }
+    #[test]
+    fn union1() {
+        let context: StaticContext = Default::default();
+        let input = r#"a|b|c"#;
+        let equiv = r#"child::a union child::b union child::c"#;
+        let output = context.parse(input);
+        assert_eq!(equiv, format!("{}", output.unwrap()))
     }
 }

@@ -2,14 +2,16 @@
 
 #[macro_use]
 extern crate pest_derive;
+#[macro_use]
+extern crate lazy_static;
 
 pub mod ast;
 pub mod context;
 mod debugparser;
 mod functions;
 pub mod parser;
-mod roxml;
 pub mod runtime;
+mod smop_xmltree;
 mod types;
 pub mod xdm;
 mod xpath_functions_31;
@@ -23,31 +25,27 @@ pub struct Xpath(CompiledExpr);
 
 impl Xpath {
     pub fn compile(context: &Rc<StaticContext>, xpath: &str) -> XdmResult<Xpath> {
-        let expr = context
-            .parse(xpath)
-            .map_err(|e| XdmError::xqtm("XPST0003", e.to_string().as_str()))?;
+        let expr = context.parse(xpath)?;
         expr.type_(Rc::clone(context))?
             .compile()
             .map(|compiled| Xpath(compiled))
     }
 
-    pub fn evaluate<'a, 'input, 'context>(
-        &self,
-        context: &'context DynamicContext<'a, 'input>,
-    ) -> XdmResult<Xdm<'a, 'input>> {
+    pub fn evaluate(&self, context: &DynamicContext) -> XdmResult<Xdm> {
         self.0.execute(context)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::context::ExpandedName;
     use crate::runtime::DynamicContext;
     use crate::types::Item;
     use crate::types::{Occurrence, SequenceType};
-    use crate::xdm::{NodeSeq, QName, Xdm, XdmResult};
+    use crate::xdm::{NodeSeq, Xdm, XdmResult};
     use crate::{StaticContext, Xpath};
-    use roxmltree::Document;
     use rust_decimal::Decimal;
+    use smop_xmltree::nod::{Document, QName};
     use std::rc::Rc;
     use std::str::FromStr;
 
@@ -108,7 +106,7 @@ mod tests {
         let result = xpath.evaluate(&context)?;
         assert_eq!(
             result.boolean().expect_err("expected an error").code,
-            "FORG0006"
+            ExpandedName::new("http://www.w3.org/2005/xqt-errors", "FORG0006")
         );
         Ok(())
     }
@@ -260,12 +258,7 @@ mod tests {
             <mychild>bar bar</mychild>
             <other stringattr="baz" numattr="0">baz</other>
         </root>"##;
-        let rodoc = Document::parse(doc)?;
-
-        let context: DynamicContext = static_context.new_dynamic_context();
-
-        let xdm = Xdm::NodeSeq(NodeSeq::RoXml(rodoc.root()));
-        let context = context.clone_with_focus(xdm, 0);
+        let context: DynamicContext = static_context.new_dynamic_context().with_xml(doc)?;
         let xpath = Xpath::compile(
             &static_context,
             "(fn:root(self::node()) treat as document-node())/root/other[1]/@numattr",
@@ -275,6 +268,9 @@ mod tests {
         let xpath = Xpath::compile(&static_context, "/root/other[1]/@numattr")?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(result.string(), Ok("42".to_string()));
+        let xpath = Xpath::compile(&static_context, "count(//self::element())")?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result.integer(), Ok(4));
         Ok(())
     }
     #[test]
@@ -334,7 +330,7 @@ mod tests {
         let mut static_context: StaticContext = Default::default();
         let a_type = static_context.schema_type(&static_context.qname("xs", "integer").unwrap())?;
         static_context.set_variable_type(
-            QName::new("a".to_string(), None, None),
+            ("", "a"),
             SequenceType::Item(Item::AtomicOrUnion(a_type), Occurrence::One),
         );
         let static_context = Rc::new(static_context);
@@ -361,6 +357,25 @@ mod tests {
         let expr = static_context.parse(input)?;
         let result = expr.type_(static_context)?.t().0.to_string();
         assert_eq!(result, "xs:string".to_string());
+        Ok(())
+    }
+    #[test]
+    fn union1() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let input = "a union b";
+        let expr = static_context.parse(input)?;
+        let result = expr.type_(static_context)?.t().0.to_string();
+        assert_eq!(result, "node()*".to_string());
+        Ok(())
+    }
+    #[test]
+    fn union2() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let doc = r#"<r><a><e>1</e><b><e>2</e></b></a><e>3</e></r>"#;
+        let context = static_context.new_dynamic_context().with_xml(doc)?;
+        let xpath = Xpath::compile(&static_context, "//b//e | //a//e")?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result.string_joined()?.as_str(), "1 2");
         Ok(())
     }
 }

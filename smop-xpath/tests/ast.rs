@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use xpath::runtime::DynamicContext;
-use xpath::xdm::{QName, XdmResult};
+use xpath::xdm::XdmResult;
 use xpath::{StaticContext, Xpath};
 
 #[test]
@@ -97,6 +97,44 @@ fn gen_compare4() -> XdmResult<()> {
 }
 
 #[test]
+fn and1() -> XdmResult<()> {
+    let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let context: DynamicContext = static_context.new_dynamic_context();
+    let xpath = Xpath::compile(&static_context, "1 and true() and '0'")?;
+    let result = xpath.evaluate(&context)?;
+    assert!(result.boolean()?);
+    let xpath = Xpath::compile(&static_context, "1 and true() and ''")?;
+    let result = xpath.evaluate(&context)?;
+    assert!(!result.boolean()?);
+    let xpath = Xpath::compile(&static_context, "string((1,1))")?;
+    let result = xpath.evaluate(&context);
+    assert!(result.is_err());
+    let xpath = Xpath::compile(&static_context, "0 and string((1,1))")?;
+    let result = xpath.evaluate(&context)?;
+    assert!(!result.boolean()?);
+    Ok(())
+}
+
+#[test]
+fn or1() -> XdmResult<()> {
+    let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let context: DynamicContext = static_context.new_dynamic_context();
+    let xpath = Xpath::compile(&static_context, "0 or false() or ''")?;
+    let result = xpath.evaluate(&context)?;
+    assert!(!result.boolean()?);
+    let xpath = Xpath::compile(&static_context, "'' or 1")?;
+    let result = xpath.evaluate(&context)?;
+    assert!(result.boolean()?);
+    let xpath = Xpath::compile(&static_context, "string((1,1))")?;
+    let result = xpath.evaluate(&context);
+    assert!(result.is_err());
+    let xpath = Xpath::compile(&static_context, "1 or string((1,1))")?;
+    let result = xpath.evaluate(&context)?;
+    assert!(result.boolean()?);
+    Ok(())
+}
+
+#[test]
 #[ignore]
 fn quantified1() -> XdmResult<()> {
     let static_context: Rc<StaticContext> = Rc::new(Default::default());
@@ -145,5 +183,42 @@ fn concat1() -> XdmResult<()> {
     let xpath = Xpath::compile(&static_context, r#""con" || "cat" || "en" || 8"#)?;
     let result = xpath.evaluate(&context)?;
     assert_eq!(result.string()?, "concaten8");
+    Ok(())
+}
+
+#[test]
+fn unary_minus1() -> XdmResult<()> {
+    let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let context: DynamicContext = static_context.new_dynamic_context();
+    let xpath = Xpath::compile(&static_context, "+1")?;
+    let result = xpath.evaluate(&context)?;
+    assert_eq!(result.string()?, "1");
+    let xpath = Xpath::compile(&static_context, "++1")?;
+    let result = xpath.evaluate(&context)?;
+    assert_eq!(result.string()?, "1");
+    Ok(())
+}
+
+#[test]
+fn unary_minus2() -> XdmResult<()> {
+    let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let context: DynamicContext = static_context.new_dynamic_context();
+    let xpath = Xpath::compile(&static_context, "-1")?;
+    let result = xpath.evaluate(&context)?;
+    assert_eq!(result.string()?, "-1");
+    let xpath = Xpath::compile(&static_context, "--1")?;
+    let result = xpath.evaluate(&context)?;
+    assert_eq!(result.string()?, "1");
+    Ok(())
+}
+
+#[test]
+fn slashslash1() -> XdmResult<()> {
+    let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let context: DynamicContext = static_context.new_dynamic_context();
+    let expr1 = static_context
+        .parse("(fn:root(self::node()) treat as document-node())/descendant-or-self::node()/foo")?;
+    let expr2 = static_context.parse("//foo")?;
+    assert_eq!(expr1, expr2);
     Ok(())
 }

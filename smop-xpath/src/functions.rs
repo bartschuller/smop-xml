@@ -19,29 +19,16 @@ pub struct Function {
 
 #[derive(Clone)]
 pub struct CompiledFunction(
-    Rc<
-        dyn for<'a, 'input, 'context> Fn(
-            &'context DynamicContext,
-            Vec<Xdm<'a, 'input>>,
-        ) -> XdmResult<Xdm<'a, 'input>>,
-    >,
+    Rc<dyn for<'context> Fn(&'context DynamicContext, Vec<Xdm>) -> XdmResult<Xdm>>,
 );
 
 impl CompiledFunction {
     pub fn new(
-        closure: impl 'static
-            + for<'a, 'input, 'context> Fn(
-                &'context DynamicContext,
-                Vec<Xdm<'a, 'input>>,
-            ) -> XdmResult<Xdm<'a, 'input>>,
+        closure: impl 'static + for<'context> Fn(&'context DynamicContext, Vec<Xdm>) -> XdmResult<Xdm>,
     ) -> Self {
         CompiledFunction(Rc::new(closure))
     }
-    pub fn execute<'a, 'input: 'a, 'context>(
-        &self,
-        context: &'context DynamicContext<'a, 'input>,
-        args: Vec<Xdm<'a, 'input>>,
-    ) -> XdmResult<Xdm<'a, 'input>> {
+    pub fn execute(&self, context: &DynamicContext, args: Vec<Xdm>) -> XdmResult<Xdm> {
         self.0(context, args)
     }
 }

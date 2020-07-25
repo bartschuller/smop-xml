@@ -6,7 +6,6 @@ edition = "2018"
 
 [dependencies]
 rust_decimal = "^1.4"
-roxmltree = "^0.11"
 pest = "^2.1"
 pest_derive = "^2.1"
 pest_consume = "^1.0"
@@ -15,3 +14,6 @@ itertools = "^0.9"
 num-traits = "^0.2"
 im = "^15"
 xmlparser = "^0.13"
+smop-xmltree = {path="../smop-xmltree"}
+lazy_static = "^1.4"
+regex = "^1.3"

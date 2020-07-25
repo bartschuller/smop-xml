@@ -3,12 +3,16 @@ use crate::runtime::CompiledExpr;
 use crate::types::{Item, KindTest};
 use crate::types::{Occurrence, SequenceType};
 use crate::xdm::*;
-use crate::xpath_functions_31::{decimal_compare, double_compare, integer_compare, string_compare};
+use crate::xpath_functions_31::{double_compare, string_compare};
 use itertools::Itertools;
 use rust_decimal::Decimal;
+use smop_xmltree::nod::{Node, NodeKind, QName};
+use smop_xmltree::option_ext::OptionExt;
 use std::borrow::Borrow;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::ops::Add;
+use std::ops::{Div, Mul, Rem, Sub};
 use std::rc::Rc;
 
 #[derive(Debug, PartialEq)]
@@ -23,6 +27,7 @@ pub enum Expr<T> {
     And(Vec<Expr<T>>, T),
     Concat(Vec<Expr<T>>, T),
     Arithmetic(Box<Expr<T>>, ArithmeticOp, Box<Expr<T>>, T),
+    UnaryMinus(Box<Expr<T>>, T),
     InstanceOf(Box<Expr<T>>, SequenceType, T),
     TreatAs(Box<Expr<T>>, SequenceType, T),
     Path(Box<Expr<T>>, Box<Expr<T>>, T),
@@ -44,9 +49,27 @@ pub enum Expr<T> {
         Box<Expr<T>>,
         T,
     ),
+    Combine(Box<Expr<T>>, CombineOp, Box<Expr<T>>, T),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum CombineOp {
+    Union,
+    Intersect,
+    Except,
+}
+impl Display for CombineOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            CombineOp::Union => "union",
+            CombineOp::Intersect => "intersect",
+            CombineOp::Except => "except",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Quantifier {
     Some,
     Every,
@@ -60,7 +83,7 @@ impl Display for Quantifier {
         write!(f, "{}", s)
     }
 }
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Axis {
     // forward
     Child,
@@ -70,7 +93,6 @@ pub enum Axis {
     DescendantOrSelf,
     FollowingSibling,
     Following,
-    Namespace,
     // reverse
     Parent,
     Ancestor,
@@ -79,13 +101,77 @@ pub enum Axis {
     AncestorOrSelf,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum NodeTest {
     KindTest(KindTest),
-    // including wildcards by storing "*" in QName parts
+    WildcardTest(Wildcard),
     NameTest(QName),
 }
 
+impl NodeTest {
+    fn matches(
+        &self,
+        node_kind: NodeKind,
+        principal_node_kind: NodeKind,
+        node_name: Option<QName>,
+    ) -> bool {
+        match self {
+            NodeTest::KindTest(kt) => match kt {
+                KindTest::Document => node_kind == NodeKind::Document,
+                KindTest::Element => node_kind == NodeKind::Element,
+                KindTest::Attribute => node_kind == NodeKind::Attribute,
+                KindTest::SchemaElement => unimplemented!(),
+                KindTest::SchemaAttribute => unimplemented!(),
+                KindTest::PI => node_kind == NodeKind::PI,
+                KindTest::Comment => node_kind == NodeKind::Comment,
+                KindTest::Text => node_kind == NodeKind::Text,
+                KindTest::AnyKind => true,
+            },
+            NodeTest::WildcardTest(wc) => {
+                if node_kind != principal_node_kind {
+                    return false;
+                }
+                if let Some(qname) = node_name {
+                    match wc {
+                        Wildcard::Any => true,
+                        Wildcard::AnyWithLocalName(local_name) => {
+                            qname.name.as_str() == local_name.as_str()
+                        }
+                        Wildcard::AnyInNs(ns) => qname.ns.as_str() == Some(ns.as_str()),
+                    }
+                } else {
+                    *wc == Wildcard::Any
+                }
+            }
+            NodeTest::NameTest(test_qname) => {
+                if node_kind != principal_node_kind {
+                    return false;
+                }
+                if let Some(node_qname) = node_name {
+                    node_qname.eqv(test_qname)
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Wildcard {
+    Any,
+    AnyWithLocalName(String),
+    AnyInNs(String),
+}
+
+impl Display for Wildcard {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Wildcard::Any => write!(f, "*"),
+            Wildcard::AnyWithLocalName(name) => write!(f, "*:{}", name),
+            Wildcard::AnyInNs(ns) => write!(f, "Q{{{}}}:*", ns),
+        }
+    }
+}
 #[derive(Debug, PartialEq)]
 pub enum ArithmeticOp {
     Plus,
@@ -104,7 +190,7 @@ pub enum Literal {
     String(String),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Comp {
     EQ,
     NE,
@@ -190,6 +276,7 @@ impl<T> Expr<T> {
             Expr::And(_, t) => t,
             Expr::Concat(_, t) => t,
             Expr::Arithmetic(_, _, _, t) => t,
+            Expr::UnaryMinus(_, t) => t,
             Expr::InstanceOf(_, _, t) => t,
             Expr::TreatAs(_, _, t) => t,
             Expr::Path(_, _, t) => t,
@@ -206,6 +293,7 @@ impl<T> Expr<T> {
             Expr::ArrayCurly(_, t) => t,
             Expr::Map(_, t) => t,
             Expr::InlineFunction(_, _, _, t) => t,
+            Expr::Combine(_, _, _, t) => t,
         }
     }
 }
@@ -216,7 +304,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
             Expr::Literal(l, _) => l.compile(),
             Expr::VarRef(qname, _) => Ok(CompiledExpr::new(move |c| {
                 c.varref(&qname).ok_or_else(|| {
-                    XdmError::xqtm("err:XPST0008", format!("variable `{}` not found", qname))
+                    XdmError::xqtm("XPST0008", format!("variable `{}` not found", qname))
                 })
             })),
             Expr::Sequence(s, _t) => {
@@ -264,8 +352,8 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     Err(XdmError::xqtm("XPDY0002", "context item is undefined"))
                 }
             })),
-            Expr::FunctionCall(qname, args, t) => {
-                let code = (t.1.function(&qname, args.len()).unwrap().code)();
+            Expr::FunctionCall(qname, args, (_st, static_context)) => {
+                let code = (static_context.function(&qname, args.len()).unwrap().code)();
                 let compiled_vec: XdmResult<Vec<_>> =
                     args.into_iter().map(|x| x.compile()).collect();
                 compiled_vec.map(|compiled_vec| {
@@ -277,8 +365,32 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     })
                 })
             }
-            Expr::Or(_, _) => todo!("implement Or"),
-            Expr::And(_, _) => todo!("implement And"),
+            Expr::Or(v, _) => {
+                let v_c: XdmResult<Vec<_>> = v.into_iter().map(|x| x.compile()).collect();
+                let v_c = v_c?;
+                Ok(CompiledExpr::new(move |c| {
+                    for e in v_c.iter() {
+                        let res = e.execute(c)?.boolean()?;
+                        if res {
+                            return Ok(Xdm::Boolean(true));
+                        }
+                    }
+                    Ok(Xdm::Boolean(false))
+                }))
+            }
+            Expr::And(v, _) => {
+                let v_c: XdmResult<Vec<_>> = v.into_iter().map(|x| x.compile()).collect();
+                let v_c = v_c?;
+                Ok(CompiledExpr::new(move |c| {
+                    for e in v_c.iter() {
+                        let res = e.execute(c)?.boolean()?;
+                        if !res {
+                            return Ok(Xdm::Boolean(false));
+                        }
+                    }
+                    Ok(Xdm::Boolean(true))
+                }))
+            }
             Expr::Concat(v, _) => {
                 let v_c: XdmResult<Vec<_>> = v.into_iter().map(|x| x.compile()).collect();
                 let v_c = v_c?;
@@ -297,30 +409,63 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     Ok(CompiledExpr::new(move |_c| Ok(Xdm::Sequence(vec![]))))
                 }
                 SequenceType::Item(i, _) => {
-                    if o != ArithmeticOp::Plus {
-                        todo!("operations beside plus")
-                    }
+                    // if o != ArithmeticOp::Plus {
+                    //     todo!("operations beside plus")
+                    // }
                     let l_c = l.compile()?;
                     let r_c = r.compile()?;
                     let type_string = i.to_string();
+                    macro_rules! operation {
+                        ($type_string:ident, $l:ident, $op:ident, $r:ident) => {
+                            Ok(match $type_string.as_ref() {
+                                "xs:integer" => CompiledExpr::new(move |c| {
+                                    Ok(Xdm::Integer(
+                                        $l.execute(c)?.integer()?.$op($r.execute(c)?.integer()?),
+                                    ))
+                                }),
+                                "xs:decimal" => CompiledExpr::new(move |c| {
+                                    Ok(Xdm::Decimal(
+                                        $l.execute(c)?.decimal()?.$op($r.execute(c)?.decimal()?),
+                                    ))
+                                }),
+                                "xs:double" | "xs:anyAtomicType" => CompiledExpr::new(move |c| {
+                                    Ok(Xdm::Double(
+                                        $l.execute(c)?.double()?.$op($r.execute(c)?.double()?),
+                                    ))
+                                }),
+                                _ => todo!("compile more Arithmetic cases"),
+                            })
+                        };
+                    }
+                    match o {
+                        ArithmeticOp::Plus => operation![type_string, l_c, add, r_c],
+                        ArithmeticOp::Minus => operation![type_string, l_c, sub, r_c],
+                        ArithmeticOp::Mul => operation![type_string, l_c, mul, r_c],
+                        ArithmeticOp::Div => operation![type_string, l_c, div, r_c],
+                        ArithmeticOp::Idiv => unimplemented!("integer division"),
+                        ArithmeticOp::Mod => operation![type_string, l_c, rem, r_c],
+                    }
+                }
+            },
+            Expr::UnaryMinus(e, t) => match t.0 {
+                SequenceType::EmptySequence => {
+                    println!("warning: compiling away unary minus to empty sequence");
+                    Ok(CompiledExpr::new(move |_c| Ok(Xdm::Sequence(vec![]))))
+                }
+                SequenceType::Item(i, _) => {
+                    let e_c = e.compile()?;
+                    let type_string = i.to_string();
                     Ok(match type_string.as_ref() {
                         "xs:integer" => CompiledExpr::new(move |c| {
-                            println!("running integer + : {}", expr_string);
-                            Ok(Xdm::Integer(
-                                l_c.execute(c)?.integer()? + r_c.execute(c)?.integer()?,
-                            ))
+                            Ok(Xdm::Integer(-e_c.execute(c)?.integer()?))
                         }),
                         "xs:decimal" => CompiledExpr::new(move |c| {
-                            Ok(Xdm::Decimal(
-                                l_c.execute(c)?.decimal()? + r_c.execute(c)?.decimal()?,
-                            ))
+                            Ok(Xdm::Decimal(-e_c.execute(c)?.decimal()?))
                         }),
-                        "xs:anyAtomicType" => CompiledExpr::new(move |c| {
-                            Ok(Xdm::Double(
-                                l_c.execute(c)?.double()? + r_c.execute(c)?.double()?,
-                            ))
-                        }),
-                        _ => todo!("compile more Arithmetic cases"),
+                        "xs:double" | "xs:anyAtomicType" => {
+                            CompiledExpr::new(move |c| Ok(Xdm::Double(-e_c.execute(c)?.double()?)))
+                        }
+                        _ => todo!("compile more unary minus cases: {}", type_string),
                     })
                 }
             },
@@ -358,7 +503,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                                 Ok(Xdm::Sequence(result))
                             }
                         }
-                        Xdm::NodeSeq(NodeSeq::RoXml(_ronode)) => {
+                        Xdm::NodeSeq(NodeSeq::RoXml(ref _ronode)) => {
                             let context = c.clone_with_focus(x1, 0);
                             e2.execute(&context)
                         }
@@ -370,11 +515,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                                 result.push(res);
                             }
 
-                            if result.len() == 1 {
-                                Ok(result.remove(0))
-                            } else {
-                                Ok(Xdm::Sequence(result))
-                            }
+                            Ok(Xdm::flatten(result))
                         }
                         _ => Err(XdmError::xqtm(
                             "internal",
@@ -391,88 +532,114 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     let ci = c
                         .focus
                         .as_ref()
-                        .ok_or(XdmError::xqtm("err:XPDY0002", "context item is undefined"))?;
+                        .ok_or(XdmError::xqtm("XPDY0002", "context item is undefined"))?;
                     let ro_node = match &ci.sequence {
                         Xdm::NodeSeq(NodeSeq::RoXml(n)) => Ok(n),
                         _ => Err(XdmError::xqtm("", "didn't get a roxml node")),
                     }?;
-                    // FIXME this should be done at compile time
-                    match (axis, &*nt) {
-                        (Axis::Child, NodeTest::NameTest(ref qn)) => {
-                            let mut children: Vec<_> = ro_node
+                    let node_iterator: Box<dyn Iterator<Item = (usize, Node)>> = match axis {
+                        Axis::Child => Box::new(
+                            ro_node
                                 .children()
-                                .enumerate()
-                                .filter_map(|(pos, child)| {
-                                    if child.is_element() && child.has_tag_name(qn) {
-                                        let node = Xdm::NodeSeq(NodeSeq::RoXml(child));
-                                        let mut include = true;
-                                        let context = c.clone_with_focus(node, pos);
-                                        for predicate in &predicates {
-                                            let pred = predicate.execute(&context).unwrap();
-                                            match pred {
-                                                Xdm::Decimal(_)
-                                                | Xdm::Integer(_)
-                                                | Xdm::Double(_) => {
-                                                    if pred.integer().unwrap() as usize != pos {
-                                                        include = false;
-                                                        break;
-                                                    }
-                                                }
-                                                _ => {
-                                                    if !pred.boolean().unwrap() {
-                                                        include = false;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        if include {
-                                            Some(context.focus.unwrap().sequence)
-                                        } else {
-                                            None
-                                        }
-                                    } else {
-                                        None
-                                    }
+                                .filter(|child| {
+                                    nt.matches(
+                                        child.node_kind(),
+                                        NodeKind::Element,
+                                        child.node_name(),
+                                    )
                                 })
-                                .collect();
-                            if children.len() == 1 {
-                                Ok(children.remove(0))
-                            } else {
-                                Ok(Xdm::Sequence(children))
-                            }
-                        }
-                        (Axis::Attribute, NodeTest::NameTest(ref qn)) => {
-                            let mut attrs: Vec<_> = ro_node
+                                .enumerate(),
+                        ),
+                        Axis::Attribute => Box::new(
+                            ro_node
                                 .attributes()
-                                .iter()
-                                .filter_map(|a| {
-                                    if a.namespace().map(|s| s.to_string()) == qn.ns
-                                        && a.name() == qn.name
-                                    {
-                                        Some(Xdm::NodeSeq(NodeSeq::RoXmlAttr(a)))
-                                    } else {
-                                        None
-                                    }
+                                .filter(|a| {
+                                    nt.matches(a.node_kind(), NodeKind::Attribute, a.node_name())
                                 })
-                                .collect();
-                            if attrs.len() == 1 {
-                                Ok(attrs.remove(0))
-                            } else {
-                                Ok(Xdm::Sequence(attrs))
-                            }
-                        }
-                        (Axis::Self_, nt) => match nt {
-                            NodeTest::KindTest(kt) => match kt {
-                                KindTest::AnyKind => {
-                                    Ok(Xdm::NodeSeq(NodeSeq::RoXml(ro_node.clone())))
+                                .enumerate(),
+                        ),
+                        Axis::Self_ => Box::new(
+                            std::iter::once(ro_node.clone())
+                                .filter(|ro_node| {
+                                    nt.matches(
+                                        ro_node.node_kind(),
+                                        NodeKind::Element,
+                                        ro_node.node_name(),
+                                    )
+                                })
+                                .enumerate(),
+                        ),
+                        Axis::DescendantOrSelf => Box::new(
+                            ro_node
+                                .descendants_or_self()
+                                .filter(|child| {
+                                    nt.matches(
+                                        child.node_kind(),
+                                        NodeKind::Element,
+                                        child.node_name(),
+                                    )
+                                })
+                                .enumerate(),
+                        ),
+                        Axis::Descendant => Box::new(
+                            ro_node
+                                .descendants_or_self()
+                                .skip(1)
+                                .filter(|child| {
+                                    nt.matches(
+                                        child.node_kind(),
+                                        NodeKind::Element,
+                                        child.node_name(),
+                                    )
+                                })
+                                .enumerate(),
+                        ),
+                        Axis::Parent => Box::new(
+                            ro_node
+                                .parent()
+                                .into_iter()
+                                .filter(|parent| {
+                                    nt.matches(
+                                        parent.node_kind(),
+                                        NodeKind::Element,
+                                        parent.node_name(),
+                                    )
+                                })
+                                .enumerate(),
+                        ),
+                        _ => unimplemented!("axis {}", axis),
+                    };
+                    let mut result_nodes: Vec<_> = node_iterator
+                        .filter_map(|(pos, result_node)| {
+                            let node = Xdm::NodeSeq(NodeSeq::RoXml(result_node));
+                            let mut include = true;
+                            let context = c.clone_with_focus(node, pos);
+                            for predicate in &predicates {
+                                let pred = predicate.execute(&context).unwrap();
+                                match pred {
+                                    Xdm::Decimal(_) | Xdm::Integer(_) | Xdm::Double(_) => {
+                                        if pred.integer().unwrap() as usize - 1 != pos {
+                                            include = false;
+                                            break;
+                                        }
+                                    }
+                                    _ => {
+                                        if !pred.boolean().unwrap() {
+                                            include = false;
+                                            break;
+                                        }
+                                    }
                                 }
-                                _ => unimplemented!(),
-                            },
-                            NodeTest::NameTest(_) => unimplemented!(),
-                        },
-                        _ => unimplemented!(),
-                    }
+                            }
+                            if include {
+                                Some(context.focus.unwrap().sequence)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    Ok(Xdm::flatten(result_nodes))
+                    // FIXME this should be done at compile time
                 }))
             }
             Expr::ValueComp(e1, vc, e2, _) => {
@@ -486,34 +653,10 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                             Ok(Xdm::Sequence(vec![]))
                         }
                         (Xdm::Sequence(_), _) | (_, Xdm::Sequence(_)) => Err(XdmError::xqtm(
-                            "err:XPTY0004",
+                            "XPTY0004",
                             "value comparison argument is a sequence",
                         )),
-                        (Xdm::String(s1), x2) => Ok(Xdm::Boolean(
-                            vc.comparison_true(string_compare(s1.as_str(), x2.string()?.as_str())),
-                        )),
-                        (x1, Xdm::String(s2)) => Ok(Xdm::Boolean(
-                            vc.comparison_true(string_compare(x1.string()?.as_str(), s2.as_str())),
-                        )),
-                        (Xdm::Double(d1), x2) => Ok(Xdm::Boolean(
-                            vc.comparison_true(double_compare(&d1, x2.double()?.borrow())),
-                        )),
-                        (x1, Xdm::Double(d2)) => Ok(Xdm::Boolean(
-                            vc.comparison_true(double_compare(x1.double()?.borrow(), &d2)),
-                        )),
-                        (Xdm::Decimal(d1), x2) => Ok(Xdm::Boolean(
-                            vc.comparison_true(decimal_compare(&d1, x2.decimal()?.borrow())),
-                        )),
-                        (x1, Xdm::Decimal(d2)) => Ok(Xdm::Boolean(
-                            vc.comparison_true(decimal_compare(x1.decimal()?.borrow(), &d2)),
-                        )),
-                        (Xdm::Integer(i1), x2) => Ok(Xdm::Boolean(
-                            vc.comparison_true(integer_compare(&i1, x2.integer()?.borrow())),
-                        )),
-                        (x1, Xdm::Integer(i2)) => Ok(Xdm::Boolean(
-                            vc.comparison_true(integer_compare(x1.integer()?.borrow(), &i2)),
-                        )),
-                        (a1, a2) => unimplemented!("{:?} {} {:?}", a1, vc, a2),
+                        (x1, x2) => x1.xpath_compare(&x2, vc).map(Xdm::Boolean),
                     }
                 }))
             }
@@ -642,6 +785,13 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
             Expr::ArrayCurly(_, _) => unimplemented!(),
             Expr::Map(_, _) => unimplemented!(),
             Expr::InlineFunction(_, _, _, _) => unimplemented!(),
+            Expr::Combine(left, op, right, _) => {
+                let left_c = left.compile()?;
+                let right_c = right.compile()?;
+                Ok(CompiledExpr::new(move |c| {
+                    left_c.execute(c)?.combine(right_c.execute(c)?, op)
+                }))
+            }
         }
     }
 }
@@ -660,7 +810,7 @@ impl Expr<()> {
                 .variable_type(&qname)
                 .ok_or_else(|| {
                     XdmError::xqtm(
-                        "err:XPST0008",
+                        "XPST0008",
                         format!("variable ${} not found in static context", qname),
                     )
                 })
@@ -702,22 +852,41 @@ impl Expr<()> {
                 let ctx2 = Rc::clone(&ctx);
                 ctx.function(&qname, arity)
                     .map(|func| {
+                        // FIXME check argument types (and remember to special case concat)
                         Expr::FunctionCall(qname.clone(), args_typed, (func.type_.clone(), ctx2))
                     })
                     .ok_or_else(|| {
                         let msg = format!("No function {}#{} found", qname, arity);
-                        XdmError::xqtm("err:XPST0017", msg.as_str())
+                        XdmError::xqtm("XPST0017", msg.as_str())
                     })
             }
             Expr::Or(v, _) => {
                 let v_typed: XdmResult<Vec<_>> =
                     v.into_iter().map(|a| a.type_(Rc::clone(&ctx))).collect();
-                Ok(Expr::Or(v_typed?, todo!("implement type_")))
+                Ok(Expr::Or(
+                    v_typed?,
+                    (
+                        SequenceType::Item(
+                            Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:boolean"))?),
+                            Occurrence::One,
+                        ),
+                        ctx,
+                    ),
+                ))
             }
             Expr::And(v, _) => {
                 let v_typed: XdmResult<Vec<_>> =
                     v.into_iter().map(|a| a.type_(Rc::clone(&ctx))).collect();
-                Ok(Expr::And(v_typed?, todo!("implement type_")))
+                Ok(Expr::And(
+                    v_typed?,
+                    (
+                        SequenceType::Item(
+                            Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:boolean"))?),
+                            Occurrence::One,
+                        ),
+                        ctx,
+                    ),
+                ))
             }
             Expr::Concat(v, _) => {
                 let v_typed: XdmResult<Vec<_>> =
@@ -736,14 +905,19 @@ impl Expr<()> {
             Expr::Arithmetic(l, op, r, _) => {
                 let t1 = l.type_(Rc::clone(&ctx))?;
                 let t2 = r.type_(Rc::clone(&ctx))?;
-                let t1_type = t1.t().0.clone();
-                let t2_type = t2.t().0.clone();
+                let t1_type = untyped_to_double(t1.t().0.atomize(&ctx)?, &ctx);
+                let t2_type = untyped_to_double(t2.t().0.atomize(&ctx)?, &ctx);
                 Ok(Expr::Arithmetic(
                     Box::new(t1),
                     op,
                     Box::new(t2),
                     (SequenceType::lub(&ctx, &t1_type, &t2_type)?, ctx),
                 ))
+            }
+            Expr::UnaryMinus(e, _) => {
+                let e_typed = e.type_(Rc::clone(&ctx))?;
+                let e_type = e_typed.t().0.clone();
+                Ok(Expr::UnaryMinus(Box::new(e_typed), (e_type, ctx)))
             }
             Expr::InstanceOf(e, st, _) => {
                 let e_typed = e.type_(Rc::clone(&ctx))?;
@@ -842,7 +1016,7 @@ impl Expr<()> {
                     SequenceType::Item(it, _o) => SequenceType::Item(it, Occurrence::One),
                 };
                 let mut new_ctx = (&*ctx).clone();
-                new_ctx.set_variable_type(qname.clone(), bi_type);
+                new_ctx.set_variable_type(&qname, bi_type);
                 let e_typed = e.type_(Rc::new(new_ctx))?;
                 let e_type = e_typed.t().0.clone();
                 Ok(Expr::For(
@@ -856,7 +1030,7 @@ impl Expr<()> {
                 let bs_typed = bs.type_(Rc::clone(&ctx))?;
                 let bi_type = bs_typed.t().0.clone();
                 let mut new_ctx = (&*ctx).clone();
-                new_ctx.set_variable_type(qname.clone(), bi_type);
+                new_ctx.set_variable_type(&qname, bi_type);
                 let e_typed = e.type_(Rc::new(new_ctx))?;
                 let e_type = e_typed.t().0.clone();
                 Ok(Expr::Let(
@@ -881,7 +1055,7 @@ impl Expr<()> {
                     };
                     bs_typed.push((var.clone(), Box::new(binding_type)));
                     new_ctx = (&*curr_ctx).clone();
-                    new_ctx.set_variable_type(var, bi_type);
+                    new_ctx.set_variable_type(&var, bi_type);
                     curr_ctx = Rc::new(new_ctx);
                 }
                 let result_type = SequenceType::Item(
@@ -901,27 +1075,79 @@ impl Expr<()> {
             Expr::ArrayCurly(_, _) => unimplemented!(),
             Expr::Map(_, _) => unimplemented!(),
             Expr::InlineFunction(_, _, _, _) => unimplemented!(),
+            Expr::Combine(left, op, right, _) => {
+                let left_typed = left.type_(Rc::clone(&ctx))?;
+                let right_typed = right.type_(Rc::clone(&ctx))?;
+                let result_type =
+                    SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore);
+                Ok(Expr::Combine(
+                    Box::new(left_typed),
+                    op,
+                    Box::new(right_typed),
+                    (result_type, ctx),
+                ))
+            }
         }
+    }
+}
+fn untyped_to_double(st: SequenceType, ctx: &Rc<StaticContext>) -> SequenceType {
+    let xs_any_atomic = ctx
+        .schema_type(("http://www.w3.org/2001/XMLSchema", "anyAtomicType"))
+        .unwrap();
+    match &st {
+        SequenceType::Item(Item::AtomicOrUnion(schema_type), o)
+            if **schema_type == *xs_any_atomic =>
+        {
+            SequenceType::Item(
+                Item::AtomicOrUnion(
+                    ctx.schema_type(("http://www.w3.org/2001/XMLSchema", "double"))
+                        .unwrap(),
+                ),
+                o.clone(),
+            )
+        }
+
+        _ => st,
     }
 }
 impl Axis {
     pub(crate) fn type_(&self, _ctx: &StaticContext) -> XdmResult<SequenceType> {
-        // match self {
-        //     Axis::Child => {},
-        //     Axis::Descendant => {},
-        //     Axis::Attribute => {},
-        //     Axis::Self_ => {},
-        //     Axis::DescendantOrSelf => {},
-        //     Axis::FollowingSibling => {},
-        //     Axis::Following => {},
-        //     Axis::Namespace => {},
-        //     Axis::Parent => {},
-        //     Axis::Ancestor => {},
-        //     Axis::PrecedingSibling => {},
-        //     Axis::Preceding => {},
-        //     Axis::AncestorOrSelf => {},
-        // }
-        Ok(SequenceType::EmptySequence)
+        Ok(match self {
+            Axis::Child => {
+                SequenceType::Item(Item::KindTest(KindTest::Element), Occurrence::ZeroOrMore)
+            }
+            Axis::Descendant => {
+                SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore)
+            }
+            Axis::Attribute => {
+                SequenceType::Item(Item::KindTest(KindTest::Attribute), Occurrence::ZeroOrMore)
+            }
+            Axis::Self_ => SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::One),
+            Axis::DescendantOrSelf => {
+                SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore)
+            }
+            Axis::FollowingSibling => {
+                SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore)
+            }
+            Axis::Following => {
+                SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore)
+            }
+            Axis::Parent => {
+                SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::Optional)
+            }
+            Axis::Ancestor => {
+                SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore)
+            }
+            Axis::PrecedingSibling => {
+                SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore)
+            }
+            Axis::Preceding => {
+                SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore)
+            }
+            Axis::AncestorOrSelf => {
+                SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore)
+            }
+        })
     }
 }
 impl Display for Axis {
@@ -934,7 +1160,6 @@ impl Display for Axis {
             Axis::DescendantOrSelf => write!(f, "descendant-or-self"),
             Axis::FollowingSibling => write!(f, "following-sibling"),
             Axis::Following => write!(f, "following"),
-            Axis::Namespace => write!(f, "namespace"),
             Axis::Parent => write!(f, "parent"),
             Axis::Ancestor => write!(f, "ancestor"),
             Axis::PrecedingSibling => write!(f, "preceding-sibling"),
@@ -958,6 +1183,7 @@ impl<T> Display for Expr<T> {
             Expr::And(v, _) => write!(f, "{}", v.iter().format(" and ")),
             Expr::Concat(v, _) => write!(f, "{}", v.iter().format(" || ")),
             Expr::Arithmetic(e1, o, e2, _) => write!(f, "{} {} {}", e1, o, e2),
+            Expr::UnaryMinus(e, _) => write!(f, "-{}", e),
             Expr::InstanceOf(e, t, _) => write!(f, "{} instance of {}", e, t),
             Expr::TreatAs(e, t, _) => write!(f, "{} treat as {}", e, t),
             Expr::Path(e1, e2, _) => write!(f, "{}/{}", e1, e2),
@@ -1009,6 +1235,7 @@ impl<T> Display for Expr<T> {
                     .unwrap_or("".to_string());
                 write!(f, "function({}) {}{{ {} }}", vs, st, b)
             }
+            Expr::Combine(left, op, right, _) => write!(f, "{} {} {}", left, op, right),
         }
     }
 }
@@ -1018,6 +1245,7 @@ impl Display for NodeTest {
         match self {
             NodeTest::KindTest(kt) => write!(f, "{}", kt),
             NodeTest::NameTest(qname) => write!(f, "{}", qname),
+            NodeTest::WildcardTest(wildcard) => write!(f, "{}", wildcard),
         }
     }
 }
@@ -1052,7 +1280,7 @@ impl Literal {
     }
 }
 impl Comp {
-    fn comparison_true(&self, c: i8) -> bool {
+    pub(crate) fn comparison_true(&self, c: i8) -> bool {
         match (self, c) {
             (Comp::EQ, 0) => true,
             (Comp::EQ, _) => false,
