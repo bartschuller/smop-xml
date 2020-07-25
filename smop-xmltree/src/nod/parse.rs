@@ -4,7 +4,7 @@ use std::fmt;
 use std::str;
 
 use crate::nod::{
-    Document, Idx, Namespaces, NodeData, NodeKind, QName, ShortRange, NS_XMLNS_URI, NS_XML_URI, PI,
+    Document, Idx, Namespaces, NodeData, NodeType, QName, ShortRange, NS_XMLNS_URI, NS_XML_URI, PI,
 };
 use std::collections::HashMap;
 use xmlparser::{self, ElementEnd, Reference, StrSpan, Stream, TextPos};
@@ -210,27 +210,27 @@ impl Document {
     fn append(
         &mut self,
         parent_id: Idx,
-        kind: NodeKind,
+        node_type: NodeType,
         range: ShortRange,
         pd_awaiting_subtree: &mut Vec<Idx>,
     ) -> Idx {
         let new_child_id = Idx::from(self.nodes.len());
 
-        let appending_element = kind.is_element();
-        let appending_attribute = kind.is_attribute();
+        let appending_element = node_type.is_element();
+        let appending_attribute = node_type.is_attribute();
 
         self.nodes.push(NodeData {
             parent: Some(parent_id),
             prev_sibling: None,
             next_subtree: None,
             last_child: None,
-            kind,
+            node_type,
             range,
         });
 
         if appending_attribute {
             let previous_attribute = new_child_id.get_usize() - 1;
-            if self.nodes[previous_attribute].kind.is_attribute() {
+            if self.nodes[previous_attribute].node_type.is_attribute() {
                 self.nodes[new_child_id.get_usize()].prev_sibling =
                     Some(Idx::from(previous_attribute));
                 self.nodes[previous_attribute].next_subtree = Some(new_child_id);
@@ -445,7 +445,7 @@ fn parse(text: &str) -> Result<Rc<Document>, Error> {
         prev_sibling: None,
         next_subtree: None,
         last_child: None,
-        kind: NodeKind::Document,
+        node_type: NodeType::Document,
         range: (0..text.len()).into(),
     });
 
@@ -496,14 +496,14 @@ fn process_tokens<'input>(
                 let target = string_idx(&mut pd.strings, &mut doc.strings, target.as_str());
                 let value =
                     content.map(|v| string_idx(&mut pd.strings, &mut doc.strings, v.as_str()));
-                let pi = NodeKind::PI(PI { target, value });
+                let pi = NodeType::PI(PI { target, value });
                 doc.append(parent_id, pi, span.range().into(), &mut pd.awaiting_subtree);
             }
             xmlparser::Token::Comment { text, span } => {
                 let string_idx = string_idx(&mut pd.strings, &mut doc.strings, text.as_str());
                 doc.append(
                     parent_id,
-                    NodeKind::Comment(string_idx),
+                    NodeType::Comment(string_idx),
                     span.range().into(),
                     &mut pd.awaiting_subtree,
                 );
@@ -693,7 +693,7 @@ fn process_element<'input>(
             );
             let new_element_id = doc.append(
                 *parent_id,
-                NodeKind::Element {
+                NodeType::Element {
                     qname: qname_idx,
                     num_attributes: 0,
                     namespaces,
@@ -703,13 +703,13 @@ fn process_element<'input>(
             );
             let final_num_attributes =
                 resolve_attributes(new_element_id, namespaces.clone(), doc, text, pd)?;
-            if let NodeKind::Element {
+            if let NodeType::Element {
                 qname,
                 num_attributes: _,
                 namespaces,
-            } = doc.nodes[new_element_id.get_usize()].kind
+            } = doc.nodes[new_element_id.get_usize()].node_type
             {
-                doc.nodes[new_element_id.get_usize()].kind = NodeKind::Element {
+                doc.nodes[new_element_id.get_usize()].node_type = NodeType::Element {
                     qname,
                     num_attributes: final_num_attributes,
                     namespaces,
@@ -734,7 +734,8 @@ fn process_element<'input>(
             let local = local.as_str();
 
             doc.nodes[parent_id.get_usize()].range.end = token_span.end() as u32;
-            if let NodeKind::Element { ref qname, .. } = doc.nodes[parent_id.get_usize()].kind {
+            if let NodeType::Element { ref qname, .. } = doc.nodes[parent_id.get_usize()].node_type
+            {
                 let qname = &doc.qnames[qname.get_usize()];
                 if prefix != qname.prefix.as_str() || local != qname.name {
                     return Err(Error::UnexpectedCloseTag {
@@ -761,7 +762,7 @@ fn process_element<'input>(
 }
 
 fn resolve_namespaces(start_idx: usize, parent_id: Idx, doc: &mut Document) -> ShortRange {
-    if let NodeKind::Element { ref namespaces, .. } = doc.nodes[parent_id.get_usize()].kind {
+    if let NodeType::Element { ref namespaces, .. } = doc.nodes[parent_id.get_usize()].node_type {
         let parent_ns = namespaces.clone();
         if start_idx == doc.namespaces.len() {
             return parent_ns;
@@ -833,7 +834,7 @@ fn resolve_attributes<'input>(
 
         doc.append(
             element_id,
-            NodeKind::Attribute {
+            NodeType::Attribute {
                 qname: attr_name_idx,
                 value: value_string_idx,
             },
@@ -959,7 +960,7 @@ fn append_text<'input>(
     if after_text {
         // Prepend to a previous text node.
         if let Some(node) = doc.nodes.iter_mut().last() {
-            if let NodeKind::Text(ref mut prev_text_idx) = node.kind {
+            if let NodeType::Text(ref mut prev_text_idx) = node.node_type {
                 let mut prev_text = doc.strings[prev_text_idx.get_usize()].clone();
                 prev_text.push_str(text.borrow());
                 *prev_text_idx = string_idx(&mut pd.strings, &mut doc.strings, prev_text.as_str());
@@ -969,7 +970,7 @@ fn append_text<'input>(
         let text_string_idx = string_idx(&mut pd.strings, &mut doc.strings, text.borrow());
         doc.append(
             parent_id,
-            NodeKind::Text(text_string_idx),
+            NodeType::Text(text_string_idx),
             range,
             &mut pd.awaiting_subtree,
         );

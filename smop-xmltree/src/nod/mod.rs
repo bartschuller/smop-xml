@@ -1,8 +1,9 @@
 pub mod parse;
 use crate::option_ext::OptionExt;
+use std::cmp::Ordering;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -16,7 +17,7 @@ pub const NS_XML_URI: &str = "http://www.w3.org/XML/1998/namespace";
 pub const NS_XMLNS_URI: &str = "http://www.w3.org/2000/xmlns/";
 
 // https://www.w3.org/TR/xpath-datamodel-31/#qnames-and-notations
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct QName {
     pub name: String,
     pub ns: Option<String>,
@@ -48,18 +49,9 @@ impl QName {
             prefix: Some(prefix.to_string()),
         }
     }
-}
-impl PartialEq for QName {
-    fn eq(&self, other: &Self) -> bool {
-        self.name.eq(&other.name) && self.ns.eq(&other.ns)
-    }
-}
-impl Eq for QName {}
-impl Hash for QName {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.ns.hash(state);
-        self.name.hash(state);
-        self.prefix.hash(state)
+    #[inline]
+    pub fn eqv(&self, other: &QName) -> bool {
+        self.ns == other.ns && self.name == other.name
     }
 }
 impl Display for QName {
@@ -130,7 +122,7 @@ impl ShortRange {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug, PartialOrd)]
+#[derive(Clone, Copy, PartialEq, Debug, PartialOrd, Ord, Eq)]
 pub struct Idx(NonZeroU32);
 
 impl Idx {
@@ -288,7 +280,7 @@ impl fmt::Debug for Document {
 }
 
 #[derive(Debug, Clone)]
-pub enum NodeKind {
+pub enum NodeType {
     Document,
     Element {
         qname: Idx,
@@ -304,25 +296,25 @@ pub enum NodeKind {
     Comment(Idx),
 }
 
-impl NodeKind {
+impl NodeType {
     #[inline]
-    fn node_kind(&self) -> NodeType {
+    fn node_kind(&self) -> NodeKind {
         match self {
-            NodeKind::Document => NodeType::Document,
-            NodeKind::Element { .. } => NodeType::Element,
-            NodeKind::Attribute { .. } => NodeType::Attribute,
-            NodeKind::Text(_) => NodeType::Text,
-            NodeKind::PI(_) => NodeType::PI,
-            NodeKind::Comment(_) => NodeType::Comment,
+            NodeType::Document => NodeKind::Document,
+            NodeType::Element { .. } => NodeKind::Element,
+            NodeType::Attribute { .. } => NodeKind::Attribute,
+            NodeType::Text(_) => NodeKind::Text,
+            NodeType::PI(_) => NodeKind::PI,
+            NodeType::Comment(_) => NodeKind::Comment,
         }
     }
     #[inline]
     pub fn is_element(&self) -> bool {
-        self.node_kind() == NodeType::Element
+        self.node_kind() == NodeKind::Element
     }
     #[inline]
     pub fn is_attribute(&self) -> bool {
-        self.node_kind() == NodeType::Attribute
+        self.node_kind() == NodeKind::Attribute
     }
 }
 
@@ -332,12 +324,12 @@ pub struct NodeData {
     prev_sibling: Option<Idx>,
     last_child: Option<Idx>,
     next_subtree: Option<Idx>, // next sibling or ancestor's next sibling
-    kind: NodeKind,
+    node_type: NodeType,
     range: ShortRange,
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum NodeType {
+pub enum NodeKind {
     Document,
     Element,
     Attribute,
@@ -364,6 +356,22 @@ impl PartialEq for Node {
         Rc::ptr_eq(&self.document, &other.document) && self.id.eq(&other.id)
     }
 }
+impl Ord for Node {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let res = Rc::as_ptr(&self.document).cmp(&Rc::as_ptr(&other.document));
+        if res == Ordering::Equal {
+            self.id.cmp(&other.id)
+        } else {
+            res
+        }
+    }
+}
+impl PartialOrd for Node {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Eq for Node {}
 
 impl Node {
     /// Return the `Rc<Document>` for this node
@@ -374,7 +382,7 @@ impl Node {
     /// Checks that node is an element node.
     #[inline]
     pub fn is_element(&self) -> bool {
-        self.node_kind() == NodeType::Element
+        self.node_kind() == NodeKind::Element
     }
 
     /// Returns an iterator over this node and its descendants.
@@ -389,13 +397,13 @@ impl Node {
     }
     #[inline]
     fn num_attributes(&self) -> u32 {
-        match self.d().kind {
-            NodeKind::Document => 0,
-            NodeKind::Element { num_attributes, .. } => num_attributes,
-            NodeKind::Attribute { .. } => 0,
-            NodeKind::Text(_) => 0,
-            NodeKind::PI(_) => 0,
-            NodeKind::Comment(_) => 0,
+        match self.d().node_type {
+            NodeType::Document => 0,
+            NodeType::Element { num_attributes, .. } => num_attributes,
+            NodeType::Attribute { .. } => 0,
+            NodeType::Text(_) => 0,
+            NodeType::PI(_) => 0,
+            NodeType::Comment(_) => 0,
         }
     }
     fn first_child(&self) -> Option<Node> {
@@ -447,8 +455,8 @@ impl Node {
     {
         let name = name.into();
 
-        match self.d().kind {
-            NodeKind::Element { ref qname, .. } => {
+        match self.d().node_type {
+            NodeType::Element { ref qname, .. } => {
                 let qname = &self.document.qnames[qname.get_usize()];
                 match name.ns {
                     Some(_) => qname == &name,
@@ -486,8 +494,8 @@ impl Node {
     /// ```
     #[inline]
     pub fn namespaces(&self) -> &[Namespace] {
-        match self.d().kind {
-            NodeKind::Element { ref namespaces, .. } => {
+        match self.d().node_type {
+            NodeType::Element { ref namespaces, .. } => {
                 &self.document.namespaces[namespaces.to_urange()]
             }
             _ => &[],
@@ -530,19 +538,19 @@ impl Node {
     // namespace_nodes
     // nilled
 
-    /// The node_kind accessor returns an enum identifying the kind of node. It will be one of the following, depending on the kind of node: “attribute”, “comment”, “document”, “element”, “namespace” “processing-instruction”, or “text”.
+    /// The node_kind accessor returns an enum identifying the kind of node. It will be one of the following, depending on the kind of node: “attribute”, “comment”, “document”, “element”, “processing-instruction”, or “text”.
     #[inline]
-    pub fn node_kind(&self) -> NodeType {
-        self.d().kind.node_kind()
+    pub fn node_kind(&self) -> NodeKind {
+        self.d().node_type.node_kind()
     }
 
     /// The node_name accessor returns the name of the node
     pub fn node_name(&self) -> Option<QName> {
-        match self.d().kind {
-            NodeKind::Element { ref qname, .. } | NodeKind::Attribute { ref qname, .. } => {
+        match self.d().node_type {
+            NodeType::Element { ref qname, .. } | NodeType::Attribute { ref qname, .. } => {
                 Some(self.document.qnames[qname.get_usize()].clone())
             }
-            NodeKind::PI(ref pi) => Some(QName::new(
+            NodeType::PI(ref pi) => Some(QName::new(
                 self.document.strings[pi.target.get_usize()].clone(),
                 None,
                 None,
@@ -568,14 +576,14 @@ impl Node {
     /// assert_eq!(doc.root().string_value().as_str(), "Hello World");
     /// ```
     pub fn string_value(&self) -> String {
-        match self.d().kind {
-            NodeKind::Document | NodeKind::Element { .. } => {
+        match self.d().node_type {
+            NodeType::Document | NodeType::Element { .. } => {
                 let mut s = String::new();
                 let mut it = self.descendants_or_self();
                 it.next();
                 for n in it {
-                    match n.d().kind {
-                        NodeKind::Text(idx) => {
+                    match n.d().node_type {
+                        NodeType::Text(idx) => {
                             s.push_str(self.document.strings[idx.get_usize()].as_str())
                         }
                         _ => {}
@@ -583,11 +591,11 @@ impl Node {
                 }
                 s
             }
-            NodeKind::Attribute { value, .. } => self.document.strings[value.get_usize()].clone(),
-            NodeKind::Text(idx) | NodeKind::Comment(idx) => {
+            NodeType::Attribute { value, .. } => self.document.strings[value.get_usize()].clone(),
+            NodeType::Text(idx) | NodeType::Comment(idx) => {
                 self.document.strings[idx.get_usize()].clone()
             }
-            NodeKind::PI(pi) => pi.value.map_or(String::new(), |idx| {
+            NodeType::PI(pi) => pi.value.map_or(String::new(), |idx| {
                 self.document.strings[idx.get_usize()].clone()
             }),
         }
@@ -632,10 +640,9 @@ impl Descendants {
             current: start.id,
             until: start.d().next_subtree.unwrap_or_else(|| {
                 let mut unt = start.document.nodes.len();
-                while start.document.nodes[unt - 1].kind.is_attribute() {
+                while start.document.nodes[unt - 1].node_type.is_attribute() {
                     unt -= 1;
                 }
-                println!("unt={}", unt);
                 Idx::from(unt)
             }),
         }
@@ -655,7 +662,9 @@ impl Iterator for Descendants {
 
         if next.is_some() {
             let mut new_idx = self.current.get_usize() + 1;
-            while new_idx != self.until.get_usize() && self.doc.nodes[new_idx].kind.is_attribute() {
+            while new_idx != self.until.get_usize()
+                && self.doc.nodes[new_idx].node_type.is_attribute()
+            {
                 new_idx += 1;
             }
             self.current = Idx::from(new_idx);
@@ -666,7 +675,7 @@ impl Iterator for Descendants {
 
 #[cfg(test)]
 mod tests {
-    use crate::nod::{parse, Document, NodeType};
+    use crate::nod::{parse, Document, NodeKind};
 
     #[test]
     fn parse1() -> Result<(), parse::Error> {
@@ -677,7 +686,7 @@ mod tests {
         let doc = Document::parse(text)?;
         println!("\n{:?}\n", doc);
         let root = doc.root();
-        assert_eq!(root.node_kind(), NodeType::Document);
+        assert_eq!(root.node_kind(), NodeKind::Document);
         assert_eq!(root.parent(), None);
         let last_child = root.last_child();
         println!("{:?}", last_child);
@@ -687,7 +696,7 @@ mod tests {
         let first = children.next();
         assert!(first.is_some());
         let first = first.unwrap();
-        assert_eq!(first.node_kind(), NodeType::Element);
+        assert_eq!(first.node_kind(), NodeKind::Element);
         Ok(())
     }
 }
