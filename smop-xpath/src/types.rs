@@ -31,6 +31,7 @@ pub enum KindTest {
     PI,
     Comment,
     Text,
+    NamespaceNode,
     AnyKind,
 }
 
@@ -45,6 +46,7 @@ impl Display for KindTest {
             KindTest::PI => write!(f, "processing-instruction()"),
             KindTest::Comment => write!(f, "comment()"),
             KindTest::Text => write!(f, "text()"),
+            KindTest::NamespaceNode => write!(f, "namespace-node()"),
             KindTest::AnyKind => write!(f, "node()"),
         }
     }

@@ -1,7 +1,7 @@
 use crate::functions::{CompiledFunction, Function};
 use crate::types::{Item, KindTest};
 use crate::types::{Occurrence, SequenceType};
-use crate::xdm::{NodeSeq, Xdm, XdmResult};
+use crate::xdm::{NodeSeq, Xdm, XdmError, XdmResult};
 use crate::StaticContext;
 
 use rust_decimal::Decimal;
@@ -147,6 +147,34 @@ pub(crate) fn register(ctx: &mut StaticContext) {
         code: fn_string_0,
     };
     ctx.add_function(qname, fn_string_0_meta);
+
+    let qname = ctx.qname("fn", "name").unwrap();
+    let fn_name_1_meta = Function {
+        args: vec![SequenceType::Item(
+            Item::KindTest(KindTest::AnyKind),
+            Occurrence::Optional,
+        )],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_string).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_name_1,
+    };
+    ctx.add_function(qname, fn_name_1_meta);
+
+    let qname = ctx.qname("fn", "empty").unwrap();
+    let fn_empty_1_meta = Function {
+        args: vec![SequenceType::Item(
+            Item::KindTest(KindTest::AnyKind),
+            Occurrence::ZeroOrMore,
+        )],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_boolean).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_empty_1,
+    };
+    ctx.add_function(qname, fn_empty_1_meta);
 }
 
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
@@ -195,7 +223,7 @@ pub(crate) fn fn_string_join_1() -> CompiledFunction {
     })
 }
 pub(crate) fn fn_concat_2() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, mut args| {
+    CompiledFunction::new(|_ctx, args| {
         let strings: XdmResult<Vec<_>> = args.into_iter().map(|x| x.string()).collect();
         Ok(Xdm::String(strings?.concat()))
     })
@@ -216,10 +244,27 @@ pub(crate) fn fn_string_0() -> CompiledFunction {
     })
 }
 pub(crate) fn fn_string_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, mut args| {
+    CompiledFunction::new(|_ctx, args| {
         args.first().map_or(Ok(Xdm::String("".to_string())), |x| {
             x.string().map(Xdm::String)
         })
+    })
+}
+pub(crate) fn fn_name_1() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, args| match args.first().unwrap() {
+        Xdm::NodeSeq(NodeSeq::RoXml(node)) => Ok(Xdm::String(
+            node.node_name().map_or("".to_string(), |q| q.to_string()),
+        )),
+        _ => Err(XdmError::xqtm(
+            "XPTY0004",
+            "expected a node as argument to name()",
+        )),
+    })
+}
+pub(crate) fn fn_empty_1() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, args| match args.first().unwrap() {
+        Xdm::Sequence(v) if v.is_empty() => Ok(Xdm::Boolean(true)),
+        _ => Ok(Xdm::Boolean(false)),
     })
 }
 

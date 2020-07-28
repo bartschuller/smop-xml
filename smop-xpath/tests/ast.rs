@@ -215,7 +215,6 @@ fn unary_minus2() -> XdmResult<()> {
 #[test]
 fn slashslash1() -> XdmResult<()> {
     let static_context: Rc<StaticContext> = Rc::new(Default::default());
-    let context: DynamicContext = static_context.new_dynamic_context();
     let expr1 = static_context
         .parse("(fn:root(self::node()) treat as document-node())/descendant-or-self::node()/foo")?;
     let expr2 = static_context.parse("//foo")?;

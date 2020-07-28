@@ -96,6 +96,7 @@ impl StaticContext {
         lazy_static! {
             static ref RE: Regex = Regex::new(r"^err:(\w+) (.*)$").unwrap();
         }
+        #[allow(deprecated)]
         parse(self, input).map_err(|e| match RE.captures(e.description()) {
             Some(caps) => {
                 XdmError::xqtm(caps.get(1).unwrap().as_str(), caps.get(2).unwrap().as_str())

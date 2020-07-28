@@ -5,10 +5,12 @@ use crate::types::{Occurrence, SequenceType};
 use crate::xdm::*;
 use crate::xpath_functions_31::{double_compare, string_compare};
 use itertools::Itertools;
+use num_traits::ToPrimitive;
 use rust_decimal::Decimal;
 use smop_xmltree::nod::{Node, NodeKind, QName};
 use smop_xmltree::option_ext::OptionExt;
 use std::borrow::Borrow;
+use std::collections::BTreeSet;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Add;
@@ -125,6 +127,7 @@ impl NodeTest {
                 KindTest::PI => node_kind == NodeKind::PI,
                 KindTest::Comment => node_kind == NodeKind::Comment,
                 KindTest::Text => node_kind == NodeKind::Text,
+                KindTest::NamespaceNode => false, // namespace axis is not supported
                 KindTest::AnyKind => true,
             },
             NodeTest::WildcardTest(wc) => {
@@ -299,7 +302,6 @@ impl<T> Expr<T> {
 }
 impl Expr<(SequenceType, Rc<StaticContext>)> {
     pub(crate) fn compile(self) -> XdmResult<CompiledExpr> {
-        let expr_string = format!("{}", &self);
         match self {
             Expr::Literal(l, _) => l.compile(),
             Expr::VarRef(qname, _) => Ok(CompiledExpr::new(move |c| {
@@ -442,8 +444,35 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         ArithmeticOp::Minus => operation![type_string, l_c, sub, r_c],
                         ArithmeticOp::Mul => operation![type_string, l_c, mul, r_c],
                         ArithmeticOp::Div => operation![type_string, l_c, div, r_c],
-                        ArithmeticOp::Idiv => unimplemented!("integer division"),
                         ArithmeticOp::Mod => operation![type_string, l_c, rem, r_c],
+                        ArithmeticOp::Idiv => Ok(match type_string.as_ref() {
+                            "xs:integer" => CompiledExpr::new(move |c| {
+                                Ok(Xdm::Integer(
+                                    l_c.execute(c)?.integer()?.div(r_c.execute(c)?.integer()?),
+                                ))
+                            }),
+                            "xs:decimal" => CompiledExpr::new(move |c| {
+                                let oi = l_c
+                                    .execute(c)?
+                                    .decimal()?
+                                    .div(r_c.execute(c)?.decimal()?)
+                                    .to_i64();
+                                if let Some(i) = oi {
+                                    Ok(Xdm::Integer(i))
+                                } else {
+                                    Err(XdmError::xqtm(
+                                        "FOAR0002",
+                                        "overflow/underflow in idiv on xs:decimal",
+                                    ))
+                                }
+                            }),
+                            "xs:double" | "xs:anyAtomicType" => CompiledExpr::new(move |c| {
+                                Ok(Xdm::Integer(
+                                    l_c.execute(c)?.double()?.div(r_c.execute(c)?.double()?) as i64,
+                                ))
+                            }),
+                            _ => todo!("compile more Arithmetic cases"),
+                        }),
                     }
                 }
             },
@@ -488,7 +517,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                 let e2 = s2.compile()?;
                 Ok(CompiledExpr::new(move |c| {
                     let x1 = e1.execute(c)?;
-                    match x1 {
+                    let raw_result = match x1 {
                         Xdm::NodeSeq(NodeSeq::RoXmlIter(mut ai)) => {
                             let mut result: Vec<Xdm> = Vec::new();
                             while let Some(ronode) = ai.next() {
@@ -518,9 +547,35 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                             Ok(Xdm::flatten(result))
                         }
                         _ => Err(XdmError::xqtm(
-                            "internal",
+                            "XPTY0019",
                             format!("Not a node seq: {:?}", x1),
                         )),
+                    }?;
+
+                    let mut values_vec: Vec<Xdm> = Vec::new();
+                    let mut nodes_btree: BTreeSet<Node> = BTreeSet::new();
+                    for x in raw_result {
+                        match x {
+                            Xdm::NodeSeq(NodeSeq::RoXml(node)) => {
+                                nodes_btree.insert(node);
+                            }
+                            y => values_vec.push(y),
+                        }
+                    }
+                    if nodes_btree.is_empty() {
+                        Ok(Xdm::flatten(values_vec))
+                    } else if values_vec.is_empty() {
+                        Ok(Xdm::flatten(
+                            nodes_btree
+                                .into_iter()
+                                .map(|n| Xdm::NodeSeq(NodeSeq::RoXml(n)))
+                                .collect(),
+                        ))
+                    } else {
+                        Err(XdmError::xqtm(
+                            "XPTY0018",
+                            "result of a path operator contains both nodes and non-nodes",
+                        ))
                     }
                 }))
             }
@@ -609,7 +664,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         ),
                         _ => unimplemented!("axis {}", axis),
                     };
-                    let mut result_nodes: Vec<_> = node_iterator
+                    let result_nodes: Vec<_> = node_iterator
                         .filter_map(|(pos, result_node)| {
                             let node = Xdm::NodeSeq(NodeSeq::RoXml(result_node));
                             let mut include = true;
@@ -761,7 +816,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     .into_iter()
                     .map(|(q, b)| b.compile().map(|comp| (q, comp)))
                     .collect();
-                let bs_compiled = bs_compiled?;
+                let _bs_compiled = bs_compiled?;
                 let pred_compiled = predicate.compile()?;
                 let default_return_value = match quantifier {
                     Quantifier::Some => false,
@@ -907,11 +962,18 @@ impl Expr<()> {
                 let t2 = r.type_(Rc::clone(&ctx))?;
                 let t1_type = untyped_to_double(t1.t().0.atomize(&ctx)?, &ctx);
                 let t2_type = untyped_to_double(t2.t().0.atomize(&ctx)?, &ctx);
+                let result_type = match op {
+                    ArithmeticOp::Idiv => SequenceType::Item(
+                        Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:integer"))?),
+                        Occurrence::One,
+                    ),
+                    _ => SequenceType::lub(&ctx, &t1_type, &t2_type)?,
+                };
                 Ok(Expr::Arithmetic(
                     Box::new(t1),
                     op,
                     Box::new(t2),
-                    (SequenceType::lub(&ctx, &t1_type, &t2_type)?, ctx),
+                    (result_type, ctx),
                 ))
             }
             Expr::UnaryMinus(e, _) => {
@@ -1042,7 +1104,6 @@ impl Expr<()> {
             }
             Expr::Quantified(quantifier, bindings, predicate, _) => {
                 let mut curr_ctx = Rc::clone(&ctx);
-                let last_binding = bindings.len() - 1;
                 let mut new_ctx: StaticContext;
                 let mut bs_typed: Vec<(QName, Box<Expr<(SequenceType, Rc<StaticContext>)>>)> =
                     Vec::with_capacity(bindings.len());

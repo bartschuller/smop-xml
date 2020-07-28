@@ -1,23 +1,20 @@
 #![warn(clippy::all)]
 
 #[macro_use]
-extern crate pest_derive;
-#[macro_use]
 extern crate lazy_static;
 
 pub mod ast;
 pub mod context;
-mod debugparser;
 mod functions;
 pub mod parser;
 pub mod runtime;
 mod smop_xmltree;
-mod types;
+pub mod types;
 pub mod xdm;
 mod xpath_functions_31;
 pub use crate::context::StaticContext;
 use crate::runtime::{CompiledExpr, DynamicContext};
-use crate::xdm::{XdmError, XdmResult};
+use crate::xdm::XdmResult;
 use std::rc::Rc;
 use xdm::Xdm;
 

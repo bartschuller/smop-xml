@@ -473,7 +473,6 @@ impl XpathParser {
     // 48
     fn Wildcard(input: Node) -> Result<Wildcard> {
         let sc = input.user_data().clone();
-        let prefix = "";
         Ok(match_nodes!(input.clone().into_children();
             [Star(_)] => Wildcard::Any,
             [NCName(prefix), Star(_)] =>
@@ -568,7 +567,7 @@ impl XpathParser {
     // 67
     fn NamedFunctionRef(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [EQName(qname), IntegerLiteral(i)] => unimplemented!(),
+            [EQName(qname), IntegerLiteral(i)] => Expr::Sequence(vec![], ()), // FIXME
         ))
     }
     // 68
@@ -613,7 +612,7 @@ impl XpathParser {
     // 76
     fn UnaryLookup(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [NamedFunctionRef(e)] => unimplemented!(),
+            [NamedFunctionRef(e)] => Expr::Sequence(vec![], ()), // FIXME
         ))
     }
     // 79
@@ -662,6 +661,7 @@ impl XpathParser {
             [DocumentTest(kt)] => kt,
             [ElementTest(kt)] => kt,
             [TextTest(kt)] => kt,
+            [NamespaceNodeTest(kt)] => kt,
         ))
     }
     // 84
@@ -680,7 +680,7 @@ impl XpathParser {
     }
     // 88
     fn NamespaceNodeTest(input: Node) -> Result<KindTest> {
-        Err(input.error("err:XPST0010 namespace axis is not supported"))
+        Ok(KindTest::NamespaceNode)
     }
     // 94
     // ElementTest = { "element" ~ "(" ~ (ElementNameOrWildcard ~ ("," ~ TypeName ~ "?"?)?)? ~ ")" }
@@ -820,7 +820,6 @@ mod tests {
     use super::StaticContext;
     use crate::ast::{ArithmeticOp, Expr, Literal};
     use crate::context::ExpandedName;
-    use crate::xdm::XdmError;
     use rust_decimal::Decimal;
     use smop_xmltree::nod::QName;
     use std::rc::Rc;

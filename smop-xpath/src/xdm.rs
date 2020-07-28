@@ -8,7 +8,7 @@ use num_traits::cast::FromPrimitive;
 use rust_decimal::prelude::{ToPrimitive, Zero};
 use rust_decimal::Decimal;
 use smop_xmltree::nod;
-use smop_xmltree::nod::{Node, NodeType, QName};
+use smop_xmltree::nod::{Node, QName};
 use std::borrow::Borrow;
 use std::collections::{BTreeSet, HashMap};
 use std::error::Error;
@@ -493,7 +493,7 @@ mod tests {
             Some("http://example.com/".to_string()),
             Some("ex".to_string()),
         );
-        let qname5 = QName::new(
+        let _qname5 = QName::new(
             "local".to_string(),
             Some("http://example.com/".to_string()),
             Some("ex2".to_string()),
