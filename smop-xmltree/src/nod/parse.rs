@@ -186,7 +186,6 @@ struct AttributeData<'input> {
     prefix: StrSpan<'input>,
     local: StrSpan<'input>,
     value: Cow<'input, str>,
-    range: ShortRange,
     value_range: ShortRange,
 }
 
@@ -539,9 +538,9 @@ fn process_tokens<'input>(
                 prefix,
                 local,
                 value,
-                span,
+                span: _,
             } => {
-                process_attribute(prefix, local, value, span, loop_detector, pd, doc, doc_text)?;
+                process_attribute(prefix, local, value, loop_detector, pd, doc, doc_text)?;
             }
             xmlparser::Token::ElementEnd { end, span } => {
                 process_element(*tag_name, end, span, &mut parent_id, pd, doc, doc_text)?;
@@ -577,13 +576,11 @@ fn process_attribute<'input>(
     prefix: StrSpan<'input>,
     local: StrSpan<'input>,
     value: StrSpan<'input>,
-    token_span: StrSpan<'input>,
     loop_detector: &mut LoopDetector,
     pd: &mut ParserData<'input>,
     doc: &mut Document,
     text: &'input str,
 ) -> Result<(), Error> {
-    let range = token_span.range().into();
     let value_range = value.range().into();
     let value = normalize_attribute(text, value, &pd.entities, loop_detector, &mut pd.buffer)?;
 
@@ -642,7 +639,6 @@ fn process_attribute<'input>(
             prefix,
             local,
             value,
-            range,
             value_range,
         });
     }

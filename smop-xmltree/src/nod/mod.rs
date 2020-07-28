@@ -2,7 +2,7 @@ pub mod parse;
 use crate::option_ext::OptionExt;
 use std::cmp::Ordering;
 use std::fmt;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::num::NonZeroU32;
 use std::ops::Deref;
@@ -346,10 +346,20 @@ pub struct PI {
     value: Option<Idx>, // into strings
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Node {
     document: Rc<Document>,
     id: Idx,
+}
+impl Debug for Node {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "node: {} {}",
+            Rc::as_ptr(&self.document) as i64,
+            self.id.0
+        )
+    }
 }
 impl PartialEq for Node {
     fn eq(&self, other: &Self) -> bool {
@@ -415,10 +425,10 @@ impl Node {
     fn last_child(&self) -> Option<Node> {
         self.d().last_child.map(|id| self.document.node(id))
     }
-    fn previous_sibling(&self) -> Option<Node> {
+    pub fn previous_sibling(&self) -> Option<Node> {
         self.d().prev_sibling.map(|id| self.document.node(id))
     }
-    fn next_sibling(&self) -> Option<Node> {
+    pub fn next_sibling(&self) -> Option<Node> {
         self.d()
             .next_subtree
             .map(|id| self.document.node(id))
@@ -635,16 +645,22 @@ pub struct Descendants {
 impl Descendants {
     #[inline]
     fn new(start: &Node) -> Self {
-        Self {
-            doc: Rc::clone(&start.document),
-            current: start.id,
-            until: start.d().next_subtree.unwrap_or_else(|| {
+        let until = if start.node_kind() == NodeKind::Attribute {
+            Idx::new(start.id.get() + 1)
+        } else {
+            start.d().next_subtree.unwrap_or_else(|| {
                 let mut unt = start.document.nodes.len();
                 while start.document.nodes[unt - 1].node_type.is_attribute() {
                     unt -= 1;
                 }
                 Idx::from(unt)
-            }),
+            })
+        };
+
+        Self {
+            doc: Rc::clone(&start.document),
+            current: start.id,
+            until,
         }
     }
 }
