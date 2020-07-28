@@ -21,7 +21,7 @@ pub struct SXDRunner<'a> {
 }
 impl<'a> SXDRunner<'a> {
     pub fn new(package: &'a Package) -> SXDRunner<'a> {
-        let mut runner = SXDRunner { package };
+        let runner = SXDRunner { package };
         runner
     }
     fn xpath_equals(&self, v1: &Value<'a>, v2: &Value<'a>) -> bool {
@@ -40,7 +40,7 @@ impl SXDEnvironment {
     }
 }
 impl Environment for SXDEnvironment {
-    fn set_context_document(&mut self, file: &str) {
+    fn set_context_document(&mut self, _file: &str) {
         unimplemented!()
     }
 }
@@ -88,15 +88,15 @@ impl<'a> TestRunner for SXDRunner<'a> {
     fn check(&self, result: &Result<Self::V, TestError>, expected: &Assertion) -> Option<String> {
         match expected {
             Assertion::Assert(_) => Some("wrong".to_string()),
-            Assertion::AssertEq(valString) => match result {
+            Assertion::AssertEq(val_string) => match result {
                 Ok(v) => {
-                    let val = Value::String(valString.to_string());
+                    let val = Value::String(val_string.to_string());
                     if self.xpath_equals(v, &val) {
                         None
                     } else {
                         Some(format!(
                             "expected \"{}\", got \"{}\"",
-                            valString,
+                            val_string,
                             v.string()
                         ))
                     }
@@ -143,7 +143,7 @@ impl<'a> TestRunner for SXDRunner<'a> {
             },
             Assertion::Error(code) => match result {
                 Ok(_) => Some(format!("Expected error code {}", code)),
-                Err(e) => {
+                Err(_e) => {
                     // TODO println!("Expected error code {}, got {:?}", code, e);
                     None
                 }

@@ -1,7 +1,6 @@
 use crate::model::{Assertion, SpecType};
 use std::error::Error;
 use std::fmt;
-use std::rc::Rc;
 
 pub trait XpathValue {}
 pub trait Environment {

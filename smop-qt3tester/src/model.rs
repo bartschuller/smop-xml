@@ -1,6 +1,6 @@
 use roxmltree::Node;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use Dependency::{
     Calendar, DefaultLanguage, Feature, FormatIntegerSequence, Language, Limits, Spec,
     UnicodeNormalizationForm, UnicodeVersion, XmlVersion, XsdVersion,
@@ -188,7 +188,7 @@ impl TestCase {
             .children()
             .find_map(|n| {
                 if n.has_tag_name("test") {
-                    n.attribute("file").map(|f| "FILE").or(n.text())
+                    n.attribute("file").map(|_f| "FILE").or(n.text())
                 } else {
                     None
                 }

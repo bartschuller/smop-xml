@@ -58,9 +58,14 @@ fn main() {
 
     println!("{} envs, {} test sets", envs.len(), test_sets.len());
 
-    //let package = Package::new();
-    //let sxd_runner = Box::new(SXDRunner::new(&package));
     let smop_runner = Box::new(SmopRunner::new());
     let driver = Driver::new(smop_runner);
     driver.run_tests(&environments, &test_sets);
+
+    if false {
+        let package = Package::new();
+        let sxd_runner = Box::new(SXDRunner::new(&package));
+        let driver = Driver::new(sxd_runner);
+        driver.run_tests(&environments, &test_sets);
+    }
 }

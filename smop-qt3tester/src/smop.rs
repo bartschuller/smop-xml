@@ -1,10 +1,11 @@
 use crate::model::{Assertion, SpecType};
 use crate::runner::{Environment, TestError, TestRunner, XpathValue};
 use itertools::Itertools;
-use smop_xmltree::nod::Document;
+use smop_xmltree::nod::{Document, QName};
 use std::rc::Rc;
 use xpath::ast::Comp;
 use xpath::runtime::DynamicContext;
+use xpath::types::{Item, Occurrence, SequenceType};
 use xpath::xdm::{NodeSeq, Xdm, XdmError};
 use xpath::{StaticContext, Xpath};
 
@@ -95,10 +96,34 @@ impl TestRunner for SmopRunner {
 
     fn check(&self, result: &Result<Self::V, TestError>, expected: &Assertion) -> Option<String> {
         match expected {
-            Assertion::Assert(_) => Some("wrong".to_string()),
-            Assertion::AssertEq(valString) => match result {
+            Assertion::Assert(xpath) => match result {
                 Ok(v) => {
-                    let val = Xpath::compile(&self.static_context, valString)
+                    let result_q = QName::new("result".to_string(), None, None);
+                    let mut static_context = (&*self.static_context).clone();
+                    static_context.set_variable_type(
+                        &result_q,
+                        SequenceType::Item(Item::Item, Occurrence::ZeroOrMore),
+                    );
+                    let result_context = self.context.clone_with_variable(result_q, v.clone());
+                    let assertion = Xpath::compile(&Rc::new(static_context), xpath)
+                        .unwrap()
+                        .evaluate(&result_context)
+                        .unwrap();
+                    if assertion.boolean().unwrap() {
+                        None
+                    } else {
+                        Some(format!(
+                            "expected \"{}\" to be true, got \"{}\"",
+                            xpath,
+                            v.string().unwrap()
+                        ))
+                    }
+                }
+                Err(e) => Some(e.to_string()),
+            },
+            Assertion::AssertEq(val_string) => match result {
+                Ok(v) => {
+                    let val = Xpath::compile(&self.static_context, val_string)
                         .unwrap()
                         .evaluate(&self.context)
                         .unwrap();
@@ -107,7 +132,7 @@ impl TestRunner for SmopRunner {
                     } else {
                         Some(format!(
                             "expected \"{}\", got \"{}\"",
-                            valString,
+                            val_string,
                             v.string().unwrap()
                         ))
                     }
@@ -120,7 +145,14 @@ impl TestRunner for SmopRunner {
             Assertion::AssertXml { .. } => Some("wrong".to_string()),
             Assertion::SerializationMatches { .. } => Some("wrong".to_string()),
             Assertion::AssertSerializationError(_) => Some("wrong".to_string()),
-            Assertion::AssertEmpty => Some("wrong".to_string()),
+            Assertion::AssertEmpty => match result {
+                Ok(Xdm::Sequence(v)) if v.is_empty() => None,
+                Ok(x) => Some(format!(
+                    "expected an empty sequence, got {}",
+                    x.string().unwrap()
+                )),
+                Err(e) => Some(e.to_string()),
+            },
             Assertion::AssertType(_) => Some("wrong".to_string()),
             Assertion::AssertTrue => match result {
                 Ok(v) => {
@@ -161,12 +193,18 @@ impl TestRunner for SmopRunner {
                 }
                 Err(e) => Some(e.to_string()),
             },
-            Assertion::Error(code) => match result {
-                Ok(_) => Some(format!("Expected error code {}", code)),
-                Err(e) => {
-                    // TODO println!("Expected error code {}, got {:?}", code, e);
-                    None
+            Assertion::Error(expected_code) => match result {
+                Err(TestError::ErrorCode(code, message)) => {
+                    if code == expected_code {
+                        None
+                    } else {
+                        Some(format!(
+                            "Expected error code {}, got {} ({})",
+                            expected_code, code, message
+                        ))
+                    }
                 }
+                _ => Some(format!("Expected error code {}", expected_code)),
             },
             Assertion::AnyOf(v) => {
                 let all_checks = v.iter().map(|a| self.check(result, a));
