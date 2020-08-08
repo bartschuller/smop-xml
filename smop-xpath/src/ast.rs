@@ -590,7 +590,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         .ok_or(XdmError::xqtm("XPDY0002", "context item is undefined"))?;
                     let ro_node = match &ci.sequence {
                         Xdm::NodeSeq(NodeSeq::RoXml(n)) => Ok(n),
-                        _ => Err(XdmError::xqtm("", "didn't get a roxml node")),
+                        _ => Err(XdmError::xqtm("XPTY0020", "context item is not a node")),
                     }?;
                     let node_iterator: Box<dyn Iterator<Item = (usize, Node)>> = match axis {
                         Axis::Child => Box::new(
@@ -664,11 +664,17 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         ),
                         _ => unimplemented!("axis {}", axis),
                     };
+                    println!("start result_nodes");
                     let result_nodes: Vec<_> = node_iterator
                         .filter_map(|(pos, result_node)| {
+                            println!("pos={}", pos);
                             let node = Xdm::NodeSeq(NodeSeq::RoXml(result_node));
                             let mut include = true;
                             let context = c.clone_with_focus(node, pos);
+                            // FIXME pos needs to change if an earlier predicate filters out some nodes
+                            // //foo[@bar=1][5] needs to count not all foos but the filtered ones.
+                            //
+                            // in other words: put the predicate loop outside, not the node loop.
                             for predicate in &predicates {
                                 let pred = predicate.execute(&context).unwrap();
                                 match pred {
@@ -1247,7 +1253,7 @@ impl<T> Display for Expr<T> {
             Expr::UnaryMinus(e, _) => write!(f, "-{}", e),
             Expr::InstanceOf(e, t, _) => write!(f, "{} instance of {}", e, t),
             Expr::TreatAs(e, t, _) => write!(f, "{} treat as {}", e, t),
-            Expr::Path(e1, e2, _) => write!(f, "{}/{}", e1, e2),
+            Expr::Path(e1, e2, _) => write!(f, "({}/{})", e1, e2),
             Expr::Step(a, nt, ps, _) => {
                 write!(f, "{}::{}", a, nt)?;
                 for p in ps {

@@ -8,6 +8,7 @@ use std::rc::Rc;
 #[derive(Clone)]
 pub struct Focus {
     pub sequence: Xdm,
+    /// 0-based position of focus item
     pub position: usize,
 }
 

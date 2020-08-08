@@ -382,14 +382,25 @@ impl XpathParser {
     fn SlashStep(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [Slash(_), StepExpr(e)] => e,
-            [SlashSlash(_), StepExpr(e)] => e, // FIXME
+            [SlashSlash(_), StepExpr(e)] => {
+                Expr::Path(
+                    Box::new(Expr::Step(
+                                Axis::DescendantOrSelf,
+                                NodeTest::KindTest(KindTest::AnyKind),
+                                vec![],
+                                (),
+                            )),
+                    Box::new(e),
+                    ()
+                )
+            }
         ))
     }
-    fn Slash(_input: Node) -> Result<bool> {
-        Ok(false)
+    fn Slash(_input: Node) -> Result<()> {
+        Ok(())
     }
-    fn SlashSlash(_input: Node) -> Result<bool> {
-        Ok(true)
+    fn SlashSlash(_input: Node) -> Result<()> {
+        Ok(())
     }
     // 38
     fn StepExpr(input: Node) -> Result<Expr<()>> {
@@ -1304,10 +1315,24 @@ mod tests {
     #[test]
     fn slashslash1() {
         let context: StaticContext = Default::default();
-        let input = "fn:count(//center/child::*)";
+        let input = "//center/child::*";
         let output = context.parse(input);
         assert_eq!(
-            "fn:count(fn:root(self::node()) treat as document-node()/descendant-or-self::node()/child::center/child::*)",
+            "(((fn:root(self::node()) treat as document-node()/descendant-or-self::node())/child::center)/child::*)",
+            //"fn:root(self::node()) treat as document-node()/descendant-or-self::node()/child::center/child::*",
+            format!("{}", output.unwrap()))
+    }
+    #[test]
+    fn slashslash2() {
+        let context: StaticContext = Default::default();
+        //let input = "(fn:root(self::node()) treat as document-node())/descendant-or-self::node()/center/child::*";
+        let input = "//center/child::*";
+        let output = context.parse(input);
+        println!("{:?}", output.unwrap());
+        panic!();
+        assert_eq!(
+            "(((fn:root(self::node()) treat as document-node()/descendant-or-self::node())/child::center)/child::*)",
+            //"fn:root(self::node()) treat as document-node()/descendant-or-self::node()/child::center/child::*",
             format!("{}", output.unwrap()))
     }
     #[test]

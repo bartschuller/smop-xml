@@ -375,4 +375,46 @@ mod tests {
         assert_eq!(result.string_joined()?.as_str(), "1 2");
         Ok(())
     }
+    #[test]
+    fn for2() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let doc = r#"<r><a><e>1</e><b><e>2</e></b></a><e>3</e></r>"#;
+        let context = static_context.new_dynamic_context().with_xml(doc)?;
+        let xpath = Xpath::compile(&static_context, "for $h in (/r) return $h//e")?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result.string_joined()?.as_str(), "1 2 3");
+        Ok(())
+    }
+    #[test]
+    fn position1() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let doc = r#"<r><a><e>1</e><b><e>2</e></b></a><e>3</e></r>"#;
+        let context = static_context.new_dynamic_context().with_xml(doc)?;
+        let output = static_context.parse("//e/position()");
+        println!("{:?}", output.unwrap());
+        panic!();
+        let xpath = Xpath::compile(&static_context, "//e/position()")?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result.string_joined()?.as_str(), "1 2 3");
+        Ok(())
+    }
+    #[test]
+    fn path_pred1() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let doc = r#"<r><a><e>1</e><b><e>2</e></b></a><e>3</e></r>"#;
+        let context = static_context.new_dynamic_context().with_xml(doc)?;
+        let xpath = Xpath::compile(&static_context, "/r/e[position() eq 1]")?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result.string()?.as_str(), "3");
+        let xpath = Xpath::compile(&static_context, "/r/e[1]")?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result.string()?.as_str(), "3");
+        let xpath = Xpath::compile(&static_context, "//e[position() eq 2]")?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result.string()?.as_str(), "2");
+        let xpath = Xpath::compile(&static_context, "//e[2]")?;
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(result.string()?.as_str(), "2");
+        Ok(())
+    }
 }

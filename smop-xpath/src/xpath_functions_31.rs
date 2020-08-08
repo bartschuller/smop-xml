@@ -175,6 +175,17 @@ pub(crate) fn register(ctx: &mut StaticContext) {
         code: fn_empty_1,
     };
     ctx.add_function(qname, fn_empty_1_meta);
+
+    let qname = ctx.qname("fn", "position").unwrap();
+    let fn_position_0_meta = Function {
+        args: vec![],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_integer).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_position_0,
+    };
+    ctx.add_function(qname, fn_position_0_meta);
 }
 
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
@@ -267,7 +278,15 @@ pub(crate) fn fn_empty_1() -> CompiledFunction {
         _ => Ok(Xdm::Boolean(false)),
     })
 }
-
+pub(crate) fn fn_position_0() -> CompiledFunction {
+    CompiledFunction::new(|ctx, _args| match &ctx.focus {
+        Some(focus) => Ok(Xdm::Integer(focus.position as i64 + 1)),
+        None => Err(XdmError::xqtm(
+            "XPDY0002",
+            "context item not defined in position()",
+        )),
+    })
+}
 pub(crate) fn string_compare(s1: &str, s2: &str) -> i8 {
     s1.cmp(s2) as i8
 }
