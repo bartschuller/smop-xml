@@ -1253,7 +1253,7 @@ impl<T> Display for Expr<T> {
             Expr::UnaryMinus(e, _) => write!(f, "-{}", e),
             Expr::InstanceOf(e, t, _) => write!(f, "{} instance of {}", e, t),
             Expr::TreatAs(e, t, _) => write!(f, "{} treat as {}", e, t),
-            Expr::Path(e1, e2, _) => write!(f, "({}/{})", e1, e2),
+            Expr::Path(e1, e2, _) => write!(f, "{}/{}", e1, e2),
             Expr::Step(a, nt, ps, _) => {
                 write!(f, "{}::{}", a, nt)?;
                 for p in ps {

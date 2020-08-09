@@ -287,6 +287,11 @@ pub(crate) fn fn_position_0() -> CompiledFunction {
         )),
     })
 }
+pub(crate) fn fn_trace_1() -> CompiledFunction {
+    CompiledFunction::new(|ctx, args|{
+        let val = args.
+    })
+}
 pub(crate) fn string_compare(s1: &str, s2: &str) -> i8 {
     s1.cmp(s2) as i8
 }

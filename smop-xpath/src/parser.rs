@@ -4,9 +4,11 @@ use crate::ast::{
 use crate::context::StaticContext;
 use crate::types::{Item, KindTest, Occurrence, SequenceType};
 use crate::xdm::XdmError;
+use itertools::Itertools;
 use pest_consume::*;
 use rust_decimal::Decimal;
 use smop_xmltree::nod::QName;
+use std::iter;
 use std::str::FromStr;
 
 pub type Result<T> = std::result::Result<T, pest::error::Error<Rule>>;
@@ -44,6 +46,7 @@ pub(crate) fn parse(ctx: &StaticContext, input: &str) -> Result<Expr<()>> {
 pub struct XpathParser;
 
 #[pest_consume::parser]
+#[allow(non_snake_case)]
 impl XpathParser {
     // Numbers refer to the XPath 3.1 grammar
     // 1
@@ -337,31 +340,17 @@ impl XpathParser {
     // 36
     fn PathExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [InitialSlashSlash(_), RelativePathExpr(e)] => {
-                Expr::Path(
-                    Box::new(Expr::Path(
-                        Box::new(slash_ast()),
-                        Box::new(Expr::Step(
-                            Axis::DescendantOrSelf,
-                            NodeTest::KindTest(KindTest::AnyKind),
-                            vec![],
-                            (),
-                        )),
-                        (),
-                    )),
-                    Box::new(e),
-                    (),
-                )
+            [InitialSlashSlash(_), RelativePathExpr(mut v)] => {
+                v.insert(0, slash_ast());
+                v.insert(1, slash_slash_ast());
+                path(v)
             },
-            [InitialSlash(_), RelativePathExpr(e)] => {
-                Expr::Path(
-                    Box::new(slash_ast()),
-                    Box::new(e),
-                    ()
-                )
+            [InitialSlash(_), RelativePathExpr(mut v)] => {
+                v.insert(0, slash_ast());
+                path(v)
             },
             [InitialSlash(_)] => slash_ast(),
-            [RelativePathExpr(e)] => e, // FIXME
+            [RelativePathExpr(v)] => path(v), // FIXME
         ))
     }
     fn InitialSlash(_input: Node) -> Result<()> {
@@ -371,28 +360,21 @@ impl XpathParser {
         Ok(())
     }
     // 37
-    fn RelativePathExpr(input: Node) -> Result<Expr<()>> {
+    fn RelativePathExpr(input: Node) -> Result<Vec<Expr<()>>> {
         Ok(match_nodes!(input.into_children();
-            [StepExpr(e)] => e,
+            [StepExpr(e)] => vec![e],
             [StepExpr(e), SlashStep(v)..] => {
-                v.into_iter().fold(e, |e1, e2|Expr::Path(Box::new(e1), Box::new(e2), ()))
+                let mut v: Vec<Expr<()>> = v.flatten().collect();
+                v.insert(0, e);
+                v
             }
         ))
     }
-    fn SlashStep(input: Node) -> Result<Expr<()>> {
+    fn SlashStep(input: Node) -> Result<Vec<Expr<()>>> {
         Ok(match_nodes!(input.into_children();
-            [Slash(_), StepExpr(e)] => e,
+            [Slash(_), StepExpr(e)] => vec![e],
             [SlashSlash(_), StepExpr(e)] => {
-                Expr::Path(
-                    Box::new(Expr::Step(
-                                Axis::DescendantOrSelf,
-                                NodeTest::KindTest(KindTest::AnyKind),
-                                vec![],
-                                (),
-                            )),
-                    Box::new(e),
-                    ()
-                )
+                vec![slash_slash_ast(), e]
             }
         ))
     }
@@ -809,6 +791,12 @@ impl XpathParser {
     }
 }
 
+fn path(v: Vec<Expr<()>>) -> Expr<()> {
+    v.into_iter()
+        .fold1(|e1, e2| Expr::Path(Box::new(e1), Box::new(e2), ()))
+        .unwrap()
+}
+
 fn slash_ast() -> Expr<()> {
     Expr::TreatAs(
         Box::new(Expr::FunctionCall(
@@ -822,6 +810,15 @@ fn slash_ast() -> Expr<()> {
             (),
         )),
         SequenceType::Item(Item::KindTest(KindTest::Document), Occurrence::One),
+        (),
+    )
+}
+
+fn slash_slash_ast() -> Expr<()> {
+    Expr::Step(
+        Axis::DescendantOrSelf,
+        NodeTest::KindTest(KindTest::AnyKind),
+        vec![],
         (),
     )
 }
@@ -1318,8 +1315,7 @@ mod tests {
         let input = "//center/child::*";
         let output = context.parse(input);
         assert_eq!(
-            "(((fn:root(self::node()) treat as document-node()/descendant-or-self::node())/child::center)/child::*)",
-            //"fn:root(self::node()) treat as document-node()/descendant-or-self::node()/child::center/child::*",
+            "fn:root(self::node()) treat as document-node()/descendant-or-self::node()/child::center/child::*",
             format!("{}", output.unwrap()))
     }
     #[test]
@@ -1328,11 +1324,8 @@ mod tests {
         //let input = "(fn:root(self::node()) treat as document-node())/descendant-or-self::node()/center/child::*";
         let input = "//center/child::*";
         let output = context.parse(input);
-        println!("{:?}", output.unwrap());
-        panic!();
         assert_eq!(
-            "(((fn:root(self::node()) treat as document-node()/descendant-or-self::node())/child::center)/child::*)",
-            //"fn:root(self::node()) treat as document-node()/descendant-or-self::node()/child::center/child::*",
+            "fn:root(self::node()) treat as document-node()/descendant-or-self::node()/child::center/child::*",
             format!("{}", output.unwrap()))
     }
     #[test]
