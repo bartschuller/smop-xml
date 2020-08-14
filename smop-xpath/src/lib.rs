@@ -406,7 +406,10 @@ mod tests {
         let xpath = Xpath::compile(&static_context, "/r/e[1]")?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(result.string()?.as_str(), "3");
-        let xpath = Xpath::compile(&static_context, "//e[position() eq 2]")?;
+        let xpath = Xpath::compile(
+            &static_context,
+            "//e[trace(position(), 'pos in pred:') eq 2]",
+        )?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(result.string()?.as_str(), "2");
         let xpath = Xpath::compile(&static_context, "//e[2]")?;

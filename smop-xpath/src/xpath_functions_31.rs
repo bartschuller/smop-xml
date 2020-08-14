@@ -186,6 +186,29 @@ pub(crate) fn register(ctx: &mut StaticContext) {
         code: fn_position_0,
     };
     ctx.add_function(qname, fn_position_0_meta);
+
+    let qname = ctx.qname("fn", "trace").unwrap();
+    let fn_trace_1_meta = Function {
+        args: vec![SequenceType::Item(
+            Item::KindTest(KindTest::AnyKind),
+            Occurrence::ZeroOrMore,
+        )],
+        type_: SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore),
+        code: fn_trace_1,
+    };
+    ctx.add_function(qname.clone(), fn_trace_1_meta);
+    let fn_trace_2_meta = Function {
+        args: vec![
+            SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore),
+            SequenceType::Item(
+                Item::AtomicOrUnion(ctx.schema_type(&xs_string).unwrap()),
+                Occurrence::One,
+            ),
+        ],
+        type_: SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore),
+        code: fn_trace_2,
+    };
+    ctx.add_function(qname, fn_trace_2_meta);
 }
 
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
@@ -288,8 +311,18 @@ pub(crate) fn fn_position_0() -> CompiledFunction {
     })
 }
 pub(crate) fn fn_trace_1() -> CompiledFunction {
-    CompiledFunction::new(|ctx, args|{
-        let val = args.
+    CompiledFunction::new(|ctx, mut args| {
+        let val = args.remove(0);
+        ctx.trace(&val);
+        Ok(val)
+    })
+}
+pub(crate) fn fn_trace_2() -> CompiledFunction {
+    CompiledFunction::new(|ctx, mut args| {
+        let val = args.remove(0);
+        let label = args.get(0).unwrap();
+        ctx.trace_label(&val, label)?;
+        Ok(val)
     })
 }
 pub(crate) fn string_compare(s1: &str, s2: &str) -> i8 {

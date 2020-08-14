@@ -1,4 +1,4 @@
-use crate::xdm::{NodeSeq, Xdm, XdmResult};
+use crate::xdm::{NodeSeq, Xdm, XdmError, XdmResult};
 use crate::StaticContext;
 
 use im::HashMap;
@@ -46,6 +46,21 @@ impl DynamicContext {
     }
     pub fn set_variable(&mut self, qname: QName, value: Xdm) {
         self.variables.insert(qname, value);
+    }
+
+    pub fn trace(&self, value: &Xdm) {
+        match value.string_joined() {
+            Ok(s) => println!("{}", s),
+            Err(_) => println!("{:?}", value),
+        }
+    }
+    pub fn trace_label(&self, value: &Xdm, label: &Xdm) -> XdmResult<()> {
+        let label_string = label.string_joined()?;
+        match value.string_joined() {
+            Ok(s) => println!("{} {}", label_string, s),
+            Err(_) => println!("{} {:?}", label_string, value),
+        }
+        Ok(())
     }
 }
 pub struct CompiledExpr(Box<dyn for<'context> Fn(&'context DynamicContext) -> XdmResult<Xdm>>);
