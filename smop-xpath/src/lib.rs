@@ -4,14 +4,17 @@
 extern crate lazy_static;
 
 pub mod ast;
+mod compiler;
 pub mod context;
 mod functions;
 pub mod parser;
 pub mod runtime;
 mod smop_xmltree;
+mod typer;
 pub mod types;
 pub mod xdm;
 mod xpath_functions_31;
+
 pub use crate::context::StaticContext;
 use crate::runtime::{CompiledExpr, DynamicContext};
 use crate::xdm::XdmResult;
@@ -39,7 +42,7 @@ mod tests {
     use crate::runtime::DynamicContext;
     use crate::types::Item;
     use crate::types::{Occurrence, SequenceType};
-    use crate::xdm::{NodeSeq, Xdm, XdmResult};
+    use crate::xdm::{Xdm, XdmResult};
     use crate::{StaticContext, Xpath};
     use rust_decimal::Decimal;
     use smop_xmltree::nod::{Document, QName};
@@ -113,7 +116,7 @@ mod tests {
         let context: DynamicContext = static_context.new_dynamic_context();
         let xpath = Xpath::compile(&static_context, "()")?;
         let result = xpath.evaluate(&context)?;
-        assert_eq!(result, Xdm::Sequence(vec![]));
+        assert_eq!(result, Xdm::EmptySequence);
         let xpath = Xpath::compile(&static_context, "(3)")?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(result, Xdm::Integer(3));
@@ -227,7 +230,7 @@ mod tests {
         </root>"##;
         let rodoc = Document::parse(doc)?;
         let context: DynamicContext = static_context.new_dynamic_context();
-        let xdm = Xdm::NodeSeq(NodeSeq::RoXml(rodoc.root()));
+        let xdm = Xdm::Node(rodoc.root());
         let context = context.clone_with_focus(xdm, 0);
         //let xpath = Xpath::compile(&static_context, "/root/mychild/@numattr")?;
         let xpath = Xpath::compile(&static_context, "string-join(child::root/child::mychild)")?;
@@ -406,15 +409,62 @@ mod tests {
         let xpath = Xpath::compile(&static_context, "/r/e[1]")?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(result.string()?.as_str(), "3");
-        let xpath = Xpath::compile(
-            &static_context,
-            "//e[trace(position(), 'pos in pred:') eq 2]",
-        )?;
+        let xpath = Xpath::compile(&static_context, "/descendant::e[2]")?;
         let result = xpath.evaluate(&context)?;
         assert_eq!(result.string()?.as_str(), "2");
         let xpath = Xpath::compile(&static_context, "//e[2]")?;
         let result = xpath.evaluate(&context)?;
-        assert_eq!(result.string()?.as_str(), "2");
+        assert_eq!(result.string()?.as_str(), "4");
+        Ok(())
+    }
+
+    #[test]
+    fn arrow1() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let xpath = Xpath::compile(&static_context, "'3' => concat('4') => concat('5', '6')")?;
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let result = xpath.evaluate(&context)?;
+        assert_eq!("3456", result.string()?);
+        Ok(())
+    }
+    #[test]
+    fn range1() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let input = r#"string-join(1 to 5)"#;
+        let xpath = Xpath::compile(&static_context, input)?;
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let result = xpath.evaluate(&context)?;
+        assert_eq!("12345", result.string()?);
+        Ok(())
+    }
+    #[test]
+    fn simple_map1() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let input = r#"string-join((1 to 5)!"*")"#;
+        let xpath = Xpath::compile(&static_context, input)?;
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let result = xpath.evaluate(&context)?;
+        assert_eq!("*****", result.string()?);
+        Ok(())
+    }
+    #[test]
+    fn simple_map2() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let input = r#"2!(.*.)"#;
+        let xpath = Xpath::compile(&static_context, input)?;
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let result = xpath.evaluate(&context)?;
+        assert_eq!(4, result.integer()?);
+        Ok(())
+    }
+    #[test]
+    fn simple_map3() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let input = r#"(1 to 10)!(.*.)"#;
+        let xpath = Xpath::compile(&static_context, input)?;
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let result = xpath.evaluate(&context)?;
+        assert_eq!("1 4 9 16 25 36 49 64 81 100", result.string_joined()?);
         Ok(())
     }
 }

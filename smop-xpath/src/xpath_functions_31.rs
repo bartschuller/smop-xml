@@ -1,7 +1,7 @@
 use crate::functions::{CompiledFunction, Function};
 use crate::types::{Item, KindTest};
 use crate::types::{Occurrence, SequenceType};
-use crate::xdm::{NodeSeq, Xdm, XdmError, XdmResult};
+use crate::xdm::{Xdm, XdmError, XdmResult};
 use crate::StaticContext;
 
 use rust_decimal::Decimal;
@@ -209,6 +209,29 @@ pub(crate) fn register(ctx: &mut StaticContext) {
         code: fn_trace_2,
     };
     ctx.add_function(qname, fn_trace_2_meta);
+
+    let qname = ctx.qname("fn", "string-length").unwrap();
+    let fn_string_length_0_meta = Function {
+        args: vec![],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_integer).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_string_length_0,
+    };
+    ctx.add_function(qname.clone(), fn_string_length_0_meta);
+    let fn_string_length_1_meta = Function {
+        args: vec![SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_string).unwrap()),
+            Occurrence::Optional,
+        )],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_integer).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_string_length_1,
+    };
+    ctx.add_function(qname, fn_string_length_1_meta);
 }
 
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
@@ -233,8 +256,8 @@ pub(crate) fn fn_false_0() -> CompiledFunction {
 }
 pub(crate) fn fn_root_1() -> CompiledFunction {
     CompiledFunction::new(|_ctx, args| {
-        if let Some(Xdm::NodeSeq(NodeSeq::RoXml(oh))) = args.first() {
-            Ok(Xdm::NodeSeq(NodeSeq::RoXml(oh.document().root())))
+        if let Some(Xdm::Node(oh)) = args.first() {
+            Ok(Xdm::Node(oh.document().root()))
         } else {
             unreachable!()
         }
@@ -265,7 +288,7 @@ pub(crate) fn fn_concat_2() -> CompiledFunction {
 pub(crate) fn xs_double_1() -> CompiledFunction {
     CompiledFunction::new(|_ctx, args| {
         args.first()
-            .map_or(Ok(Xdm::Sequence(vec![])), |x| x.double().map(Xdm::Double))
+            .map_or(Ok(Xdm::EmptySequence), |x| x.double().map(Xdm::Double))
     })
 }
 pub(crate) fn fn_string_0() -> CompiledFunction {
@@ -286,7 +309,7 @@ pub(crate) fn fn_string_1() -> CompiledFunction {
 }
 pub(crate) fn fn_name_1() -> CompiledFunction {
     CompiledFunction::new(|_ctx, args| match args.first().unwrap() {
-        Xdm::NodeSeq(NodeSeq::RoXml(node)) => Ok(Xdm::String(
+        Xdm::Node(node) => Ok(Xdm::String(
             node.node_name().map_or("".to_string(), |q| q.to_string()),
         )),
         _ => Err(XdmError::xqtm(
@@ -297,7 +320,7 @@ pub(crate) fn fn_name_1() -> CompiledFunction {
 }
 pub(crate) fn fn_empty_1() -> CompiledFunction {
     CompiledFunction::new(|_ctx, args| match args.first().unwrap() {
-        Xdm::Sequence(v) if v.is_empty() => Ok(Xdm::Boolean(true)),
+        Xdm::EmptySequence => Ok(Xdm::Boolean(true)),
         _ => Ok(Xdm::Boolean(false)),
     })
 }
@@ -325,6 +348,18 @@ pub(crate) fn fn_trace_2() -> CompiledFunction {
         Ok(val)
     })
 }
+pub(crate) fn fn_string_length_0() -> CompiledFunction {
+    CompiledFunction::new(|ctx, _args| match &ctx.focus {
+        Some(focus) => Ok(Xdm::Integer(focus.sequence.string()?.chars().count() as i64)),
+        None => Err(XdmError::xqtm(
+            "XPDY0002",
+            "context item not defined in string-length()",
+        )),
+    })
+}
+pub(crate) fn fn_string_length_1() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, args| Ok(Xdm::Integer(args[0].string()?.chars().count() as i64)))
+}
 pub(crate) fn string_compare(s1: &str, s2: &str) -> i8 {
     s1.cmp(s2) as i8
 }
@@ -342,7 +377,7 @@ pub(crate) fn integer_compare(i1: &i64, i2: &i64) -> i8 {
 mod tests {
     use crate::runtime::DynamicContext;
     use crate::xdm::{Xdm, XdmResult};
-    use crate::xpath_functions_31::{fn_boolean_1, fn_not_1, xs_double_1};
+    use crate::xpath_functions_31::{fn_boolean_1, fn_not_1, fn_string_length_1, xs_double_1};
     use crate::StaticContext;
     use std::f64::NAN;
     use std::rc::Rc;
@@ -403,6 +438,18 @@ mod tests {
         let args = vec![Xdm::String("-0.5".to_string())];
         let result = xs_double_1().execute(&ctx, args);
         assert_eq!(result, Ok(Xdm::Double(-0.5)));
+        Ok(())
+    }
+    #[test]
+    fn string_length1() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let ctx: DynamicContext = static_context.new_dynamic_context();
+        let args = vec![Xdm::Integer(330)];
+        let result = fn_string_length_1().execute(&ctx, args);
+        assert_eq!(result, Ok(Xdm::Integer(3)));
+        let args = vec![Xdm::String("😎".to_string())];
+        let result = fn_string_length_1().execute(&ctx, args);
+        assert_eq!(result, Ok(Xdm::Integer(1)));
         Ok(())
     }
 }

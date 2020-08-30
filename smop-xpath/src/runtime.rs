@@ -1,4 +1,4 @@
-use crate::xdm::{NodeSeq, Xdm, XdmError, XdmResult};
+use crate::xdm::{Xdm, XdmResult};
 use crate::StaticContext;
 
 use im::HashMap;
@@ -22,7 +22,7 @@ pub struct DynamicContext {
 impl DynamicContext {
     pub fn with_xml(&self, xml: &str) -> XdmResult<Self> {
         let doc = Document::parse(xml)?;
-        let xdm = Xdm::NodeSeq(NodeSeq::RoXml(doc.root()));
+        let xdm = Xdm::Node(doc.root());
         Ok(self.clone_with_focus(xdm, 0))
     }
     pub fn clone_with_focus(&self, sequence: Xdm, position: usize) -> Self {

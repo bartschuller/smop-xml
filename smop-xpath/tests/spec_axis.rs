@@ -1,7 +1,7 @@
 use smop_xmltree::nod::Document;
 use std::rc::Rc;
 use xpath::runtime::DynamicContext;
-use xpath::xdm::{NodeSeq, Xdm, XdmResult};
+use xpath::xdm::{Xdm, XdmResult};
 use xpath::{StaticContext, Xpath};
 
 static TREE_REPEAT: &str = include_str!("TreeRepeat.xml");
@@ -10,7 +10,7 @@ static TREE_COMPASS: &str = include_str!("TreeCompass.xml");
 #[test]
 fn axis1() -> XdmResult<()> {
     let static_context: Rc<StaticContext> = Rc::new(Default::default());
-    let xdm = Xdm::NodeSeq(NodeSeq::RoXml(Document::parse(TREE_REPEAT).unwrap().root()));
+    let xdm = Xdm::Node(Document::parse(TREE_REPEAT).unwrap().root());
     let context: DynamicContext = static_context
         .new_dynamic_context()
         .clone_with_focus(xdm, 0);
@@ -26,9 +26,7 @@ fn axis1() -> XdmResult<()> {
 #[test]
 fn axis2() -> XdmResult<()> {
     let static_context: Rc<StaticContext> = Rc::new(Default::default());
-    let xdm = Xdm::NodeSeq(NodeSeq::RoXml(
-        Document::parse(TREE_COMPASS).unwrap().root(),
-    ));
+    let xdm = Xdm::Node(Document::parse(TREE_COMPASS).unwrap().root());
     let context: DynamicContext = static_context
         .new_dynamic_context()
         .clone_with_focus(xdm, 0);

@@ -8,7 +8,6 @@ use itertools::Itertools;
 use pest_consume::*;
 use rust_decimal::Decimal;
 use smop_xmltree::nod::QName;
-use std::iter;
 use std::str::FromStr;
 
 pub type Result<T> = std::result::Result<T, pest::error::Error<Rule>>;
@@ -283,7 +282,8 @@ impl XpathParser {
     // 29
     fn ArrowExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [UnaryExpr(e)] => e, // FIXME
+            [UnaryExpr(e)] => e,
+            [UnaryExpr(e), ArrowFunctionSpecifier(fs)..] => arrow_exprs(e, fs.collect()),
         ))
     }
     // 30
@@ -334,7 +334,9 @@ impl XpathParser {
     // 35
     fn SimpleMapExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [PathExpr(e)] => e, // FIXME
+            [PathExpr(es)..] => es.into_iter()
+                                  .fold1(|e1, e2| Expr::SimpleMap(Box::new(e1), Box::new(e2), ()))
+                                  .unwrap(),
         ))
     }
     // 36
@@ -484,8 +486,17 @@ impl XpathParser {
     fn PostfixExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [PrimaryExpr(e)] => e,
-            [PrimaryExpr(e), Predicate(pe)] => Expr::Predicate(Box::new(e), Box::new(pe), ()),
+            [PrimaryExpr(e), Predicate(pe)] => Expr::Filter(Box::new(e), Box::new(pe), ()),
             // FIXME generalize for more predicates and other stuff
+        ))
+    }
+    // 50
+    fn ArgumentList(input: Node) -> Result<Vec<Expr<()>>> {
+        Ok(match_nodes!(input.into_children();
+            [ExprSingle(a)..] => {
+                let args: Vec<_> = a.collect();
+                args
+            },
         ))
     }
     // 51
@@ -498,6 +509,14 @@ impl XpathParser {
     fn Predicate(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [Expr(expr)] => expr,
+        ))
+    }
+    // 55
+    fn ArrowFunctionSpecifier(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [FunctionCallEQName(qname), ArgumentList(args)] => Expr::FunctionCall(qname, args, ())
+            //[VarRef(eq_name)] =>
+            //[ParenthesizedExpr(e)] =>
         ))
     }
     // 56
@@ -544,10 +563,8 @@ impl XpathParser {
     fn FunctionCall(input: Node) -> Result<Expr<()>> {
         // We check whether the function exists in the typing phase
         match_nodes!(input.clone().into_children();
-            [FunctionCallEQName(f), ExprSingle(a)..] => {
-                let args: Vec<_> = a.collect();
-                Ok(Expr::FunctionCall(f, args, ()))
-            }
+            [FunctionCallEQName(f), ArgumentList(args)] =>
+                Ok(Expr::FunctionCall(f, args, ())),
         )
     }
     // 66
@@ -823,6 +840,20 @@ fn slash_slash_ast() -> Expr<()> {
     )
 }
 
+// transforms
+// e => fs1() => fs2()
+// into
+// fs2(fs1(e))
+fn arrow_exprs(e: Expr<()>, fs: Vec<Expr<()>>) -> Expr<()> {
+    fs.into_iter().fold(e, |e1, e2| match e2 {
+        Expr::FunctionCall(qname, mut args, ()) => {
+            args.insert(0, e1);
+            Expr::FunctionCall(qname, args, ())
+        }
+        _ => unreachable!("expected only function calls"),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::StaticContext;
@@ -839,6 +870,7 @@ mod tests {
         let output = context.parse("1234");
         assert_eq!(output, Ok(Expr::Literal(Literal::Integer(1234), ())))
     }
+
     #[test]
     fn int_literal2() {
         let context: StaticContext = Default::default();
@@ -920,24 +952,28 @@ mod tests {
         let output = context.parse("(::)()");
         assert_eq!(output, Ok(Expr::Sequence(vec![], ())))
     }
+
     #[test]
     fn comment2() {
         let context: StaticContext = Default::default();
         let output = context.parse("(: foobar :)()");
         assert_eq!(output, Ok(Expr::Sequence(vec![], ())))
     }
+
     #[test]
     fn comment3() {
         let context: StaticContext = Default::default();
         let output = context.parse("(: (: :)");
         assert!(output.is_err())
     }
+
     #[test]
     fn iws1() {
         let context: StaticContext = Default::default();
         let output = context.parse(" \n\n(: FIXME :)\r\n (: \n :)\n()");
         assert_eq!(output, Ok(Expr::Sequence(vec![], ())))
     }
+
     #[test]
     fn sequence1() {
         let context: StaticContext = Default::default();
@@ -968,6 +1004,7 @@ mod tests {
             ))
         )
     }
+
     #[test]
     #[ignore]
     fn if_then_else2() {
@@ -1016,6 +1053,7 @@ mod tests {
         );
         assert_eq!("(1, 2)", format!("{}", output.unwrap()))
     }
+
     #[test]
     fn bool1() {
         let context: StaticContext = Default::default();
@@ -1054,6 +1092,15 @@ mod tests {
     }
 
     #[test]
+    fn arrow1() {
+        let context: StaticContext = Default::default();
+        let input = "'3.14' => xs:double() => string()";
+        let output = context.parse(input);
+        let expected = r#"string(xs:double("3.14"))"#;
+        assert_eq!(expected, format!("{}", output.unwrap()))
+    }
+
+    #[test]
     fn or1() {
         let context: StaticContext = Default::default();
         let output = context.parse("1 or 0");
@@ -1068,6 +1115,7 @@ mod tests {
             ))
         )
     }
+
     #[test]
     fn and1() {
         let context: StaticContext = Default::default();
@@ -1083,6 +1131,7 @@ mod tests {
             ))
         )
     }
+
     #[test]
     fn or_and1() {
         let context: StaticContext = Default::default();
@@ -1104,6 +1153,7 @@ mod tests {
             ))
         )
     }
+
     #[test]
     fn arith1() {
         let context: StaticContext = Default::default();
@@ -1132,6 +1182,7 @@ mod tests {
         );
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn instance_of1() {
         let context: StaticContext = Default::default();
@@ -1139,6 +1190,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn path1() {
         let context: StaticContext = Default::default();
@@ -1146,6 +1198,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn path2() {
         let context: StaticContext = Default::default();
@@ -1153,6 +1206,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn comparison1() {
         let context: StaticContext = Default::default();
@@ -1160,6 +1214,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn comparison2() {
         let context: StaticContext = Default::default();
@@ -1167,6 +1222,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn comparison3() {
         let context: StaticContext = Default::default();
@@ -1174,6 +1230,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn comparison4() {
         let context: StaticContext = Default::default();
@@ -1181,6 +1238,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn predicate1() {
         let context: StaticContext = Default::default();
@@ -1188,6 +1246,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn for1() {
         let context: StaticContext = Default::default();
@@ -1195,6 +1254,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn for2() {
         let context: StaticContext = Default::default();
@@ -1202,6 +1262,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn for3() {
         let context: StaticContext = Default::default();
@@ -1212,6 +1273,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(equiv, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn let1() {
         let context: StaticContext = Default::default();
@@ -1219,6 +1281,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn let2() {
         let context: StaticContext = Default::default();
@@ -1227,6 +1290,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(equiv, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn quant1() {
         let context: StaticContext = Default::default();
@@ -1234,6 +1298,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn quant2() {
         let context: StaticContext = Default::default();
@@ -1241,6 +1306,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn string_concat1() {
         let context: StaticContext = Default::default();
@@ -1248,6 +1314,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn range1() {
         let context: StaticContext = Default::default();
@@ -1255,6 +1322,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn array1() {
         let context: StaticContext = Default::default();
@@ -1262,6 +1330,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn array2() {
         let context: StaticContext = Default::default();
@@ -1270,6 +1339,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(equiv, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn array3() {
         let context: StaticContext = Default::default();
@@ -1278,6 +1348,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(equiv, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn map1() {
         let context: StaticContext = Default::default();
@@ -1285,6 +1356,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn anon_function1() {
         let context: StaticContext = Default::default();
@@ -1292,6 +1364,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn anon_function2() {
         let context: StaticContext = Default::default();
@@ -1299,6 +1372,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }
+
     #[test]
     fn slash1() {
         let context: StaticContext = Default::default();
@@ -1309,6 +1383,7 @@ mod tests {
             format!("{}", output.unwrap())
         )
     }
+
     #[test]
     fn slashslash1() {
         let context: StaticContext = Default::default();
@@ -1318,6 +1393,7 @@ mod tests {
             "fn:root(self::node()) treat as document-node()/descendant-or-self::node()/child::center/child::*",
             format!("{}", output.unwrap()))
     }
+
     #[test]
     fn slashslash2() {
         let context: StaticContext = Default::default();
@@ -1328,6 +1404,7 @@ mod tests {
             "fn:root(self::node()) treat as document-node()/descendant-or-self::node()/child::center/child::*",
             format!("{}", output.unwrap()))
     }
+
     #[test]
     fn dotdot1() {
         let context: StaticContext = Default::default();
@@ -1335,6 +1412,7 @@ mod tests {
         let output = context.parse(input);
         assert_eq!("parent::node()", format!("{}", output.unwrap()))
     }
+
     #[test]
     fn kindtest1() {
         let context: StaticContext = Default::default();
@@ -1343,6 +1421,7 @@ mod tests {
         let typed = output.unwrap().type_(Rc::new(context));
         assert_eq!("child::text()", format!("{}", typed.unwrap()))
     }
+
     #[test]
     fn kindtest2() {
         let context: StaticContext = Default::default();
@@ -1351,6 +1430,7 @@ mod tests {
         let typed = output.unwrap().type_(Rc::new(context));
         assert_eq!("child::center/child::node()", format!("{}", typed.unwrap()))
     }
+
     #[test]
     fn union1() {
         let context: StaticContext = Default::default();
@@ -1358,5 +1438,13 @@ mod tests {
         let equiv = r#"child::a union child::b union child::c"#;
         let output = context.parse(input);
         assert_eq!(equiv, format!("{}", output.unwrap()))
+    }
+
+    #[test]
+    fn simple_map1() {
+        let context: StaticContext = Default::default();
+        let input = r#"(1 to 5)!"*""#;
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
     }
 }

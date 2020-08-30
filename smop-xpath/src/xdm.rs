@@ -1,5 +1,4 @@
 use crate::ast::{CombineOp, Comp};
-use crate::smop_xmltree::AxisIter;
 use crate::types::{Item, Occurrence, SequenceType};
 use crate::xpath_functions_31::{decimal_compare, double_compare, integer_compare, string_compare};
 use crate::StaticContext;
@@ -79,64 +78,15 @@ use std::result::Result;
 //     }
 // }
 
-pub enum NodeSeq {
-    RoXml(Node),
-    RoXmlIter(AxisIter),
-}
-impl NodeSeq {
-    fn count(&self) -> usize {
-        match self {
-            NodeSeq::RoXml(_) => 1,
-            NodeSeq::RoXmlIter(ref it) => it.clone().count(),
-        }
-    }
-}
-impl Debug for NodeSeq {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            NodeSeq::RoXml(n) => write!(f, "{:?}", n),
-            NodeSeq::RoXmlIter(_) => write!(f, "node iterator"),
-        }
-    }
-}
-impl Clone for NodeSeq {
-    fn clone(&self) -> Self {
-        match self {
-            NodeSeq::RoXml(ro) => NodeSeq::RoXml(ro.clone()),
-            NodeSeq::RoXmlIter(iter) => NodeSeq::RoXmlIter(iter.clone()),
-        }
-    }
-}
-impl PartialEq for NodeSeq {
-    fn eq(&self, _other: &Self) -> bool {
-        unimplemented!()
-    }
-}
-impl Display for NodeSeq {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        fn ro_string_value(node: &nod::Node, f: &mut Formatter<'_>) -> fmt::Result {
-            write!(f, "{}", node.string_value())
-        }
-
-        match self {
-            NodeSeq::RoXml(n) => ro_string_value(n, f),
-            NodeSeq::RoXmlIter(iter) => {
-                for n in iter.clone() {
-                    ro_string_value(&n, f)?;
-                }
-                Ok(())
-            }
-        }
-    }
-}
 #[derive(Debug, Clone, PartialEq)]
 pub enum Xdm {
+    EmptySequence,
     String(String),
     Boolean(bool),
     Decimal(Decimal),
     Integer(i64),
     Double(f64),
-    NodeSeq(NodeSeq),
+    Node(Node),
     Array(Vec<Xdm>),
     Map(HashMap<Xdm, Xdm>),
     Sequence(Vec<Xdm>),
@@ -174,12 +124,20 @@ impl Display for XdmError {
     }
 }
 impl Xdm {
+    pub fn sequence(mut v: Vec<Self>) -> Self {
+        match v.len() {
+            0 => Xdm::EmptySequence,
+            1 => v.remove(0),
+            _ => Xdm::Sequence(v),
+        }
+    }
     pub fn flatten(v: Vec<Self>) -> Self {
         let mut res: Vec<Self> = Vec::new();
 
         fn add(dest: &mut Vec<Xdm>, v: Vec<Xdm>) {
             for x in v {
                 match x {
+                    Xdm::EmptySequence => {}
                     Xdm::Sequence(inner) => add(dest, inner),
                     _ => dest.push(x),
                 }
@@ -187,20 +145,17 @@ impl Xdm {
         }
 
         add(&mut res, v);
-        if res.len() == 1 {
-            res.remove(0)
-        } else {
-            Xdm::Sequence(res)
-        }
+        Xdm::sequence(res)
     }
     pub fn atomize(self) -> XdmResult<Self> {
         match self {
-            Xdm::String(_)
+            Xdm::EmptySequence
+            | Xdm::String(_)
             | Xdm::Boolean(_)
             | Xdm::Decimal(_)
             | Xdm::Integer(_)
             | Xdm::Double(_) => Ok(self),
-            Xdm::NodeSeq(ns) => Ok(Xdm::String(ns.to_string())), // FIXME
+            Xdm::Node(ns) => Ok(Xdm::String(ns.string_value())), // FIXME
             Xdm::Array(v) => {
                 let res: XdmResult<Vec<_>> = v.into_iter().map(|x| x.atomize()).collect();
                 Ok(Xdm::flatten(res?))
@@ -222,27 +177,22 @@ impl Xdm {
             Xdm::Decimal(d) => Ok(!d.is_zero()),
             Xdm::Integer(i) => Ok(*i != 0_i64),
             Xdm::Double(d) => Ok(!(d.is_nan() || d.is_zero())),
-            Xdm::NodeSeq(_) => Ok(true),
+            Xdm::Node(_) => Ok(true),
             Xdm::Array(_) => Err(XdmError::xqtm("FORG0006", "boolean value of array")),
             Xdm::Map(_) => Err(XdmError::xqtm("FORG0006", "boolean value of map")),
-            Xdm::Sequence(v) => {
-                if v.is_empty() {
-                    Ok(false)
-                } else {
-                    match v.first().unwrap() {
-                        Xdm::NodeSeq(_) => Ok(true),
-                        _ => Err(XdmError::xqtm(
-                            "FORG0006",
-                            "boolean of sequence of non-node",
-                        )),
-                    }
-                }
-            }
+            Xdm::EmptySequence => Ok(false),
+            Xdm::Sequence(v) => match v.first().unwrap() {
+                Xdm::Node(_) => Ok(true),
+                _ => Err(XdmError::xqtm(
+                    "FORG0006",
+                    "boolean of sequence of non-node",
+                )),
+            },
         }
     }
     pub fn count(&self) -> usize {
         match self {
-            Xdm::NodeSeq(node_seq) => node_seq.count(),
+            Xdm::EmptySequence => 0,
             Xdm::Sequence(v) => v.len(),
             _ => 1,
         }
@@ -301,17 +251,6 @@ impl Xdm {
             }
             Xdm::Integer(i) => Ok(i.to_string()),
             Xdm::Double(d) => {
-                //  If ST is xs:float or xs:double, then:
-                //
-                //     TV will be an xs:string in the lexical space of xs:double or xs:float that when converted to an xs:double or xs:float under the rules of 19.2 Casting from xs:string and xs:untypedAtomic produces a value that is equal to SV, or is NaN if SV is NaN. In addition, TV must satisfy the constraints in the following sub-bullets.
-                //
-                //         If SV has an absolute value that is greater than or equal to 0.000001 (one millionth) and less than 1000000 (one million), then the value is converted to an xs:decimal and the resulting xs:decimal is converted to an xs:string according to the rules above, as though using an implementation of xs:decimal that imposes no limits on the totalDigits or fractionDigits facets.
-                //
-                //         If SV has the value positive or negative zero, TV is "0" or "-0" respectively.
-                //
-                //         If SV is positive or negative infinity, TV is the string "INF" or "-INF" respectively.
-                //
-                //         In other cases, the result consists of a mantissa, which has the lexical form of an xs:decimal, followed by the letter "E", followed by an exponent which has the lexical form of an xs:integer. Leading zeroes and "+" signs are prohibited in the exponent. For the mantissa, there must be a decimal point, and there must be exactly one digit before the decimal point, which must be non-zero. The "+" sign is prohibited. There must be at least one digit after the decimal point. Apart from this mandatory digit, trailing zero digits are prohibited.
                 if d.abs() >= 0.000001 && d.abs() < 1000000.0 {
                     Ok(d.to_string())
                 } else if d.is_zero() {
@@ -322,7 +261,7 @@ impl Xdm {
                     Ok(format!("{:E}", d))
                 }
             }
-            Xdm::NodeSeq(n) => Ok(n.to_string()),
+            Xdm::Node(n) => Ok(n.string_value()),
             Xdm::Array(_) => Err(XdmError::xqtm(
                 "FOTY0014",
                 "can't convert an array to a string",
@@ -331,16 +270,11 @@ impl Xdm {
                 "FOTY0014",
                 "can't convert a map to a string",
             )),
-            Xdm::Sequence(v) => {
-                if v.is_empty() {
-                    Ok("".to_string())
-                } else {
-                    Err(XdmError::xqtm(
-                        "XPTY0004",
-                        "can't convert a sequence to a string",
-                    ))
-                }
-            }
+            Xdm::EmptySequence => Ok("".to_string()),
+            Xdm::Sequence(_v) => Err(XdmError::xqtm(
+                "XPTY0004",
+                "can't convert a sequence to a string",
+            )),
         }
     }
     pub fn string_joined(&self) -> XdmResult<String> {
@@ -365,16 +299,11 @@ impl Xdm {
             Xdm::Decimal(_) => simple(ctx, "xs:decimal"),
             Xdm::Integer(_) => simple(ctx, "xs:integer"),
             Xdm::Double(_) => simple(ctx, "xs:double"),
-            Xdm::NodeSeq(_) => unimplemented!(),
+            Xdm::Node(_) => unimplemented!(),
             Xdm::Array(_) => unimplemented!(),
             Xdm::Map(_) => unimplemented!(),
-            Xdm::Sequence(v) => {
-                if v.is_empty() {
-                    Ok(SequenceType::EmptySequence)
-                } else {
-                    unimplemented!()
-                }
-            }
+            Xdm::EmptySequence => Ok(SequenceType::EmptySequence),
+            Xdm::Sequence(_v) => unimplemented!(),
         }
     }
     pub fn xpath_compare(&self, other: &Xdm, vc: Comp) -> XdmResult<bool> {
@@ -385,12 +314,12 @@ impl Xdm {
             (x1, Xdm::String(s2)) => {
                 Ok(vc.comparison_true(string_compare(x1.string()?.as_str(), s2.as_str())))
             }
-            (Xdm::Double(d1), x2) => {
-                Ok(vc.comparison_true(double_compare(&d1, x2.double()?.borrow())))
-            }
-            (x1, Xdm::Double(d2)) => {
-                Ok(vc.comparison_true(double_compare(x1.double()?.borrow(), &d2)))
-            }
+            (Xdm::Double(d1), x2) => Ok(!d1.is_nan()
+                && !x2.is_nan()
+                && vc.comparison_true(double_compare(&d1, x2.double()?.borrow()))),
+            (x1, Xdm::Double(d2)) => Ok(!d2.is_nan()
+                && !x1.is_nan()
+                && vc.comparison_true(double_compare(x1.double()?.borrow(), &d2))),
             (Xdm::Decimal(d1), x2) => {
                 Ok(vc.comparison_true(decimal_compare(&d1, x2.decimal()?.borrow())))
             }
@@ -406,9 +335,9 @@ impl Xdm {
             (a1, a2) => unimplemented!("{:?} {} {:?}", a1, vc, a2),
         }
     }
-    pub fn combine(self, other: Xdm, op: CombineOp) -> XdmResult<Xdm> {
+    pub(crate) fn combine(self, other: Xdm, op: CombineOp) -> XdmResult<Xdm> {
         let get_node = |x: Xdm| {
-            if let Xdm::NodeSeq(NodeSeq::RoXml(node)) = x {
+            if let Xdm::Node(node) = x {
                 Ok(node)
             } else {
                 Err(XdmError::xqtm(
@@ -422,19 +351,48 @@ impl Xdm {
         let right: XdmResult<Vec<Node>> = other.into_iter().map(get_node).collect();
         let right = BTreeSet::from_iter(right?);
         Ok(Xdm::flatten(match op {
-            CombineOp::Union => left
-                .union(&right)
-                .map(|n| Xdm::NodeSeq(NodeSeq::RoXml(n.clone())))
-                .collect(),
+            CombineOp::Union => left.union(&right).map(|n| Xdm::Node(n.clone())).collect(),
             CombineOp::Intersect => left
                 .intersection(&right)
-                .map(|n| Xdm::NodeSeq(NodeSeq::RoXml(n.clone())))
+                .map(|n| Xdm::Node(n.clone()))
                 .collect(),
             CombineOp::Except => left
                 .difference(&right)
-                .map(|n| Xdm::NodeSeq(NodeSeq::RoXml(n.clone())))
+                .map(|n| Xdm::Node(n.clone()))
                 .collect(),
         }))
+    }
+    #[inline]
+    pub(crate) fn is_nan(&self) -> bool {
+        match self {
+            Xdm::Double(d) if d.is_nan() => true,
+            _ => false,
+        }
+    }
+    pub fn deep_equal(&self, other: &Xdm) -> bool {
+        match self {
+            Xdm::EmptySequence => match other {
+                Xdm::EmptySequence => true,
+                _ => false,
+            },
+            Xdm::String(_)
+            | Xdm::Boolean(_)
+            | Xdm::Decimal(_)
+            | Xdm::Integer(_)
+            | Xdm::Double(_) => {
+                self.xpath_compare(other, Comp::EQ).unwrap_or(false)
+                    || (self.is_nan() && other.is_nan())
+            }
+            Xdm::Node(_) => unimplemented!(),
+            Xdm::Array(_) => unimplemented!(),
+            Xdm::Map(_) => unimplemented!(),
+            Xdm::Sequence(v1) => match other {
+                Xdm::Sequence(v2) if v1.len() == v2.len() => {
+                    v1.iter().zip(v2.iter()).all(|(a, b)| a.deep_equal(b))
+                }
+                _ => false,
+            },
+        }
     }
 }
 
@@ -463,11 +421,11 @@ impl IntoIterator for Xdm {
             | Xdm::Decimal(_)
             | Xdm::Integer(_)
             | Xdm::Double(_)
-            | Xdm::NodeSeq(NodeSeq::RoXml(_)) => Box::new(std::iter::once(self)),
+            | Xdm::Node(_) => Box::new(std::iter::once(self)),
 
-            // Xdm::NodeSeq(_) => {}
             // Xdm::Array(_) => {}
             // Xdm::Map(_) => {}
+            Xdm::EmptySequence => Box::new(std::iter::empty()),
             Xdm::Sequence(v) => Box::new(v.into_iter()),
             _ => todo!("IntoIterator for Xdm: {:?}", self),
         }
@@ -517,5 +475,11 @@ mod tests {
     fn double_to_string() {
         let xdm = Xdm::Double(65535032e2);
         assert_eq!(xdm.string().unwrap(), "6.5535032E9")
+    }
+
+    #[test]
+    fn deep_equal1() {
+        assert!(Xdm::Double(f64::NAN).deep_equal(&Xdm::Double(f64::NAN)));
+        assert!(Xdm::EmptySequence.deep_equal(&Xdm::EmptySequence));
     }
 }

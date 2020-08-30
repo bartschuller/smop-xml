@@ -2,7 +2,7 @@ use crate::ast::Expr;
 use crate::functions::{Function, FunctionKey};
 use crate::parser::parse;
 use crate::runtime::DynamicContext;
-use crate::types::{SchemaType, SequenceType, TypeTree, Variety};
+use crate::types::{Item, Occurrence, SchemaType, SequenceType, TypeTree, Variety};
 use crate::xdm::{XdmError, XdmResult};
 use im::HashMap;
 use regex::Regex;
@@ -10,7 +10,7 @@ use smop_xmltree::nod::QName;
 use smop_xmltree::option_ext::OptionExt;
 use std::error::Error;
 use std::fmt;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::rc::Rc;
 
@@ -232,7 +232,7 @@ impl Default for StaticContext {
             default_function_namespace: Some("http://www.w3.org/2005/xpath-functions".to_string()),
             default_element_namespace: None,
             variable_types: HashMap::new(),
-            context_item_type: SequenceType::EmptySequence,
+            context_item_type: SequenceType::Item(Item::Item, Occurrence::ZeroOrMore),
         };
 
         sc.add_prefix_ns("xs", "http://www.w3.org/2001/XMLSchema");
@@ -248,5 +248,11 @@ impl Default for StaticContext {
         add_simple_type(&mut sc, "xs:integer", "xs:decimal");
         crate::xpath_functions_31::register(&mut sc);
         sc
+    }
+}
+
+impl Debug for StaticContext {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "[StaticContext]")
     }
 }

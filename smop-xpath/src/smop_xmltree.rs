@@ -1,14 +1,9 @@
 use smop_xmltree::nod::Node;
-use std::fmt;
-use std::fmt::{Debug, Formatter};
 
 #[derive(Clone)]
 pub struct AxisIter {
-    node: Option<Node>,
-    next: fn(&Node) -> Option<Node>,
-    pub(crate) position: usize,
-    // can be computed lazily only when needed
-    last: Option<usize>,
+    pub(crate) node: Option<Node>,
+    pub(crate) next: fn(&Node) -> Option<Node>,
 }
 
 impl Iterator for AxisIter {
@@ -22,17 +17,6 @@ impl Iterator for AxisIter {
     }
 }
 
-impl Debug for AxisIter {
-    fn fmt(&self, _f: &mut Formatter<'_>) -> fmt::Result {
-        unimplemented!()
-    }
-}
-
-impl PartialEq for AxisIter {
-    fn eq(&self, _other: &Self) -> bool {
-        unimplemented!()
-    }
-}
 #[cfg(test)]
 mod tests {
     use crate::smop_xmltree::AxisIter;
@@ -58,8 +42,6 @@ mod tests {
         let _children = AxisIter {
             node: None,
             next: |_n| None,
-            position: 0,
-            last: None,
         };
         let mut d = root.children();
         let d = d.next().unwrap();

@@ -66,7 +66,7 @@ CastableExpr = { CastExpr ~ ( "castable" ~ "as" ~ SingleType )? }
 // 28
 CastExpr = { ArrowExpr ~ ( "cast" ~ "as" ~ SingleType )? }
 // 29
-ArrowExpr = { UnaryExpr ~ ( "=>" ~ ArrowFunctionSpecifier ~ ArgumentList )* }
+ArrowExpr = { UnaryExpr ~ ( "=>" ~ ArrowFunctionSpecifier )* }
 // 30
 UnaryExpr = { AdditiveOp* ~ ValueExpr }
 // 31
@@ -119,7 +119,7 @@ Star = { "*" }
 // 49
 PostfixExpr = { PrimaryExpr ~ (Predicate | ArgumentList | Lookup)* }
 // 50
-ArgumentList = _{ "(" ~ (Argument ~ ("," ~ Argument)*)? ~ ")" }
+ArgumentList = { "(" ~ (Argument ~ ("," ~ Argument)*)? ~ ")" }
 // 51
 PredicateList = { Predicate* }
 // 52
@@ -129,7 +129,7 @@ Lookup = { "?" ~ KeySpecifier }
 // 54
 KeySpecifier = { NCName | IntegerLiteral | ParenthesizedExpr | "*" }
 // 55
-ArrowFunctionSpecifier = { EQName | VarRef | ParenthesizedExpr }
+ArrowFunctionSpecifier = { (FunctionCallEQName | VarRef | ParenthesizedExpr) ~ ArgumentList }
 // 56
 PrimaryExpr = { Literal
               | VarRef
