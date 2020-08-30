@@ -379,30 +379,37 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         }
                         _ => unimplemented!("axis {}", axis),
                     };
+                    // pos needs to change if an earlier predicate filters out some nodes
+                    // //foo[@bar=1][5] needs to count not all foos but the filtered ones.
+                    // poss maintains the pos values for every predicate.
+                    let mut poss = vec![0; predicates.len() + 1];
                     let result_nodes: Vec<_> = node_iterator
                         .filter_map(|(pos, result_node)| {
                             let node = Xdm::Node(result_node);
                             let mut include = true;
-                            let context = c.clone_with_focus(node, pos);
-                            // FIXME pos needs to change if an earlier predicate filters out some nodes
-                            // //foo[@bar=1][5] needs to count not all foos but the filtered ones.
-                            //
-                            // in other words: put the predicate loop outside, not the node loop.
+                            let mut context = c.clone_with_focus(node, pos);
+
+                            let mut pred_num: usize = 0;
                             for predicate in &predicates {
                                 let pred = predicate.execute(&context).unwrap();
                                 match pred {
                                     Xdm::Decimal(_) | Xdm::Integer(_) | Xdm::Double(_) => {
-                                        if pred.integer().unwrap() as usize - 1 != pos {
+                                        if pred.integer().unwrap() as usize - 1 != poss[pred_num] {
                                             include = false;
-                                            break;
                                         }
                                     }
                                     _ => {
                                         if !pred.boolean().unwrap() {
                                             include = false;
-                                            break;
                                         }
                                     }
+                                }
+                                poss[pred_num] += 1;
+                                if include {
+                                    pred_num += 1;
+                                    context.focus.as_mut().unwrap().position = poss[pred_num];
+                                } else {
+                                    break;
                                 }
                             }
                             if include {
@@ -511,7 +518,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         let ret_val = rc.execute(&context)?;
                         result.extend(ret_val.into_iter());
                     }
-                    Ok(Xdm::Sequence(result))
+                    Ok(Xdm::sequence(result))
                 }))
             }
             Expr::Let(qname, binding_seq, ret_expr, _) => {
