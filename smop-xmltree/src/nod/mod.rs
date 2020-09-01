@@ -512,6 +512,45 @@ impl Node {
         }
     }
 
+    pub fn deep_equal(&self, other: &Node) -> bool {
+        let kind = self.node_kind();
+        if kind != other.node_kind() {
+            return false;
+        }
+        match kind {
+            NodeKind::Document => {
+                let element_or_text = |n: &Node| match n.node_kind() {
+                    NodeKind::Element | NodeKind::Text => true,
+                    _ => false,
+                };
+                let v1: Vec<Node> = self.children().filter(element_or_text).collect();
+                let v2: Vec<Node> = other.children().filter(element_or_text).collect();
+                if v1.len() != v2.len() {
+                    return false;
+                }
+                v1.iter().zip(v2.iter()).all(|(n1, n2)| n1.deep_equal(n2))
+            }
+            NodeKind::Element => {
+                if self.node_name() != other.node_name()
+                    || self.num_attributes() != other.num_attributes()
+                {
+                    return false;
+                }
+                let attrs: Vec<Node> = self.attributes().collect();
+                other
+                    .attributes()
+                    .all(|a1| attrs.iter().find(|a2| a1.deep_equal(a2)).is_some())
+            }
+            NodeKind::Attribute => {
+                self.node_name() == other.node_name() && self.string_value() == other.string_value()
+            }
+            NodeKind::Text | NodeKind::Comment => self.string_value() == other.string_value(),
+            NodeKind::PI => {
+                self.node_name() == other.node_name() && self.string_value() == other.string_value()
+            }
+        }
+    }
+
     // XDM
     /// The attributes accessor returns the attributes of a node as an iterator containing zero or more Attribute Nodes.
     /// The order of Attribute Nodes is stable but implementation dependent.
