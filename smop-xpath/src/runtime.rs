@@ -10,6 +10,14 @@ pub struct Focus {
     pub sequence: Xdm,
     /// 0-based position of focus item
     pub position: usize,
+    // 0-based index of last item in the focus sequence
+    //pub last: usize,
+}
+
+impl Focus {
+    pub fn last(&self) -> usize {
+        usize::MAX - 1
+    }
 }
 
 #[derive(Clone)]

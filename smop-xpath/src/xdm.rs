@@ -1,6 +1,8 @@
 use crate::ast::{CombineOp, Comp};
 use crate::types::{Item, Occurrence, SequenceType};
-use crate::xpath_functions_31::{decimal_compare, double_compare, integer_compare, string_compare};
+use crate::xpath_functions_31::{
+    boolean_compare, decimal_compare, double_compare, integer_compare, string_compare,
+};
 use crate::StaticContext;
 use itertools::Itertools;
 use num_traits::cast::FromPrimitive;
@@ -332,6 +334,12 @@ impl Xdm {
             (x1, Xdm::Integer(i2)) => {
                 Ok(vc.comparison_true(integer_compare(x1.integer()?.borrow(), &i2)))
             }
+            (Xdm::Boolean(b1), x2) => {
+                Ok(vc.comparison_true(boolean_compare(&b1, x2.boolean()?.borrow())))
+            }
+            (x1, Xdm::Boolean(b2)) => {
+                Ok(vc.comparison_true(boolean_compare(x1.boolean()?.borrow(), &b2)))
+            }
             (a1, a2) => unimplemented!("{:?} {} {:?}", a1, vc, a2),
         }
     }
@@ -383,7 +391,10 @@ impl Xdm {
                 self.xpath_compare(other, Comp::EQ).unwrap_or(false)
                     || (self.is_nan() && other.is_nan())
             }
-            Xdm::Node(_) => unimplemented!(),
+            Xdm::Node(n1) => match other {
+                Xdm::Node(n2) => n1.deep_equal(n2),
+                _ => false,
+            },
             Xdm::Array(_) => unimplemented!(),
             Xdm::Map(_) => unimplemented!(),
             Xdm::Sequence(v1) => match other {

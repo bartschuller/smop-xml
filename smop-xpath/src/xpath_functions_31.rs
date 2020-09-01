@@ -232,6 +232,37 @@ pub(crate) fn register(ctx: &mut StaticContext) {
         code: fn_string_length_1,
     };
     ctx.add_function(qname, fn_string_length_1_meta);
+
+    let qname = ctx.qname("fn", "last").unwrap();
+    let fn_last_0_meta = Function {
+        args: vec![],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_integer).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_last_0,
+    };
+    ctx.add_function(qname, fn_last_0_meta);
+
+    let qname = ctx.qname("fn", "contains").unwrap();
+    let fn_contains_2_meta = Function {
+        args: vec![
+            SequenceType::Item(
+                Item::AtomicOrUnion(ctx.schema_type(&xs_string).unwrap()),
+                Occurrence::Optional,
+            ),
+            SequenceType::Item(
+                Item::AtomicOrUnion(ctx.schema_type(&xs_string).unwrap()),
+                Occurrence::Optional,
+            ),
+        ],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_boolean).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_contains_2,
+    };
+    ctx.add_function(qname, fn_contains_2_meta);
 }
 
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
@@ -333,6 +364,15 @@ pub(crate) fn fn_position_0() -> CompiledFunction {
         )),
     })
 }
+pub(crate) fn fn_last_0() -> CompiledFunction {
+    CompiledFunction::new(|ctx, _args| match &ctx.focus {
+        Some(focus) => Ok(Xdm::Integer(focus.last() as i64 + 1)),
+        None => Err(XdmError::xqtm(
+            "XPDY0002",
+            "context item not defined in position()",
+        )),
+    })
+}
 pub(crate) fn fn_trace_1() -> CompiledFunction {
     CompiledFunction::new(|ctx, mut args| {
         let val = args.remove(0);
@@ -360,6 +400,11 @@ pub(crate) fn fn_string_length_0() -> CompiledFunction {
 pub(crate) fn fn_string_length_1() -> CompiledFunction {
     CompiledFunction::new(|_ctx, args| Ok(Xdm::Integer(args[0].string()?.chars().count() as i64)))
 }
+pub(crate) fn fn_contains_2() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, args| {
+        Ok(Xdm::Boolean(args[0].string()?.contains(&args[1].string()?)))
+    })
+}
 pub(crate) fn string_compare(s1: &str, s2: &str) -> i8 {
     s1.cmp(s2) as i8
 }
@@ -371,6 +416,9 @@ pub(crate) fn decimal_compare(d1: &Decimal, d2: &Decimal) -> i8 {
 }
 pub(crate) fn integer_compare(i1: &i64, i2: &i64) -> i8 {
     i1.cmp(i2) as i8
+}
+pub(crate) fn boolean_compare(b1: &bool, b2: &bool) -> i8 {
+    b1.cmp(b2) as i8
 }
 
 #[cfg(test)]
