@@ -8,7 +8,9 @@ pub trait Environment {
 }
 #[derive(Debug)]
 pub enum TestError {
+    #[allow(dead_code)]
     Unknown,
+    #[allow(dead_code)]
     Message(String),
     ParseError(Option<sxd_xpath::ParserError>),
     ExecutionError(sxd_xpath::ExecutionError),

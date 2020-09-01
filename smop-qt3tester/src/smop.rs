@@ -6,7 +6,7 @@ use std::rc::Rc;
 use xpath::ast::Comp;
 use xpath::runtime::DynamicContext;
 use xpath::types::{Item, Occurrence, SequenceType};
-use xpath::xdm::{NodeSeq, Xdm, XdmError};
+use xpath::xdm::{Xdm, XdmError};
 use xpath::{StaticContext, Xpath};
 
 impl From<XdmError> for TestError {
@@ -50,9 +50,7 @@ impl SmopEnvironment {
 impl Environment for SmopEnvironment {
     fn set_context_document(&mut self, file: &str) {
         let text = std::fs::read_to_string(file).unwrap();
-        let xdm = Xdm::NodeSeq(NodeSeq::RoXml(
-            Document::parse(text.as_str()).unwrap().root(),
-        ));
+        let xdm = Xdm::Node(Document::parse(text.as_str()).unwrap().root());
         self.context = self.context.clone_with_focus(xdm, 0)
     }
 }
@@ -115,7 +113,7 @@ impl TestRunner for SmopRunner {
                         Some(format!(
                             "expected \"{}\" to be true, got \"{}\"",
                             xpath,
-                            v.string().unwrap()
+                            v.string_joined().unwrap()
                         ))
                     }
                 }
@@ -140,9 +138,49 @@ impl TestRunner for SmopRunner {
                 Err(e) => Some(e.to_string()),
             },
             Assertion::AssertCount(_) => Some("wrong".to_string()),
-            Assertion::AssertDeepEq(_) => Some("wrong".to_string()),
+            Assertion::AssertDeepEq(other_string) => match result {
+                Ok(v) => {
+                    let val = Xpath::compile(&self.static_context, other_string)
+                        .unwrap()
+                        .evaluate(&self.context)
+                        .unwrap();
+                    if v.deep_equal(&val) {
+                        None
+                    } else {
+                        Some(format!(
+                            "expected \"{}\", got \"{}\"",
+                            other_string,
+                            v.string_joined().unwrap()
+                        ))
+                    }
+                }
+                Err(e) => Some(e.to_string()),
+            },
             Assertion::AssertPermutation(_) => Some("wrong".to_string()),
-            Assertion::AssertXml { .. } => Some("wrong".to_string()),
+            Assertion::AssertXml {
+                xml_source,
+                ignore_prefixes: _,
+            } => match result {
+                Ok(v) => {
+                    let source = format!("<XyZzY>{}</XyZzY>", xml_source);
+                    let xdm = Xdm::Node(Document::parse(source.as_str()).unwrap().root());
+                    let ctx = self.context.clone_with_focus(xdm, 0);
+                    let val = Xpath::compile(&self.static_context, "*/child::node()")
+                        .unwrap()
+                        .evaluate(&ctx)
+                        .unwrap();
+                    if v.deep_equal(&val) {
+                        None
+                    } else {
+                        Some(format!(
+                            "expected {}, got \"{}\"",
+                            xml_source,
+                            v.string_joined().unwrap()
+                        ))
+                    }
+                }
+                Err(e) => Some(e.to_string()),
+            },
             Assertion::SerializationMatches { .. } => Some("wrong".to_string()),
             Assertion::AssertSerializationError(_) => Some("wrong".to_string()),
             Assertion::AssertEmpty => match result {

@@ -237,6 +237,7 @@ pub enum SpecType {
 pub enum Dependency {
     Calendar,
     DefaultLanguage,
+    #[allow(dead_code)]
     DirectoryAsCollectionUri,
     Feature,
     FormatIntegerSequence,
@@ -319,6 +320,7 @@ impl Dependency {
     }
 }
 pub struct TestSet {
+    #[allow(dead_code)]
     pub(crate) name: String,
     pub(crate) dependencies: Vec<Dependency>,
     pub(crate) environments: HashMap<String, EnvironmentSpec>,
