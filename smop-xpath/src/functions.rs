@@ -28,6 +28,7 @@ impl CompiledFunction {
     ) -> Self {
         CompiledFunction(Rc::new(closure))
     }
+    #[inline]
     pub fn execute(&self, context: &DynamicContext, args: Vec<Xdm>) -> XdmResult<Xdm> {
         self.0(context, args)
     }

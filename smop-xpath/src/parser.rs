@@ -250,7 +250,26 @@ impl XpathParser {
     // 24
     fn IntersectExceptExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [InstanceofExpr(e)] => e, // FIXME
+            [InstanceofExpr(e)] => e,
+            [InstanceofExpr(e), IntersectOrExcept(c_es)..] => {
+                c_es.fold(e, |a, (op, b)|Expr::Combine(Box::new(a), op, Box::new(b), ()))
+            }
+        ))
+    }
+    fn IntersectOrExcept(input: Node) -> Result<(CombineOp, Expr<()>)> {
+        Ok(match_nodes!(input.into_children();
+            [IntersectExpr(c_e)] => c_e,
+            [ExceptExpr(c_e)] => c_e,
+        ))
+    }
+    fn IntersectExpr(input: Node) -> Result<(CombineOp, Expr<()>)> {
+        Ok(match_nodes!(input.into_children();
+            [InstanceofExpr(e)] => (CombineOp::Intersect, e),
+        ))
+    }
+    fn ExceptExpr(input: Node) -> Result<(CombineOp, Expr<()>)> {
+        Ok(match_nodes!(input.into_children();
+            [InstanceofExpr(e)] => (CombineOp::Except, e),
         ))
     }
     // 25

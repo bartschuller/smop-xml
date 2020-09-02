@@ -467,4 +467,37 @@ mod tests {
         assert_eq!("1 4 9 16 25 36 49 64 81 100", result.string_joined()?);
         Ok(())
     }
+    #[test]
+    fn node_compare1() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let input = r#"/r/a/e is (//e)[1]"#;
+        let xpath = Xpath::compile(&static_context, input)?;
+        let doc = r#"<r><a><e>1</e><b><e>2</e></b></a><e>3</e></r>"#;
+        let context = static_context.new_dynamic_context().with_xml(doc)?;
+        let result = xpath.evaluate(&context)?;
+        assert!(result.boolean()?);
+        Ok(())
+    }
+    #[test]
+    fn node_compare2() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let input = r#"/r/a/e << (//e)[2]"#;
+        let xpath = Xpath::compile(&static_context, input)?;
+        let doc = r#"<r><a><e>1</e><b><e>2</e></b></a><e>3</e></r>"#;
+        let context = static_context.new_dynamic_context().with_xml(doc)?;
+        let result = xpath.evaluate(&context)?;
+        assert!(result.boolean()?);
+        Ok(())
+    }
+    #[test]
+    fn node_compare3() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let input = r#"//e[.=3] >> (//e)[2]"#;
+        let xpath = Xpath::compile(&static_context, input)?;
+        let doc = r#"<r><a><e>1</e><b><e>2</e></b></a><e>3</e></r>"#;
+        let context = static_context.new_dynamic_context().with_xml(doc)?;
+        let result = xpath.evaluate(&context)?;
+        assert!(result.boolean()?);
+        Ok(())
+    }
 }

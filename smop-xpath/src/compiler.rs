@@ -1,4 +1,4 @@
-use crate::ast::{ArithmeticOp, Axis, Expr, Quantifier};
+use crate::ast::{ArithmeticOp, Axis, Expr, NodeComp, Quantifier};
 use crate::context::StaticContext;
 use crate::runtime::CompiledExpr;
 use crate::smop_xmltree::AxisIter;
@@ -202,7 +202,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         "xs:decimal" => CompiledExpr::new(move |c| {
                             Ok(Xdm::Decimal(-e_c.execute(c)?.decimal()?))
                         }),
-                        "xs:double" | "xs:anyAtomicType" => {
+                        "xs:double" | "xs:anyAtomicType" | "item()" => {
                             CompiledExpr::new(move |c| Ok(Xdm::Double(-e_c.execute(c)?.double()?)))
                         }
                         _ => todo!("compile more unary minus cases: {}", type_string),
@@ -479,7 +479,29 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     return Ok(Xdm::Boolean(false));
                 }))
             }
-            Expr::NodeComp(_e1, _nc, _e2, _) => unimplemented!(),
+            Expr::NodeComp(e1, nc, e2, _) => {
+                let ce1 = e1.compile()?;
+                let ce2 = e2.compile()?;
+                Ok(CompiledExpr::new(move |c| {
+                    let s1 = ce1.execute(c)?;
+                    let s2 = ce2.execute(c)?;
+                    if s1.count() == 0 || s2.count() == 0 {
+                        return Ok(Xdm::EmptySequence);
+                    }
+                    if let (Xdm::Node(n1), Xdm::Node(n2)) = (s1, s2) {
+                        Ok(Xdm::Boolean(match nc {
+                            NodeComp::Is => n1 == n2,
+                            NodeComp::Before => n1 < n2,
+                            NodeComp::After => n1 > n2,
+                        }))
+                    } else {
+                        Err(XdmError::xqtm(
+                            "XPTY0004",
+                            "node comparison with a sequence of more than one node",
+                        ))
+                    }
+                }))
+            }
             Expr::Filter(e, p, _) => {
                 let ce = e.compile()?;
                 let cp = p.compile()?;

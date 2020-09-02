@@ -233,6 +233,7 @@ impl Xdm {
             Xdm::Integer(i) => Ok(*i as f64),
             Xdm::Double(d) => Ok(*d),
             Xdm::String(s) => Ok(s.parse::<f64>().unwrap_or(NAN)),
+            Xdm::Node(_) => Ok(self.string()?.parse::<f64>().unwrap_or(NAN)),
             _ => todo!("finish double conversion"),
         }
     }

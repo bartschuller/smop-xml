@@ -56,7 +56,10 @@ MultiplicativeOp = { "*" | "div" | "idiv" | "mod" }
 // 23
 UnionExpr = { IntersectExceptExpr ~ ( ("union" | "|") ~ IntersectExceptExpr )* }
 // 24
-IntersectExceptExpr = { InstanceofExpr ~ ( ("intersect" | "except") ~ InstanceofExpr )* }
+IntersectExceptExpr = { InstanceofExpr ~ ( IntersectOrExcept )* }
+IntersectOrExcept = { IntersectExpr | ExceptExpr }
+IntersectExpr = { "intersect" ~ InstanceofExpr }
+ExceptExpr = { "except" ~ InstanceofExpr }
 // 25
 InstanceofExpr = { TreatExpr ~ ( "instance" ~ "of" ~ SequenceType )? }
 // 26

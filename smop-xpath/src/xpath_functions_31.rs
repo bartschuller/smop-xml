@@ -263,6 +263,51 @@ pub(crate) fn register(ctx: &mut StaticContext) {
         code: fn_contains_2,
     };
     ctx.add_function(qname, fn_contains_2_meta);
+
+    let qname = ctx.qname("fn", "number").unwrap();
+    let fn_number_0_meta = Function {
+        args: vec![],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_double).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_number_0,
+    };
+    ctx.add_function(qname.clone(), fn_number_0_meta);
+    let fn_number_1_meta = Function {
+        args: vec![SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_any_atomic_type).unwrap()),
+            Occurrence::Optional,
+        )],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_double).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_number_1,
+    };
+    ctx.add_function(qname, fn_number_1_meta);
+
+    let qname = ctx.qname("fn", "exactly-one").unwrap();
+    let fn_exactly_one_1_meta = Function {
+        args: vec![SequenceType::Item(Item::Item, Occurrence::ZeroOrMore)],
+        type_: SequenceType::Item(Item::Item, Occurrence::One),
+        code: fn_exactly_one_1,
+    };
+    ctx.add_function(qname, fn_exactly_one_1_meta);
+
+    let qname = ctx.qname("fn", "deep-equal").unwrap();
+    let fn_deep_equal_2_meta = Function {
+        args: vec![
+            SequenceType::Item(Item::Item, Occurrence::ZeroOrMore),
+            SequenceType::Item(Item::Item, Occurrence::ZeroOrMore),
+        ],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_boolean).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_deep_equal_2,
+    };
+    ctx.add_function(qname, fn_deep_equal_2_meta);
 }
 
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
@@ -404,6 +449,33 @@ pub(crate) fn fn_contains_2() -> CompiledFunction {
     CompiledFunction::new(|_ctx, args| {
         Ok(Xdm::Boolean(args[0].string()?.contains(&args[1].string()?)))
     })
+}
+pub(crate) fn fn_number_0() -> CompiledFunction {
+    CompiledFunction::new(|ctx, _args| match &ctx.focus {
+        Some(focus) => Ok(Xdm::Double(focus.sequence.double()?)),
+        None => Err(XdmError::xqtm(
+            "XPDY0002",
+            "context item not defined in number()",
+        )),
+    })
+}
+pub(crate) fn fn_number_1() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, args| Ok(Xdm::Double(args[0].double()?)))
+}
+pub(crate) fn fn_exactly_one_1() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, mut args| {
+        if args[0].count() == 1 {
+            Ok(args.remove(0))
+        } else {
+            Err(XdmError::xqtm(
+                "FORG0005",
+                "fn:exactly-one called with a sequence containing zero or more than one item",
+            ))
+        }
+    })
+}
+pub(crate) fn fn_deep_equal_2() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, args| Ok(Xdm::Boolean(args[0].deep_equal(&args[1]))))
 }
 pub(crate) fn string_compare(s1: &str, s2: &str) -> i8 {
     s1.cmp(s2) as i8
