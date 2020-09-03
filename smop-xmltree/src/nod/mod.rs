@@ -401,6 +401,18 @@ impl Node {
         Descendants::new(self)
     }
 
+    /// Returns an iterator over nodes after this one.
+    #[inline]
+    pub fn following_or_self(&self) -> Following {
+        Following::new(self)
+    }
+
+    /// Returns an iterator over nodes before this one.
+    #[inline]
+    pub fn preceding_or_self(&self) -> Preceding {
+        Preceding::new(self)
+    }
+
     #[inline]
     fn d(&self) -> &NodeData {
         self.document.nodes.get(self.id.get_usize()).unwrap()
@@ -728,6 +740,85 @@ impl Iterator for Descendants {
     }
 }
 
+/// Iterator over nodes after the current one in document order.
+#[derive(Clone)]
+pub struct Following {
+    doc: Rc<Document>,
+    current: Idx,
+}
+
+impl Following {
+    #[inline]
+    fn new(start: &Node) -> Self {
+        Self {
+            doc: Rc::clone(&start.document),
+            current: start.id,
+        }
+    }
+}
+
+impl Iterator for Following {
+    type Item = Node;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = if self.current.get_usize() == self.doc.nodes.len() - 1 {
+            None
+        } else {
+            Some(self.doc.node(self.current))
+        };
+
+        if next.is_some() {
+            let mut new_idx = self.current.get_usize() + 1;
+            while new_idx != self.doc.nodes.len() - 1
+                && self.doc.nodes[new_idx].node_type.is_attribute()
+            {
+                new_idx += 1;
+            }
+            self.current = Idx::from(new_idx);
+        }
+        next
+    }
+}
+
+/// Iterator over nodes before the current one in document order.
+#[derive(Clone)]
+pub struct Preceding {
+    doc: Rc<Document>,
+    current: Idx,
+}
+
+impl Preceding {
+    #[inline]
+    fn new(start: &Node) -> Self {
+        Self {
+            doc: Rc::clone(&start.document),
+            current: start.id,
+        }
+    }
+}
+
+impl Iterator for Preceding {
+    type Item = Node;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = if self.current.get_usize() == 0 {
+            None
+        } else {
+            Some(self.doc.node(self.current))
+        };
+
+        if next.is_some() {
+            let mut new_idx = self.current.get_usize() - 1;
+            while new_idx != 0 && self.doc.nodes[new_idx].node_type.is_attribute() {
+                new_idx -= 1;
+            }
+            self.current = Idx::from(new_idx);
+        }
+        next
+    }
+}
 #[cfg(test)]
 mod tests {
     use crate::nod::{parse, Document, NodeKind};
