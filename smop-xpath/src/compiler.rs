@@ -377,7 +377,86 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                                 )
                             }
                         }
-                        _ => unimplemented!("axis {}", axis),
+                        Axis::Ancestor => {
+                            if ro_node.node_kind() == NodeKind::Document {
+                                Box::new(std::iter::empty())
+                            } else {
+                                Box::new(
+                                    AxisIter {
+                                        node: ro_node.parent(),
+                                        next: |n| n.parent(),
+                                    }
+                                    .filter(|sibling| {
+                                        nt.matches(
+                                            sibling.node_kind(),
+                                            NodeKind::Element,
+                                            sibling.node_name(),
+                                        )
+                                    })
+                                    .enumerate(),
+                                )
+                            }
+                        }
+                        Axis::AncestorOrSelf => Box::new(
+                            AxisIter {
+                                node: Some(ro_node.clone()),
+                                next: |n| n.parent(),
+                            }
+                            .filter(|sibling| {
+                                nt.matches(
+                                    sibling.node_kind(),
+                                    NodeKind::Element,
+                                    sibling.node_name(),
+                                )
+                            })
+                            .enumerate(),
+                        ),
+                        Axis::FollowingSibling => {
+                            if ro_node.node_kind() == NodeKind::Attribute {
+                                Box::new(std::iter::empty())
+                            } else {
+                                Box::new(
+                                    AxisIter {
+                                        node: ro_node.next_sibling(),
+                                        next: |n| n.next_sibling(),
+                                    }
+                                    .filter(|sibling| {
+                                        nt.matches(
+                                            sibling.node_kind(),
+                                            NodeKind::Element,
+                                            sibling.node_name(),
+                                        )
+                                    })
+                                    .enumerate(),
+                                )
+                            }
+                        }
+                        Axis::Following => Box::new(
+                            ro_node
+                                .following_or_self()
+                                .skip(1)
+                                .filter(|child| {
+                                    nt.matches(
+                                        child.node_kind(),
+                                        NodeKind::Element,
+                                        child.node_name(),
+                                    )
+                                })
+                                .enumerate(),
+                        ),
+                        Axis::Preceding => Box::new(
+                            ro_node
+                                .preceding_or_self()
+                                .skip(1)
+                                .filter(|child| {
+                                    nt.matches(
+                                        child.node_kind(),
+                                        NodeKind::Element,
+                                        child.node_name(),
+                                    )
+                                })
+                                .enumerate(),
+                        ),
                     };
                     // pos needs to change if an earlier predicate filters out some nodes
                     // //foo[@bar=1][5] needs to count not all foos but the filtered ones.

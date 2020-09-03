@@ -308,6 +308,17 @@ pub(crate) fn register(ctx: &mut StaticContext) {
         code: fn_deep_equal_2,
     };
     ctx.add_function(qname, fn_deep_equal_2_meta);
+
+    let qname = ctx.qname("fn", "exists").unwrap();
+    let fn_exists_1_meta = Function {
+        args: vec![SequenceType::Item(Item::Item, Occurrence::ZeroOrMore)],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_boolean).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_exists_1,
+    };
+    ctx.add_function(qname, fn_exists_1_meta);
 }
 
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
@@ -476,6 +487,14 @@ pub(crate) fn fn_exactly_one_1() -> CompiledFunction {
 }
 pub(crate) fn fn_deep_equal_2() -> CompiledFunction {
     CompiledFunction::new(|_ctx, args| Ok(Xdm::Boolean(args[0].deep_equal(&args[1]))))
+}
+pub(crate) fn fn_exists_1() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, args| {
+        Ok(Xdm::Boolean(match args[0] {
+            Xdm::EmptySequence => false,
+            _ => true,
+        }))
+    })
 }
 pub(crate) fn string_compare(s1: &str, s2: &str) -> i8 {
     s1.cmp(s2) as i8
