@@ -1,6 +1,6 @@
 use crate::ast::{ArithmeticOp, Axis, Expr, NodeComp, Quantifier};
 use crate::context::StaticContext;
-use crate::runtime::CompiledExpr;
+use crate::runtime::{CompiledExpr, DynamicContext};
 use crate::smop_xmltree::AxisIter;
 use crate::types::SequenceType;
 use crate::xdm::{Xdm, XdmError, XdmResult};
@@ -636,23 +636,20 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     .into_iter()
                     .map(|(q, b)| b.compile().map(|comp| (q, comp)))
                     .collect();
-                let _bs_compiled = bs_compiled?;
+                let bs_compiled = bs_compiled?;
                 let pred_compiled = predicate.compile()?;
                 let default_return_value = match quantifier {
                     Quantifier::Some => false,
                     Quantifier::Every => true,
                 };
                 Ok(CompiledExpr::new(move |c| {
-                    // for every bs_compiled:
-                    // - execute
-                    // - create a new context
-                    // - set  variable in context
-                    // use context for the next bs or if last, for the pred
-                    // this is already ok for inside the inner loop:
-                    if pred_compiled.execute(c)?.boolean()? != default_return_value {
-                        return Ok(Xdm::Boolean(!default_return_value));
-                    }
-                    Ok(Xdm::Boolean(default_return_value))
+                    Ok(Xdm::Boolean(quantified(
+                        c,
+                        &bs_compiled,
+                        0,
+                        &pred_compiled,
+                        default_return_value,
+                    )?))
                 }))
             }
             Expr::Range(from, to, _) => {
@@ -710,5 +707,38 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                 }))
             }
         }
+    }
+}
+
+fn quantified(
+    c: &DynamicContext,
+    bs_compiled: &Vec<(QName, CompiledExpr)>,
+    binding_index: usize,
+    pred_compiled: &CompiledExpr,
+    default_return_value: bool,
+) -> XdmResult<bool> {
+    if binding_index >= bs_compiled.len() {
+        if pred_compiled.execute(c)?.boolean()? != default_return_value {
+            Ok(!default_return_value)
+        } else {
+            Ok(default_return_value)
+        }
+    } else {
+        let (ref name, ref c_expr) = bs_compiled[binding_index];
+        let seq = c_expr.execute(c)?;
+        for item in seq {
+            let ctx = c.clone_with_variable(name.clone(), item);
+            if quantified(
+                &ctx,
+                bs_compiled,
+                binding_index + 1,
+                pred_compiled,
+                default_return_value,
+            )? != default_return_value
+            {
+                return Ok(!default_return_value);
+            }
+        }
+        Ok(default_return_value)
     }
 }

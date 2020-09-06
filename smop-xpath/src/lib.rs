@@ -500,4 +500,34 @@ mod tests {
         assert!(result.boolean()?);
         Ok(())
     }
+    #[test]
+    fn quant1() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let input = r#"some $x in (1, 2, 3), $y in (2, 3, 4) satisfies $x + $y = 4"#;
+        let xpath = Xpath::compile(&static_context, input)?;
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let result = xpath.evaluate(&context)?;
+        assert!(result.boolean()?);
+        Ok(())
+    }
+    #[test]
+    fn quant2() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let input = r#"every $x in (1, 2, 3), $y in (2, 3, 4) satisfies $x + $y = 4"#;
+        let xpath = Xpath::compile(&static_context, input)?;
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let result = xpath.evaluate(&context)?;
+        assert!(!result.boolean()?);
+        Ok(())
+    }
+    #[test]
+    fn quant3() -> XdmResult<()> {
+        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let input = r#"some $x in (1, 2, 3), $y in ($x, 3, 4) satisfies $x + $y = 4"#;
+        let xpath = Xpath::compile(&static_context, input)?;
+        let context: DynamicContext = static_context.new_dynamic_context();
+        let result = xpath.evaluate(&context)?;
+        assert!(result.boolean()?);
+        Ok(())
+    }
 }

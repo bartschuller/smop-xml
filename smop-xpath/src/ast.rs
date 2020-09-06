@@ -114,7 +114,14 @@ impl NodeTest {
         match self {
             NodeTest::KindTest(kt) => match kt {
                 KindTest::Document => node_kind == NodeKind::Document,
-                KindTest::Element => node_kind == NodeKind::Element,
+                KindTest::Element(opt_name, _type) => {
+                    node_kind == NodeKind::Element
+                        && match (opt_name, node_name) {
+                            (None, _) => true,
+                            (Some(qn1), Some(ref qn2)) => qn1.eqv(qn2),
+                            (Some(_), None) => false,
+                        }
+                }
                 KindTest::Attribute => node_kind == NodeKind::Attribute,
                 KindTest::SchemaElement => unimplemented!(),
                 KindTest::SchemaAttribute => unimplemented!(),
@@ -299,9 +306,10 @@ impl<T> Expr<T> {
 impl Axis {
     pub(crate) fn type_(&self, _ctx: &StaticContext) -> XdmResult<SequenceType> {
         Ok(match self {
-            Axis::Child => {
-                SequenceType::Item(Item::KindTest(KindTest::Element), Occurrence::ZeroOrMore)
-            }
+            Axis::Child => SequenceType::Item(
+                Item::KindTest(KindTest::Element(None, None)),
+                Occurrence::ZeroOrMore,
+            ),
             Axis::Descendant => {
                 SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore)
             }

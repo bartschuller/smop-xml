@@ -505,8 +505,10 @@ impl XpathParser {
     fn PostfixExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [PrimaryExpr(e)] => e,
-            [PrimaryExpr(e), Predicate(pe)] => Expr::Filter(Box::new(e), Box::new(pe), ()),
-            // FIXME generalize for more predicates and other stuff
+            [PrimaryExpr(e), Predicate(pes)..] => {
+                pes.fold(e, |a, b| Expr::Filter(Box::new(a), Box::new(b), ()))
+            }
+            // FIXME generalize for stuff besides Predicates
         ))
     }
     // 50
@@ -715,7 +717,16 @@ impl XpathParser {
     // ElementTest = { "element" ~ "(" ~ (ElementNameOrWildcard ~ ("," ~ TypeName ~ "?"?)?)? ~ ")" }
     fn ElementTest(input: Node) -> Result<KindTest> {
         Ok(match_nodes!(input.into_children();
-            [] => KindTest::Element, // FIXME
+            [] => KindTest::Element(None, None), // FIXME
+            [ElementNameOrWildcard(opt_qname)] => KindTest::Element(opt_qname, None),
+            [ElementNameOrWildcard(opt_qname), EQName(type_name)] => KindTest::Element(opt_qname, Some(type_name)),
+        ))
+    }
+    // 95
+    fn ElementNameOrWildcard(input: Node) -> Result<Option<QName>> {
+        Ok(match_nodes!(input.into_children();
+            [] => None,
+            [EQName(qname)] => Some(qname)
         ))
     }
     // 112
@@ -1448,6 +1459,27 @@ mod tests {
         let output = context.parse(input);
         let typed = output.unwrap().type_(Rc::new(context));
         assert_eq!("child::center/child::node()", format!("{}", typed.unwrap()))
+    }
+
+    #[test]
+    fn kindtest3() {
+        let context: Rc<StaticContext> = Rc::new(Default::default());
+        let input = "self::element()";
+        let output = context.parse(input);
+        let typed = output.unwrap().type_(Rc::clone(&context));
+        assert_eq!(input, format!("{}", typed.unwrap()));
+        let input = "self::element(*)";
+        let output = context.parse(input);
+        let typed = output.unwrap().type_(Rc::clone(&context));
+        assert_eq!("self::element()", format!("{}", typed.unwrap()));
+        let input = "self::element(foo)";
+        let output = context.parse(input);
+        let typed = output.unwrap().type_(Rc::clone(&context));
+        assert_eq!(input, format!("{}", typed.unwrap()));
+        let input = "self::element(foo, xs:integer)";
+        let output = context.parse(input);
+        let typed = output.unwrap().type_(context);
+        assert_eq!(input, format!("{}", typed.unwrap()))
     }
 
     #[test]

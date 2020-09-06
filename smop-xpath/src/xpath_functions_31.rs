@@ -92,7 +92,25 @@ pub(crate) fn register(ctx: &mut StaticContext) {
         code: fn_string_join_1,
     };
     let qname = ctx.qname("fn", "string-join").unwrap();
-    ctx.add_function(qname, fn_string_join_1_meta);
+    ctx.add_function(qname.clone(), fn_string_join_1_meta);
+    let fn_string_join_2_meta = Function {
+        args: vec![
+            SequenceType::Item(
+                Item::AtomicOrUnion(ctx.schema_type(&xs_any_atomic_type).unwrap()),
+                Occurrence::ZeroOrMore,
+            ),
+            SequenceType::Item(
+                Item::AtomicOrUnion(ctx.schema_type(&xs_string).unwrap()),
+                Occurrence::One,
+            ),
+        ],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_string).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_string_join_2,
+    };
+    ctx.add_function(qname, fn_string_join_2_meta);
 
     let fn_concat_2_meta = Function {
         args: vec![
@@ -319,6 +337,31 @@ pub(crate) fn register(ctx: &mut StaticContext) {
         code: fn_exists_1,
     };
     ctx.add_function(qname, fn_exists_1_meta);
+
+    let qname = ctx.qname("fn", "data").unwrap();
+    let fn_data_1_meta = Function {
+        args: vec![SequenceType::Item(Item::Item, Occurrence::ZeroOrMore)],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_any_atomic_type).unwrap()),
+            Occurrence::ZeroOrMore,
+        ),
+        code: fn_data_1,
+    };
+    ctx.add_function(qname, fn_data_1_meta);
+
+    let qname = ctx.qname("fn", "subsequence").unwrap();
+    let fn_subsequence_2_meta = Function {
+        args: vec![
+            SequenceType::Item(Item::Item, Occurrence::ZeroOrMore),
+            SequenceType::Item(
+                Item::AtomicOrUnion(ctx.schema_type(&xs_double).unwrap()),
+                Occurrence::One,
+            ),
+        ],
+        type_: SequenceType::Item(Item::Item, Occurrence::ZeroOrMore),
+        code: fn_subsequence_2,
+    };
+    ctx.add_function(qname, fn_subsequence_2_meta);
 }
 
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
@@ -360,6 +403,20 @@ pub(crate) fn fn_string_join_1() -> CompiledFunction {
                     let s = x.string()?;
                     res.push_str(s.as_str());
                 }
+                Xdm::String(res)
+            }
+            _ => Xdm::String(x.string()?),
+        })
+    })
+}
+pub(crate) fn fn_string_join_2() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, args| {
+        let x = &args[0];
+        let sep_string = args[1].string()?;
+        Ok(match x {
+            Xdm::Sequence(v) => {
+                let strings: XdmResult<Vec<_>> = v.iter().map(|x| x.string()).collect();
+                let res = strings?.join(sep_string.as_str());
                 Xdm::String(res)
             }
             _ => Xdm::String(x.string()?),
@@ -494,6 +551,38 @@ pub(crate) fn fn_exists_1() -> CompiledFunction {
             Xdm::EmptySequence => false,
             _ => true,
         }))
+    })
+}
+pub(crate) fn fn_data_1() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, mut args| args.remove(0).atomize())
+}
+pub(crate) fn fn_subsequence_2() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, mut args| {
+        let starting_loc = 0.max(args[1].double()?.round() as i64 - 1) as usize;
+        Ok(match &args[0] {
+            Xdm::EmptySequence => Xdm::EmptySequence,
+            Xdm::String(_)
+            | Xdm::Boolean(_)
+            | Xdm::Decimal(_)
+            | Xdm::Integer(_)
+            | Xdm::Double(_)
+            | Xdm::Node(_)
+            | Xdm::Array(_)
+            | Xdm::Map(_) => {
+                if starting_loc == 0 {
+                    args.remove(0)
+                } else {
+                    Xdm::EmptySequence
+                }
+            }
+            Xdm::Sequence(v) => {
+                if starting_loc < v.len() {
+                    Xdm::sequence(v.clone().split_off(starting_loc))
+                } else {
+                    Xdm::EmptySequence
+                }
+            }
+        })
     })
 }
 pub(crate) fn string_compare(s1: &str, s2: &str) -> i8 {

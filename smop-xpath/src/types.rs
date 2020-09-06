@@ -24,7 +24,7 @@ pub enum Item {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum KindTest {
     Document,
-    Element,
+    Element(Option<QName>, Option<QName>),
     Attribute,
     SchemaElement,
     SchemaAttribute,
@@ -39,7 +39,14 @@ impl Display for KindTest {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             KindTest::Document => write!(f, "document-node()"),
-            KindTest::Element => write!(f, "element()"),
+            KindTest::Element(opt_name, opt_type) => match (opt_name, opt_type) {
+                (None, None) => write!(f, "element()"),
+                (Some(qname), None) => write!(f, "element({})", qname),
+                (Some(qname), Some(schema_type)) => {
+                    write!(f, "element({}, {})", qname, schema_type)
+                }
+                (None, Some(schema_type)) => write!(f, "element(*, {})", schema_type),
+            },
             KindTest::Attribute => write!(f, "attribute()"),
             KindTest::SchemaElement => write!(f, "schema-element()"),
             KindTest::SchemaAttribute => write!(f, "schema-attribute()"),

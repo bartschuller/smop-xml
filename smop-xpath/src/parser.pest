@@ -245,11 +245,11 @@ ElementDeclaration = { ElementName }
 // 98
 AttributeName = { EQName }
 // 99
-ElementName = { EQName }
+ElementName = _{ EQName }
 // 100
 SimpleTypeName = { TypeName }
 // 101
-TypeName = { EQName }
+TypeName = _{ EQName }
 // 102
 FunctionTest = { AnyFunctionTest | TypedFunctionTest }
 // 103

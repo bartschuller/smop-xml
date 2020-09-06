@@ -211,13 +211,14 @@ fn add_simple_type(sc: &mut StaticContext, qname: &str, base: &str) {
     };
     sc.add_schema_type(Rc::new(type_));
 }
-fn add_complex_type(sc: &mut StaticContext, qname: &str) {
+fn add_complex_type(sc: &mut StaticContext, qname: &str, base: Option<&str>) {
     let qname = QName::wellknown(qname);
+    let base = base.map(|base| sc.schema_type(&QName::wellknown(base)).unwrap());
     let type_ = SchemaType {
         name: Some(qname.name.clone()),
         ns: qname.ns.as_ref().cloned(),
         prefix: qname.prefix.as_ref().cloned(),
-        base_type: None,
+        base_type: base,
         tree: TypeTree::Complex,
     };
     sc.add_schema_type(Rc::new(type_));
@@ -237,10 +238,12 @@ impl Default for StaticContext {
 
         sc.add_prefix_ns("xs", "http://www.w3.org/2001/XMLSchema");
         sc.add_prefix_ns("fn", "http://www.w3.org/2005/xpath-functions");
-        add_complex_type(&mut sc, "xs:anyType");
+        add_complex_type(&mut sc, "xs:anyType", None);
+        add_complex_type(&mut sc, "xs:untyped", Some("xs:anyType"));
         add_simple_type(&mut sc, "xs:anySimpleType", "xs:anyType");
         add_simple_type(&mut sc, "xs:error", "xs:anySimpleType");
         add_simple_type(&mut sc, "xs:anyAtomicType", "xs:anySimpleType");
+        add_simple_type(&mut sc, "xs:untypedAtomic", "xs:anyAtomicType");
         add_simple_type(&mut sc, "xs:string", "xs:anyAtomicType");
         add_simple_type(&mut sc, "xs:boolean", "xs:anyAtomicType");
         add_simple_type(&mut sc, "xs:decimal", "xs:anyAtomicType");

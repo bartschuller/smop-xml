@@ -1,5 +1,5 @@
 use crate::ast::{CombineOp, Comp};
-use crate::types::{Item, Occurrence, SequenceType};
+use crate::types::{Item, KindTest, Occurrence, SequenceType};
 use crate::xpath_functions_31::{
     boolean_compare, decimal_compare, double_compare, integer_compare, string_compare,
 };
@@ -9,7 +9,7 @@ use num_traits::cast::FromPrimitive;
 use rust_decimal::prelude::{ToPrimitive, Zero};
 use rust_decimal::Decimal;
 use smop_xmltree::nod;
-use smop_xmltree::nod::{Node, QName};
+use smop_xmltree::nod::{Node, NodeKind, QName};
 use std::borrow::Borrow;
 use std::collections::{BTreeSet, HashMap};
 use std::error::Error;
@@ -302,7 +302,17 @@ impl Xdm {
             Xdm::Decimal(_) => simple(ctx, "xs:decimal"),
             Xdm::Integer(_) => simple(ctx, "xs:integer"),
             Xdm::Double(_) => simple(ctx, "xs:double"),
-            Xdm::Node(_) => unimplemented!(),
+            Xdm::Node(n) => Ok(SequenceType::Item(
+                Item::KindTest(match n.node_kind() {
+                    NodeKind::Document => KindTest::Document,
+                    NodeKind::Element => KindTest::Element(n.node_name(), None),
+                    NodeKind::Attribute => KindTest::Attribute,
+                    NodeKind::Text => KindTest::Text,
+                    NodeKind::PI => KindTest::PI,
+                    NodeKind::Comment => KindTest::Comment,
+                }),
+                Occurrence::One,
+            )),
             Xdm::Array(_) => unimplemented!(),
             Xdm::Map(_) => unimplemented!(),
             Xdm::EmptySequence => Ok(SequenceType::EmptySequence),
