@@ -137,7 +137,16 @@ impl TestRunner for SmopRunner {
                 }
                 Err(e) => Some(e.to_string()),
             },
-            Assertion::AssertCount(_) => Some("wrong".to_string()),
+            Assertion::AssertCount(count) => match result {
+                Ok(v) => {
+                    if v.count() == *count {
+                        None
+                    } else {
+                        Some(format!("expected {} items, got {}", *count, v.count()))
+                    }
+                }
+                Err(e) => Some(e.to_string()),
+            },
             Assertion::AssertDeepEq(other_string) => match result {
                 Ok(v) => {
                     let val = Xpath::compile(&self.static_context, other_string)
