@@ -706,6 +706,23 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     }
                 }))
             }
+            Expr::Cast {
+                expression,
+                simple_type: _,
+                optional: _,
+                only_check,
+                t: _,
+            } => {
+                let e = expression.compile()?;
+                Ok(CompiledExpr::new(move |c| {
+                    let x = e.execute(c)?;
+                    if only_check {
+                        Ok(Xdm::Boolean(true)) // FIXME
+                    } else {
+                        Ok(x)
+                    }
+                }))
+            }
         }
     }
 }

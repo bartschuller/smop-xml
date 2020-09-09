@@ -184,7 +184,8 @@ CurlyArrayConstructor = _{ "array" ~ EnclosedExpr }
 // 76
 UnaryLookup = { "?" ~ KeySpecifier }
 // 77
-SingleType = { SimpleTypeName ~ "?"? }
+SingleType = { SimpleTypeName ~ SingleTypeOptional? }
+SingleTypeOptional = { "?" }
 // 78
 TypeDeclaration = _{ "as" ~ SequenceType }
 // 79
@@ -247,7 +248,7 @@ AttributeName = { EQName }
 // 99
 ElementName = _{ EQName }
 // 100
-SimpleTypeName = { TypeName }
+SimpleTypeName = _{ TypeName }
 // 101
 TypeName = _{ EQName }
 // 102

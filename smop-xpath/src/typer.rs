@@ -325,6 +325,37 @@ impl Expr<()> {
                     (e2_type, ctx),
                 ))
             }
+            Expr::Cast {
+                expression,
+                simple_type,
+                optional,
+                only_check,
+                t: _,
+            } => {
+                let e_typed = expression.type_(Rc::clone(&ctx))?;
+                let result_type = if only_check {
+                    SequenceType::Item(
+                        Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:boolean"))?),
+                        Occurrence::One,
+                    )
+                } else {
+                    SequenceType::Item(
+                        Item::AtomicOrUnion(Rc::clone(&simple_type)),
+                        if optional {
+                            Occurrence::Optional
+                        } else {
+                            Occurrence::One
+                        },
+                    )
+                };
+                Ok(Expr::Cast {
+                    expression: Box::new(e_typed),
+                    simple_type: Rc::clone(&simple_type),
+                    optional,
+                    only_check,
+                    t: (result_type, ctx),
+                })
+            }
         }
     }
 }

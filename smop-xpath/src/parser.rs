@@ -3,7 +3,7 @@ use crate::ast::{
 };
 use crate::context::StaticContext;
 use crate::types::{Item, KindTest, Occurrence, SequenceType};
-use crate::xdm::XdmError;
+use crate::xdm::{XdmError, XdmResult};
 use itertools::Itertools;
 use pest_consume::*;
 use rust_decimal::Decimal;
@@ -288,14 +288,20 @@ impl XpathParser {
     }
     // 27
     fn CastableExpr(input: Node) -> Result<Expr<()>> {
-        Ok(match_nodes!(input.into_children();
-            [CastExpr(e)] => e, // FIXME
+        let sc = input.user_data();
+        Ok(match_nodes!(input.clone().into_children();
+            [CastExpr(e)] => e,
+            [CastExpr(e), SingleType(qo)] =>
+                cast_expr(*sc, e, qo.0, qo.1, true).map_err(|e| input.error(e.message))?
         ))
     }
     // 28
     fn CastExpr(input: Node) -> Result<Expr<()>> {
-        Ok(match_nodes!(input.into_children();
-            [ArrowExpr(e)] => e, // FIXME
+        let sc = input.user_data();
+        Ok(match_nodes!(input.clone().into_children();
+            [ArrowExpr(e)] => e,
+            [ArrowExpr(e), SingleType(qo)] =>
+                cast_expr(*sc, e, qo.0, qo.1, false).map_err(|e| input.error(e.message))?
         ))
     }
     // 29
@@ -646,6 +652,16 @@ impl XpathParser {
             [NamedFunctionRef(e)] => Expr::Sequence(vec![], ()), // FIXME
         ))
     }
+    // 77
+    fn SingleType(input: Node) -> Result<(QName, bool)> {
+        Ok(match_nodes!(input.into_children();
+            [EQName(qname)] => (qname, false),
+            [EQName(qname), SingleTypeOptional(_)] => (qname, true),
+        ))
+    }
+    fn SingleTypeOptional(_input: Node) -> Result<()> {
+        Ok(())
+    }
     // 79
     fn SequenceType(input: Node) -> Result<SequenceType> {
         Ok(match_nodes!(input.into_children();
@@ -881,6 +897,22 @@ fn arrow_exprs(e: Expr<()>, fs: Vec<Expr<()>>) -> Expr<()> {
             Expr::FunctionCall(qname, args, ())
         }
         _ => unreachable!("expected only function calls"),
+    })
+}
+
+fn cast_expr(
+    sc: &StaticContext,
+    e: Expr<()>,
+    qname: QName,
+    optional: bool,
+    only_check: bool,
+) -> XdmResult<Expr<()>> {
+    Ok(Expr::Cast {
+        expression: Box::new(e),
+        simple_type: sc.schema_type(&qname)?,
+        optional,
+        only_check,
+        t: (),
     })
 }
 
@@ -1495,6 +1527,22 @@ mod tests {
     fn simple_map1() {
         let context: StaticContext = Default::default();
         let input = r#"(1 to 5)!"*""#;
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+
+    #[test]
+    fn cast1() {
+        let context: StaticContext = Default::default();
+        let input = r#"10 cast as xs:double ?"#;
+        let output = context.parse(input);
+        assert_eq!(input, format!("{}", output.unwrap()))
+    }
+
+    #[test]
+    fn cast2() {
+        let context: StaticContext = Default::default();
+        let input = r#""foo" castable as xs:double"#;
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
     }

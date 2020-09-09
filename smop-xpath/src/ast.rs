@@ -1,6 +1,6 @@
 use crate::context::StaticContext;
 use crate::runtime::CompiledExpr;
-use crate::types::{Item, KindTest};
+use crate::types::{Item, KindTest, SchemaType};
 use crate::types::{Occurrence, SequenceType};
 use crate::xdm::*;
 use itertools::Itertools;
@@ -9,6 +9,7 @@ use smop_xmltree::nod::{NodeKind, QName};
 use smop_xmltree::option_ext::OptionExt;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::rc::Rc;
 
 #[derive(Debug, PartialEq)]
 pub enum Expr<T> {
@@ -25,6 +26,13 @@ pub enum Expr<T> {
     UnaryMinus(Box<Expr<T>>, T),
     InstanceOf(Box<Expr<T>>, SequenceType, T),
     TreatAs(Box<Expr<T>>, SequenceType, T),
+    Cast {
+        expression: Box<Expr<T>>,
+        simple_type: Rc<SchemaType>,
+        optional: bool,
+        only_check: bool,
+        t: T,
+    },
     Path(Box<Expr<T>>, Box<Expr<T>>, T),
     Step(Axis, NodeTest, Vec<Expr<T>>, T),
     ValueComp(Box<Expr<T>>, Comp, Box<Expr<T>>, T),
@@ -299,6 +307,7 @@ impl<T> Expr<T> {
             Expr::InlineFunction(_, _, _, t) => t,
             Expr::Combine(_, _, _, t) => t,
             Expr::SimpleMap(_, _, t) => t,
+            Expr::Cast { t, .. } => t,
         }
     }
 }
@@ -431,6 +440,20 @@ impl<T> Display for Expr<T> {
             }
             Expr::Combine(left, op, right, _) => write!(f, "{} {} {}", left, op, right),
             Expr::SimpleMap(e1, e2, _) => write!(f, "({})!{}", e1, e2),
+            Expr::Cast {
+                expression,
+                simple_type,
+                optional,
+                only_check,
+                t: _,
+            } => write!(
+                f,
+                "{} cast{} as {}{}",
+                expression,
+                if *only_check { "able" } else { "" },
+                simple_type,
+                if *optional { " ?" } else { "" }
+            ),
         }
     }
 }
