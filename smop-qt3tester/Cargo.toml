@@ -5,6 +5,8 @@ authors = ["Bart Schuller <bart.schuller@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.dev.package.xpath]
+opt-level = 1
 
 [dependencies]
 roxmltree = "^0.11"

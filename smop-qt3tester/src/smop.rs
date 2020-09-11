@@ -30,7 +30,8 @@ impl SmopRunner {
         runner
     }
     fn xpath_equals(&self, v1: &Xdm, v2: &Xdm) -> bool {
-        v1.xpath_compare(v2, Comp::EQ).unwrap()
+        v1.xpath_compare(v2, Comp::EQ)
+            .map_or(false, |x| x.boolean().unwrap_or(false))
     }
 }
 pub struct SmopEnvironment {
@@ -193,10 +194,10 @@ impl TestRunner for SmopRunner {
             Assertion::SerializationMatches { .. } => Some("wrong".to_string()),
             Assertion::AssertSerializationError(_) => Some("wrong".to_string()),
             Assertion::AssertEmpty => match result {
-                Ok(Xdm::Sequence(v)) if v.is_empty() => None,
+                Ok(Xdm::EmptySequence) => None,
                 Ok(x) => Some(format!(
                     "expected an empty sequence, got {}",
-                    x.string().unwrap()
+                    x.string().unwrap(),
                 )),
                 Err(e) => Some(e.to_string()),
             },
