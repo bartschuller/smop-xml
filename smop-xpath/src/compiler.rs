@@ -132,19 +132,28 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         ($type_string:ident, $l:ident, $op:ident, $r:ident) => {
                             Ok(match $type_string.as_ref() {
                                 "xs:integer" => CompiledExpr::new(move |c| {
-                                    Ok(Xdm::Integer(
-                                        $l.execute(c)?.integer()?.$op($r.execute(c)?.integer()?),
-                                    ))
+                                    let l_res = $l.execute(c)?;
+                                    let r_res = $r.execute(c)?;
+                                    if l_res.count() == 0 || r_res.count() == 0 {
+                                        return Ok(Xdm::EmptySequence);
+                                    }
+                                    Ok(Xdm::Integer(l_res.integer()?.$op(r_res.integer()?)))
                                 }),
                                 "xs:decimal" => CompiledExpr::new(move |c| {
-                                    Ok(Xdm::Decimal(
-                                        $l.execute(c)?.decimal()?.$op($r.execute(c)?.decimal()?),
-                                    ))
+                                    let l_res = $l.execute(c)?;
+                                    let r_res = $r.execute(c)?;
+                                    if l_res.count() == 0 || r_res.count() == 0 {
+                                        return Ok(Xdm::EmptySequence);
+                                    }
+                                    Ok(Xdm::Decimal(l_res.decimal()?.$op(r_res.decimal()?)))
                                 }),
                                 "xs:double" | "xs:anyAtomicType" => CompiledExpr::new(move |c| {
-                                    Ok(Xdm::Double(
-                                        $l.execute(c)?.double()?.$op($r.execute(c)?.double()?),
-                                    ))
+                                    let l_res = $l.execute(c)?;
+                                    let r_res = $r.execute(c)?;
+                                    if l_res.count() == 0 || r_res.count() == 0 {
+                                        return Ok(Xdm::EmptySequence);
+                                    }
+                                    Ok(Xdm::Double(l_res.double()?.$op(r_res.double()?)))
                                 }),
                                 _ => todo!("compile more Arithmetic cases"),
                             })
@@ -508,14 +517,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                 Ok(CompiledExpr::new(move |c| {
                     let a1 = c1.execute(c)?.atomize()?;
                     let a2 = c2.execute(c)?.atomize()?;
-                    match (a1, a2) {
-                        (Xdm::EmptySequence, _) | (_, Xdm::EmptySequence) => Ok(Xdm::EmptySequence),
-                        (Xdm::Sequence(_), _) | (_, Xdm::Sequence(_)) => Err(XdmError::xqtm(
-                            "XPTY0004",
-                            "value comparison argument is a sequence",
-                        )),
-                        (x1, x2) => x1.xpath_compare(&x2, vc).map(Xdm::Boolean),
-                    }
+                    a1.xpath_compare(&a2, vc)
                 }))
             }
             Expr::GeneralComp(e1, vc, e2, _) => {

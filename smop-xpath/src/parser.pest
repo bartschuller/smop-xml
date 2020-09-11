@@ -234,7 +234,7 @@ AttribNameOrWildcard = { AttributeName | "*" }
 // 92
 SchemaAttributeTest = { "schema-attribute" ~ "(" ~ AttributeDeclaration ~ ")" }
 // 93
-AttributeDeclaration = { AttributeName }
+AttributeDeclaration = _{ AttributeName }
 // 94
 ElementTest = { "element" ~ "(" ~ (ElementNameOrWildcard ~ ("," ~ TypeName ~ "?"?)?)? ~ ")" }
 // 95
@@ -242,9 +242,9 @@ ElementNameOrWildcard = { ElementName | "*" }
 // 96
 SchemaElementTest = { "schema-element" ~ "(" ~ ElementDeclaration ~ ")" }
 // 97
-ElementDeclaration = { ElementName }
+ElementDeclaration = _{ ElementName }
 // 98
-AttributeName = { EQName }
+AttributeName = _{ EQName }
 // 99
 ElementName = _{ EQName }
 // 100

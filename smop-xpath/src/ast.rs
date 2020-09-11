@@ -130,10 +130,17 @@ impl NodeTest {
                             (Some(_), None) => false,
                         }
                 }
-                KindTest::Attribute => node_kind == NodeKind::Attribute,
-                KindTest::SchemaElement => unimplemented!(),
-                KindTest::SchemaAttribute => unimplemented!(),
-                KindTest::PI => node_kind == NodeKind::PI,
+                KindTest::Attribute(opt_name, _type) => {
+                    node_kind == NodeKind::Attribute
+                        && match (opt_name, node_name) {
+                            (None, _) => true,
+                            (Some(qn1), Some(ref qn2)) => qn1.eqv(qn2),
+                            (Some(_), None) => false,
+                        }
+                }
+                KindTest::SchemaElement(_) => unimplemented!(),
+                KindTest::SchemaAttribute(_) => unimplemented!(),
+                KindTest::PI(_) => node_kind == NodeKind::PI,
                 KindTest::Comment => node_kind == NodeKind::Comment,
                 KindTest::Text => node_kind == NodeKind::Text,
                 KindTest::NamespaceNode => false, // namespace axis is not supported
@@ -322,9 +329,10 @@ impl Axis {
             Axis::Descendant => {
                 SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore)
             }
-            Axis::Attribute => {
-                SequenceType::Item(Item::KindTest(KindTest::Attribute), Occurrence::ZeroOrMore)
-            }
+            Axis::Attribute => SequenceType::Item(
+                Item::KindTest(KindTest::Attribute(None, None)),
+                Occurrence::ZeroOrMore,
+            ),
             Axis::Self_ => SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::One),
             Axis::DescendantOrSelf => {
                 SequenceType::Item(Item::KindTest(KindTest::AnyKind), Occurrence::ZeroOrMore)

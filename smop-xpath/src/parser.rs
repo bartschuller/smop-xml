@@ -566,7 +566,7 @@ impl XpathParser {
             [DoubleLiteral(lit)] => lit,
             [DecimalLiteral(lit)] => lit,
             [IntegerLiteral(lit)] => lit,
-            [StringLiteral(lit)] => lit,
+            [StringLiteral(lit)] => Literal::String(lit),
         ))
     }
     // 59
@@ -707,6 +707,10 @@ impl XpathParser {
             [AnyKindTest(kt)] => kt,
             [DocumentTest(kt)] => kt,
             [ElementTest(kt)] => kt,
+            [SchemaElementTest(kt)] => kt,
+            [SchemaAttributeTest(kt)] => kt,
+            [PITest(kt)] => kt,
+            [CommentTest(kt)] => kt,
             [TextTest(kt)] => kt,
             [NamespaceNodeTest(kt)] => kt,
         ))
@@ -722,18 +726,51 @@ impl XpathParser {
         ))
     }
     // 86
-    fn TextTest(input: Node) -> Result<KindTest> {
+    fn TextTest(_input: Node) -> Result<KindTest> {
         Ok(KindTest::Text)
     }
+    // 87
+    fn CommentTest(_input: Node) -> Result<KindTest> {
+        Ok(KindTest::Comment)
+    }
     // 88
-    fn NamespaceNodeTest(input: Node) -> Result<KindTest> {
+    fn NamespaceNodeTest(_input: Node) -> Result<KindTest> {
         Ok(KindTest::NamespaceNode)
+    }
+    // 89
+    fn PITest(input: Node) -> Result<KindTest> {
+        Ok(match_nodes!(input.into_children();
+            [NCName(name)] => KindTest::PI(Some(name)),
+            [StringLiteral(name)] => KindTest::PI(Some(name)),
+            [] => KindTest::PI(None),
+        ))
+    }
+    // 90
+    fn AttributeTest(input: Node) -> Result<KindTest> {
+        Ok(match_nodes!(input.into_children();
+            [] => KindTest::Attribute(None, None),
+            [AttribNameOrWildcard(opt_qname)] => KindTest::Attribute(opt_qname, None),
+            [AttribNameOrWildcard(opt_qname), EQName(type_name)] => KindTest::Attribute(opt_qname, Some(type_name)),
+        ))
+    }
+    // 91
+    fn AttribNameOrWildcard(input: Node) -> Result<Option<QName>> {
+        Ok(match_nodes!(input.into_children();
+            [] => None,
+            [EQName(qname)] => Some(qname)
+        ))
+    }
+    // 92
+    fn SchemaAttributeTest(input: Node) -> Result<KindTest> {
+        Ok(match_nodes!(input.into_children();
+            [EQName(qname)] => KindTest::SchemaAttribute(qname)
+        ))
     }
     // 94
     // ElementTest = { "element" ~ "(" ~ (ElementNameOrWildcard ~ ("," ~ TypeName ~ "?"?)?)? ~ ")" }
     fn ElementTest(input: Node) -> Result<KindTest> {
         Ok(match_nodes!(input.into_children();
-            [] => KindTest::Element(None, None), // FIXME
+            [] => KindTest::Element(None, None),
             [ElementNameOrWildcard(opt_qname)] => KindTest::Element(opt_qname, None),
             [ElementNameOrWildcard(opt_qname), EQName(type_name)] => KindTest::Element(opt_qname, Some(type_name)),
         ))
@@ -743,6 +780,12 @@ impl XpathParser {
         Ok(match_nodes!(input.into_children();
             [] => None,
             [EQName(qname)] => Some(qname)
+        ))
+    }
+    // 96
+    fn SchemaElementTest(input: Node) -> Result<KindTest> {
+        Ok(match_nodes!(input.into_children();
+            [EQName(qname)] => KindTest::SchemaElement(qname)
         ))
     }
     // 112
@@ -777,7 +820,7 @@ impl XpathParser {
         Ok(Literal::Double(input.as_str().parse().unwrap()))
     }
     // 116
-    fn StringLiteral(input: Node) -> Result<Literal> {
+    fn StringLiteral(input: Node) -> Result<String> {
         // we matched the complete string literal, with outer quotes and possibly escaped quotes.
         // Get the inner string and unescape where needed.
         let str = input.as_str();
@@ -794,7 +837,7 @@ impl XpathParser {
         } else {
             inner.to_string()
         };
-        Ok(Literal::String(unescaped))
+        Ok(unescaped)
     }
     // 117
     fn URIQualifiedName(input: Node) -> Result<QName> {

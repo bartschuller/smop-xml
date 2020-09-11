@@ -213,6 +213,10 @@ impl Xdm {
                     format!("Can't cast string '{}' to an integer", s),
                 )
             }),
+            Xdm::Sequence(_) => Err(XdmError::xqtm(
+                "XPTY0004",
+                "Expected an integer, got a sequence",
+            )),
             _ => todo!("finish integer conversion"),
         }
     }
@@ -234,7 +238,10 @@ impl Xdm {
             Xdm::Double(d) => Ok(*d),
             Xdm::String(s) => Ok(s.parse::<f64>().unwrap_or(NAN)),
             Xdm::Node(_) => Ok(self.string()?.parse::<f64>().unwrap_or(NAN)),
-            _ => todo!("finish double conversion"),
+            _ => {
+                println!("xs:double({:?})", self);
+                todo!("finish double conversion")
+            }
         }
     }
     pub fn string(&self) -> XdmResult<String> {
@@ -306,9 +313,9 @@ impl Xdm {
                 Item::KindTest(match n.node_kind() {
                     NodeKind::Document => KindTest::Document,
                     NodeKind::Element => KindTest::Element(n.node_name(), None),
-                    NodeKind::Attribute => KindTest::Attribute,
+                    NodeKind::Attribute => KindTest::Attribute(n.node_name(), None),
                     NodeKind::Text => KindTest::Text,
-                    NodeKind::PI => KindTest::PI,
+                    NodeKind::PI => KindTest::PI(n.node_name().map(|q| q.name)),
                     NodeKind::Comment => KindTest::Comment,
                 }),
                 Occurrence::One,
@@ -319,40 +326,54 @@ impl Xdm {
             Xdm::Sequence(_v) => unimplemented!(),
         }
     }
-    pub fn xpath_compare(&self, other: &Xdm, vc: Comp) -> XdmResult<bool> {
+    pub fn xpath_compare(&self, other: &Xdm, vc: Comp) -> XdmResult<Xdm> {
         match (self, other) {
+            (Xdm::EmptySequence, _) | (_, Xdm::EmptySequence) => return Ok(Xdm::EmptySequence),
+            (Xdm::Sequence(_), _) | (_, Xdm::Sequence(_)) => {
+                return Err(XdmError::xqtm(
+                    "XPTY0004",
+                    "value comparison argument is a sequence",
+                ))
+            }
+            _ => {}
+        }
+        Ok(Xdm::Boolean(match (self, other) {
             (Xdm::String(s1), x2) => {
-                Ok(vc.comparison_true(string_compare(s1.as_str(), x2.string()?.as_str())))
+                vc.comparison_true(string_compare(s1.as_str(), x2.string()?.as_str()))
             }
             (x1, Xdm::String(s2)) => {
-                Ok(vc.comparison_true(string_compare(x1.string()?.as_str(), s2.as_str())))
+                vc.comparison_true(string_compare(x1.string()?.as_str(), s2.as_str()))
             }
-            (Xdm::Double(d1), x2) => Ok(!d1.is_nan()
-                && !x2.is_nan()
-                && vc.comparison_true(double_compare(&d1, x2.double()?.borrow()))),
-            (x1, Xdm::Double(d2)) => Ok(!d2.is_nan()
-                && !x1.is_nan()
-                && vc.comparison_true(double_compare(x1.double()?.borrow(), &d2))),
+            (Xdm::Double(d1), x2) => {
+                !d1.is_nan()
+                    && !x2.is_nan()
+                    && vc.comparison_true(double_compare(&d1, x2.double()?.borrow()))
+            }
+            (x1, Xdm::Double(d2)) => {
+                !d2.is_nan()
+                    && !x1.is_nan()
+                    && vc.comparison_true(double_compare(x1.double()?.borrow(), &d2))
+            }
             (Xdm::Decimal(d1), x2) => {
-                Ok(vc.comparison_true(decimal_compare(&d1, x2.decimal()?.borrow())))
+                vc.comparison_true(decimal_compare(&d1, x2.decimal()?.borrow()))
             }
             (x1, Xdm::Decimal(d2)) => {
-                Ok(vc.comparison_true(decimal_compare(x1.decimal()?.borrow(), &d2)))
+                vc.comparison_true(decimal_compare(x1.decimal()?.borrow(), &d2))
             }
             (Xdm::Integer(i1), x2) => {
-                Ok(vc.comparison_true(integer_compare(&i1, x2.integer()?.borrow())))
+                vc.comparison_true(integer_compare(&i1, x2.integer()?.borrow()))
             }
             (x1, Xdm::Integer(i2)) => {
-                Ok(vc.comparison_true(integer_compare(x1.integer()?.borrow(), &i2)))
+                vc.comparison_true(integer_compare(x1.integer()?.borrow(), &i2))
             }
             (Xdm::Boolean(b1), x2) => {
-                Ok(vc.comparison_true(boolean_compare(&b1, x2.boolean()?.borrow())))
+                vc.comparison_true(boolean_compare(&b1, x2.boolean()?.borrow()))
             }
             (x1, Xdm::Boolean(b2)) => {
-                Ok(vc.comparison_true(boolean_compare(x1.boolean()?.borrow(), &b2)))
+                vc.comparison_true(boolean_compare(x1.boolean()?.borrow(), &b2))
             }
             (a1, a2) => unimplemented!("{:?} {} {:?}", a1, vc, a2),
-        }
+        }))
     }
     pub(crate) fn combine(self, other: Xdm, op: CombineOp) -> XdmResult<Xdm> {
         let get_node = |x: Xdm| {
@@ -399,7 +420,8 @@ impl Xdm {
             | Xdm::Decimal(_)
             | Xdm::Integer(_)
             | Xdm::Double(_) => {
-                self.xpath_compare(other, Comp::EQ).unwrap_or(false)
+                self.xpath_compare(other, Comp::EQ)
+                    .map_or(false, |x| x.boolean().unwrap_or(false))
                     || (self.is_nan() && other.is_nan())
             }
             Xdm::Node(n1) => match other {

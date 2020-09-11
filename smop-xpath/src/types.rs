@@ -1,6 +1,7 @@
 use crate::xdm::{XdmError, XdmResult};
 use crate::StaticContext;
 use smop_xmltree::nod::QName;
+use smop_xmltree::option_ext::OptionExt;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
@@ -25,10 +26,10 @@ pub enum Item {
 pub enum KindTest {
     Document,
     Element(Option<QName>, Option<QName>),
-    Attribute,
-    SchemaElement,
-    SchemaAttribute,
-    PI,
+    Attribute(Option<QName>, Option<QName>),
+    SchemaElement(QName),
+    SchemaAttribute(QName),
+    PI(Option<String>),
     Comment,
     Text,
     NamespaceNode,
@@ -47,10 +48,21 @@ impl Display for KindTest {
                 }
                 (None, Some(schema_type)) => write!(f, "element(*, {})", schema_type),
             },
-            KindTest::Attribute => write!(f, "attribute()"),
-            KindTest::SchemaElement => write!(f, "schema-element()"),
-            KindTest::SchemaAttribute => write!(f, "schema-attribute()"),
-            KindTest::PI => write!(f, "processing-instruction()"),
+            KindTest::Attribute(opt_name, opt_type) => match (opt_name, opt_type) {
+                (None, None) => write!(f, "attribute()"),
+                (Some(qname), None) => write!(f, "attribute({})", qname),
+                (Some(qname), Some(schema_type)) => {
+                    write!(f, "attribute({}, {})", qname, schema_type)
+                }
+                (None, Some(schema_type)) => write!(f, "attribute(*, {})", schema_type),
+            },
+            KindTest::SchemaElement(name) => write!(f, "schema-element({})", name),
+            KindTest::SchemaAttribute(name) => write!(f, "schema-attribute({})", name),
+            KindTest::PI(opt_target) => write!(
+                f,
+                "processing-instruction({})",
+                opt_target.as_str().unwrap_or("")
+            ),
             KindTest::Comment => write!(f, "comment()"),
             KindTest::Text => write!(f, "text()"),
             KindTest::NamespaceNode => write!(f, "namespace-node()"),
