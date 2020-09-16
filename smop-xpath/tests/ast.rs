@@ -192,3 +192,13 @@ fn slashslash1() -> XdmResult<()> {
     assert_eq!(expr1, expr2);
     Ok(())
 }
+
+#[test]
+fn array1() -> XdmResult<()> {
+    let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let context: DynamicContext = static_context.new_dynamic_context();
+    let xpath = Xpath::compile(&static_context, r#"array:size([1, 2, (), 3])"#)?;
+    let result = xpath.evaluate(&context)?;
+    assert_eq!(result.integer()?, 4);
+    Ok(())
+}

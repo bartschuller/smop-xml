@@ -320,10 +320,13 @@ impl Xdm {
                 }),
                 Occurrence::One,
             )),
-            Xdm::Array(_) => unimplemented!(),
+            Xdm::Array(v) => Ok(SequenceType::Item(
+                Item::ArrayTest(None),
+                Occurrence::from(v.len()),
+            )),
             Xdm::Map(_) => unimplemented!(),
             Xdm::EmptySequence => Ok(SequenceType::EmptySequence),
-            Xdm::Sequence(_v) => unimplemented!(),
+            Xdm::Sequence(_v) => Ok(SequenceType::Item(Item::Item, Occurrence::OneOrMore)),
         }
     }
     pub fn xpath_compare(&self, other: &Xdm, vc: Comp) -> XdmResult<Xdm> {

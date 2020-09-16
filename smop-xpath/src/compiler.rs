@@ -8,7 +8,7 @@ use crate::xpath_functions_31::{double_compare, string_compare};
 use num_traits::ToPrimitive;
 use smop_xmltree::nod::{Node, NodeKind, QName};
 use std::borrow::Borrow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::rc::Rc;
 
@@ -595,7 +595,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         let pred = cp.execute(&context)?;
                         match pred {
                             Xdm::Decimal(_) | Xdm::Integer(_) | Xdm::Double(_) => {
-                                if pred.integer()? as usize - 1 == pos {
+                                if pred.integer()? - 1 == pos as i64 {
                                     result.push(context.focus.unwrap().sequence);
                                 }
                             }
@@ -673,9 +673,30 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     ))
                 }))
             }
-            Expr::ArraySquare(_, _) => unimplemented!(),
+            Expr::ArraySquare(s, _) => {
+                let compiled_vec: XdmResult<Vec<_>> = s.into_iter().map(|x| x.compile()).collect();
+                let compiled_vec = compiled_vec?;
+                Ok(CompiledExpr::new(move |c| {
+                    let v: XdmResult<Vec<_>> = compiled_vec.iter().map(|e| e.execute(c)).collect();
+                    let v = v?;
+                    Ok(Xdm::Array(v))
+                }))
+            }
             Expr::ArrayCurly(_, _) => unimplemented!(),
-            Expr::Map(_, _) => unimplemented!(),
+            Expr::Map(v, _) => {
+                let v_c: XdmResult<Vec<_>> = v
+                    .into_iter()
+                    .map(|(e1, e2)| Ok((e1.compile()?, e2.compile()?)))
+                    .collect();
+                let v_c = v_c?;
+                Ok(CompiledExpr::new(move |c| {
+                    let hm: XdmResult<HashMap<_, _>> = v_c
+                        .iter()
+                        .map(|(k_e, v_e)| Ok((k_e.execute(c)?, v_e.execute(c)?)))
+                        .collect();
+                    Ok(Xdm::Map(hm?))
+                }))
+            }
             Expr::InlineFunction(_, _, _, _) => unimplemented!(),
             Expr::Combine(left, op, right, _) => {
                 let left_c = left.compile()?;

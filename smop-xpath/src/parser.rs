@@ -2,12 +2,13 @@ use crate::ast::{
     ArithmeticOp, Axis, CombineOp, Comp, Expr, Literal, NodeComp, NodeTest, Quantifier, Wildcard,
 };
 use crate::context::StaticContext;
-use crate::types::{Item, KindTest, Occurrence, SequenceType};
+use crate::types::{Item, KindTest, Occurrence, SchemaType, SequenceType};
 use crate::xdm::{XdmError, XdmResult};
 use itertools::Itertools;
 use pest_consume::*;
 use rust_decimal::Decimal;
 use smop_xmltree::nod::QName;
+use std::rc::Rc;
 use std::str::FromStr;
 
 pub type Result<T> = std::result::Result<T, pest::error::Error<Rule>>;
@@ -685,9 +686,11 @@ impl XpathParser {
     // 81
     fn ItemType(input: Node) -> Result<Item> {
         Ok(match_nodes!(input.into_children();
-            [Item(it)] => it,
-            [AtomicOrUnionType(it)] => it,
             [KindTest(kt)] => Item::KindTest(kt),
+            [Item(it)] => it,
+            [MapTest(it)] => it,
+            [ArrayTest(it)] => it,
+            [AtomicOrUnionType(sch_t)] => Item::AtomicOrUnion(sch_t),
             // FIXME
         ))
     }
@@ -695,10 +698,10 @@ impl XpathParser {
         Ok(Item::Item)
     }
     // 82
-    fn AtomicOrUnionType(input: Node) -> Result<Item> {
+    fn AtomicOrUnionType(input: Node) -> Result<Rc<SchemaType>> {
         let sc = input.user_data();
         Ok(match_nodes!(input.children();
-            [EQName(qname)] => Item::AtomicOrUnion(sc.schema_type(&qname).map_err(|e|input.error(e.message))?),
+            [EQName(qname)] => sc.schema_type(&qname).map_err(|e|input.error(e.message))?,
         ))
     }
     // 83
@@ -786,6 +789,40 @@ impl XpathParser {
     fn SchemaElementTest(input: Node) -> Result<KindTest> {
         Ok(match_nodes!(input.into_children();
             [EQName(qname)] => KindTest::SchemaElement(qname)
+        ))
+    }
+    // 105
+    fn MapTest(input: Node) -> Result<Item> {
+        Ok(match_nodes!(input.into_children();
+            [AnyMapTest(_)] => Item::MapTest(None),
+            [TypedMapTest(ts)] => Item::MapTest(Some((ts.0, Box::new(ts.1)))),
+        ))
+    }
+    // 106
+    fn AnyMapTest(_input: Node) -> Result<()> {
+        Ok(())
+    }
+    // 107
+    fn TypedMapTest(input: Node) -> Result<(Rc<SchemaType>, SequenceType)> {
+        Ok(match_nodes!(input.into_children();
+            [AtomicOrUnionType(sch_t), SequenceType(seq_t)] => (sch_t, seq_t),
+        ))
+    }
+    // 108
+    fn ArrayTest(input: Node) -> Result<Item> {
+        Ok(match_nodes!(input.into_children();
+            [AnyArrayTest(_)] => Item::ArrayTest(None),
+            [TypedArrayTest(st)] => Item::ArrayTest(Some(Box::new(st))),
+        ))
+    }
+    // 109
+    fn AnyArrayTest(_input: Node) -> Result<()> {
+        Ok(())
+    }
+    // 110
+    fn TypedArrayTest(input: Node) -> Result<SequenceType> {
+        Ok(match_nodes!(input.into_children();
+            [SequenceType(st)] => st,
         ))
     }
     // 112

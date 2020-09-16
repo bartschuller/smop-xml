@@ -299,9 +299,31 @@ impl Expr<()> {
                     (result_type, ctx),
                 ))
             }
-            Expr::ArraySquare(_, _) => unimplemented!(),
+            Expr::ArraySquare(v, _) => {
+                let v_typed: XdmResult<Vec<_>> =
+                    v.into_iter().map(|e| e.type_(Rc::clone(&ctx))).collect();
+                let v_typed = v_typed?;
+                let occ = Occurrence::from(v_typed.len());
+                Ok(Expr::ArraySquare(
+                    v_typed,
+                    (SequenceType::Item(Item::ArrayTest(None), occ), ctx),
+                ))
+            }
             Expr::ArrayCurly(_, _) => unimplemented!(),
-            Expr::Map(_, _) => unimplemented!(),
+            Expr::Map(v, _) => {
+                let v_typed: XdmResult<Vec<_>> = v
+                    .into_iter()
+                    .map(|(e1, e2)| Ok((e1.type_(Rc::clone(&ctx))?, e2.type_(Rc::clone(&ctx))?)))
+                    .collect();
+                let v_typed = v_typed?;
+                Ok(Expr::Map(
+                    v_typed,
+                    (
+                        SequenceType::Item(Item::MapTest(None), Occurrence::One),
+                        ctx,
+                    ),
+                ))
+            }
             Expr::InlineFunction(_, _, _, _) => unimplemented!(),
             Expr::Combine(left, op, right, _) => {
                 let left_typed = left.type_(Rc::clone(&ctx))?;

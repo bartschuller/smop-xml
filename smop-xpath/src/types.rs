@@ -17,8 +17,8 @@ pub enum Item {
     KindTest(KindTest),
     Item,
     FunctionTest,
-    MapTest,
-    ArrayTest,
+    MapTest(Option<(Rc<SchemaType>, Box<SequenceType>)>),
+    ArrayTest(Option<Box<SequenceType>>),
     AtomicOrUnion(Rc<SchemaType>),
 }
 
@@ -78,6 +78,16 @@ pub enum Occurrence {
     OneOrMore,
 }
 
+impl From<usize> for Occurrence {
+    fn from(u: usize) -> Self {
+        match u {
+            0 => Occurrence::Optional,
+            1 => Occurrence::One,
+            _ => Occurrence::OneOrMore,
+        }
+    }
+}
+
 impl SequenceType {
     pub(crate) fn lub(
         ctx: &StaticContext,
@@ -119,18 +129,20 @@ impl SequenceType {
     pub(crate) fn atomize(&self, ctx: &Rc<StaticContext>) -> XdmResult<Self> {
         Ok(match self {
             SequenceType::EmptySequence => SequenceType::EmptySequence,
+            SequenceType::Item(Item::ArrayTest(Some(st)), _o) => st.atomize(ctx)?,
             SequenceType::Item(i, o) => SequenceType::Item(
                 match i {
                     Item::KindTest(_) => any_atomic_type(ctx),
                     Item::Item => any_atomic_type(ctx),
-                    Item::FunctionTest | Item::MapTest => {
+                    Item::FunctionTest | Item::MapTest(_) => {
                         return Err(XdmError::xqtm(
                             "FOTY0013",
                             "The argument to fn:data() contains a function item",
                         ))
                     }
-                    Item::ArrayTest => any_atomic_type(ctx),
+                    Item::ArrayTest(None) => any_atomic_type(ctx),
                     Item::AtomicOrUnion(st) => Item::AtomicOrUnion(Rc::clone(st)),
+                    Item::ArrayTest(Some(_)) => unreachable!(),
                 },
                 o.clone(),
             ),
@@ -172,10 +184,12 @@ impl Display for Item {
             Item::Item => f.write_str("item()"),
             Item::AtomicOrUnion(schema_type) => write!(f, "{}", schema_type),
             Item::KindTest(kt) => write!(f, "{}", kt),
+            Item::ArrayTest(None) => write!(f, "array(*)"),
+            Item::ArrayTest(Some(type_)) => write!(f, "array({})", type_),
+            Item::MapTest(None) => write!(f, "map(*)"),
+            Item::MapTest(Some(type_)) => write!(f, "map({}, {})", type_.0, type_.1),
             &_ => todo!("Display for other Item types: {:?}", self),
             // Item::FunctionTest => {}
-            // Item::MapTest => {}
-            // Item::ArrayTest => {}
             // Item::ParenthesizedItemType => {}
         }
     }

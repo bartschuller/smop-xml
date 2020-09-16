@@ -238,6 +238,7 @@ impl Default for StaticContext {
 
         sc.add_prefix_ns("xs", "http://www.w3.org/2001/XMLSchema");
         sc.add_prefix_ns("fn", "http://www.w3.org/2005/xpath-functions");
+        sc.add_prefix_ns("array", "http://www.w3.org/2005/xpath-functions/array");
         add_complex_type(&mut sc, "xs:anyType", None);
         add_complex_type(&mut sc, "xs:untyped", Some("xs:anyType"));
         add_simple_type(&mut sc, "xs:anySimpleType", "xs:anyType");

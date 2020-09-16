@@ -362,6 +362,17 @@ pub(crate) fn register(ctx: &mut StaticContext) {
         code: fn_subsequence_2,
     };
     ctx.add_function(qname, fn_subsequence_2_meta);
+
+    let qname = ctx.qname("array", "size").unwrap();
+    let array_size_1_meta = Function {
+        args: vec![SequenceType::Item(Item::ArrayTest(None), Occurrence::One)],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_integer).unwrap()),
+            Occurrence::One,
+        ),
+        code: array_size_1,
+    };
+    ctx.add_function(qname, array_size_1_meta);
 }
 
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
@@ -583,6 +594,15 @@ pub(crate) fn fn_subsequence_2() -> CompiledFunction {
                 }
             }
         })
+    })
+}
+pub(crate) fn array_size_1() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, mut args| match args.remove(0) {
+        Xdm::Array(v) => Ok(Xdm::Integer(v.len() as i64)),
+        _ => Err(XdmError::xqtm(
+            "XPTY0004",
+            "array:size() called on a non-array",
+        )),
     })
 }
 pub(crate) fn string_compare(s1: &str, s2: &str) -> i8 {
