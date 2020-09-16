@@ -35,7 +35,8 @@ impl<R: TestRunner> Driver<R> {
                         test_set
                             .environments
                             .get(s)
-                            .unwrap_or_else(|| &global_environments[s])
+                            .or_else(|| global_environments.get(s))
+                            .unwrap_or_else(|| panic!("No environment named \"{}\" found", s))
                     },
                 );
                 //println!("env spec: {:?}", environment_spec);

@@ -201,7 +201,24 @@ impl TestRunner for SmopRunner {
                 )),
                 Err(e) => Some(e.to_string()),
             },
-            Assertion::AssertType(_) => Some("wrong".to_string()),
+            Assertion::AssertType(t) => match result {
+                Ok(xdm) => {
+                    let instance_of = format!(". instance of {}", t);
+                    let ctx = self.context.clone_with_focus(xdm.clone(), 0);
+                    let val = Xpath::compile(&self.static_context, instance_of.as_str())
+                        .unwrap()
+                        .evaluate(&ctx)
+                        .unwrap()
+                        .boolean()
+                        .unwrap();
+                    if val {
+                        None
+                    } else {
+                        Some(format!("expected an instance of {}", t))
+                    }
+                }
+                Err(e) => Some(e.to_string()),
+            },
             Assertion::AssertTrue => match result {
                 Ok(v) => {
                     if v.boolean().unwrap() {
