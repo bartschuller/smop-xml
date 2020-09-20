@@ -1,7 +1,7 @@
 use std::rc::Rc;
-use xpath::runtime::DynamicContext;
-use xpath::xdm::XdmResult;
-use xpath::{StaticContext, Xpath};
+use smop_xpath::runtime::DynamicContext;
+use smop_xpath::xdm::XdmResult;
+use smop_xpath::{StaticContext, Xpath};
 
 #[test]
 fn for1() -> XdmResult<()> {

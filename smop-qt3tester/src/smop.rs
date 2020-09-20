@@ -3,11 +3,11 @@ use crate::runner::{Environment, TestError, TestRunner, XpathValue};
 use itertools::Itertools;
 use smop_xmltree::nod::{Document, QName};
 use std::rc::Rc;
-use xpath::ast::Comp;
-use xpath::runtime::DynamicContext;
-use xpath::types::{Item, Occurrence, SequenceType};
-use xpath::xdm::{Xdm, XdmError};
-use xpath::{StaticContext, Xpath};
+use smop_xpath::ast::Comp;
+use smop_xpath::runtime::DynamicContext;
+use smop_xpath::types::{Item, Occurrence, SequenceType};
+use smop_xpath::xdm::{Xdm, XdmError};
+use smop_xpath::{StaticContext, Xpath};
 
 impl From<XdmError> for TestError {
     fn from(xe: XdmError) -> Self {

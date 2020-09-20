@@ -1,6 +1,6 @@
-use xpath::context::Context;
-use xpath::xdm::XdmResult;
-use xpath::Xpath;
+use smop_xpath::context::Context;
+use smop_xpath::xdm::XdmResult;
+use smop_xpath::Xpath;
 
 #[test]
 fn context1() -> XdmResult<()> {

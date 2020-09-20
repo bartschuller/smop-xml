@@ -1,11 +1,13 @@
 [package]
-name = "qt3tests"
+name = "smop-qt3tests"
 version = "0.1.0"
 authors = ["Bart Schuller <bart.schuller@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[profile.dev.package.xpath]
+
+# Needed to prevent stack overflow in the parser for a particular test.
+[profile.dev.package.smop-xpath]
 opt-level = 1
 
 [dependencies]
@@ -14,6 +16,6 @@ clap = "^2"
 sxd-xpath = "^0.4"
 sxd-document = "^0.3"
 itertools = "^0.9"
-xpath = {path="../xpath"}
+smop-xpath = {path="../smop-xpath"}
 smop-xmltree = {path="../smop-xmltree"}
 junit-report = "^0.4"

@@ -1,8 +1,8 @@
 use smop_xmltree::nod::Document;
 use std::rc::Rc;
-use xpath::runtime::DynamicContext;
-use xpath::xdm::{Xdm, XdmResult};
-use xpath::{StaticContext, Xpath};
+use smop_xpath::runtime::DynamicContext;
+use smop_xpath::xdm::{Xdm, XdmResult};
+use smop_xpath::{StaticContext, Xpath};
 
 static TREE_REPEAT: &str = include_str!("TreeRepeat.xml");
 static TREE_COMPASS: &str = include_str!("TreeCompass.xml");

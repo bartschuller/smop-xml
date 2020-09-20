@@ -1,5 +1,5 @@
 [package]
-name = "xpath"
+name = "smop-xpath"
 version = "0.1.0"
 authors = ["Bart Schuller <bart.schuller@gmail.com>"]
 edition = "2018"

@@ -356,20 +356,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "qt3tests"
-version = "0.1.0"
-dependencies = [
- "clap",
- "itertools",
- "junit-report",
- "roxmltree",
- "smop-xmltree",
- "sxd-document",
- "sxd-xpath",
- "xpath",
-]
-
-[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -465,9 +451,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "smop-qt3tests"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "itertools",
+ "junit-report",
+ "roxmltree",
+ "smop-xmltree",
+ "smop-xpath",
+ "sxd-document",
+ "sxd-xpath",
+]
+
+[[package]]
 name = "smop-xmltree"
 version = "0.1.0"
 dependencies = [
+ "xmlparser",
+]
+
+[[package]]
+name = "smop-xpath"
+version = "0.1.0"
+dependencies = [
+ "im",
+ "itertools",
+ "lazy_static",
+ "num-traits",
+ "pest",
+ "pest_ascii_tree",
+ "pest_consume",
+ "pest_derive",
+ "regex",
+ "rust_decimal",
+ "smop-xmltree",
  "xmlparser",
 ]
 
@@ -632,21 +650,3 @@ name = "xmlparser"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccb4240203dadf40be2de9369e5c6dec1bf427528115b030baca3334c18362d7"
-
-[[package]]
-name = "xpath"
-version = "0.1.0"
-dependencies = [
- "im",
- "itertools",
- "lazy_static",
- "num-traits",
- "pest",
- "pest_ascii_tree",
- "pest_consume",
- "pest_derive",
- "regex",
- "rust_decimal",
- "smop-xmltree",
- "xmlparser",
-]

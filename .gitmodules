@@ -1,0 +1,3 @@
+[submodule "qt3tests"]
+	path = qt3tests
+	url = git@github.com:w3c/qt3tests.git
