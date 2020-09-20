@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<catalog xmlns="http://www.w3.org/2010/09/qt-fots-catalog"
+         xml:base="../qt3tests/catalog.xml"
+    test-suite="FOTS" version="3.1">
+    <environment name="empty">
+        <!-- The context item MUST be undefined/absent for queries run in this environment. -->
+        <!-- The test query will always be an expression, and if necessary an empty context can be achieved by wrapping
+             the expression as the body of a function -->
+    </environment>
+    <environment name="works-mod">
+        <source role="." file="docs/works-mod.xml">
+            <description>Data for various NIST tests (abbreviated, unabbreviated syntax)</description>
+            <created by="Carmelo Montanez" on="2005-03-04"/>
+        </source>
+    </environment>
+    <environment name="works">
+        <source role="." file="docs/works.xml">
+            <description>Data for various NIST tests</description>
+            <created by="Carmelo Montanez" on="2005-03-04"/>
+        </source>
+    </environment>
+    <environment name="staff">
+        <source role="." file="docs/staff.xml">
+            <description>Data for various NIST tests</description>
+            <created by="Carmelo Montanez" on="2005-03-04"/>
+        </source>
+    </environment>
+    <environment name="works-and-staff">
+        <source role="$works" file="docs/works.xml">
+            <description>Data for various NIST tests</description>
+            <created by="Carmelo Montanez" on="2005-03-04"/>
+        </source>
+        <source role="$staff" file="docs/staff.xml">
+            <description>Data for various NIST tests</description>
+            <created by="Carmelo Montanez" on="2005-03-04"/>
+        </source>
+    </environment>
+    <environment name="map">
+        <namespace prefix="map" uri="http://www.w3.org/2005/xpath-functions/map"/>
+    </environment>
+    <environment name="atomic">
+        <namespace prefix="atomic" uri="http://www.w3.org/XQueryTest"/>
+        <schema uri="http://www.w3.org/XQueryTest" file="docs/atomic.xsd">
+            <description>A Schema for atomic.xml</description>
+            <created by="Carmelo Montanez" on="2005-03-08"/>
+        </schema>
+        <source role="." file="docs/atomic.xml" validation="strict" uri="http://www.w3.org/fots/docs/atomic.xml">
+            <description>A Schema validated xml file, that contains values for data types. Can be used by any test.</description>
+            <created by="Carmelo Montanez" on="2005-03-08"/>
+        </source>
+    </environment>
+<!--    <test-set name="prod-ArrayTest"                      file="prod/ArrayTest.xml"/>-->
+
+<!--    <test-set name="prod-AxisStep"                       file="prod/AxisStep.xml"/>-->
+<!--    <test-set name="prod-AxisStep.abbr"                  file="prod/AxisStep.abbr.xml"/>-->
+<!--    <test-set name="prod-AxisStep.ancestor"              file="prod/AxisStep.ancestor.xml"/>-->
+<!--    <test-set name="prod-AxisStep.ancestor-or-self"      file="prod/AxisStep.ancestor-or-self.xml"/>-->
+<!--    <test-set name="prod-AxisStep.following"             file="prod/AxisStep.following.xml"/>-->
+<!--    <test-set name="prod-AxisStep.following-sibling"     file="prod/AxisStep.following-sibling.xml"/>-->
+<!--    <test-set name="prod-AxisStep.preceding"             file="prod/AxisStep.preceding.xml"/>-->
+<!--    <test-set name="prod-AxisStep.preceding-sibling"     file="prod/AxisStep.preceding-sibling.xml"/>-->
+<!--    <test-set name="prod-AxisStep.unabbr"                file="prod/AxisStep.unabbr.xml"/>-->
+<!--    <test-set name="prod-IfExpr"                         file="prod/IfExpr.xml"/>-->
+<!--    <test-set name="prod-LetClause"                      file="prod/LetClause.xml"/>-->
+<!--    <test-set name="prod-Literal"                        file="prod/Literal.xml"/>-->
+<!--    <test-set name="prod-NameTest"                       file="prod/NameTest.xml"/>-->
+<!--    <test-set name="prod-NodeTest"                       file="prod/NodeTest.xml"/>-->
+<!--    <test-set name="prod-OrExpr"                         file="prod/OrExpr.xml"/>-->
+<!--    <test-set name="prod-PathExpr"                       file="prod/PathExpr.xml"/>-->
+<!--    <test-set name="prod-ParenthesizedExpr"              file="prod/ParenthesizedExpr.xml"/>-->
+<!--    <test-set name="prod-Predicate"                      file="prod/Predicate.xml"/>-->
+<!--    <test-set name="prod-QuantifiedExpr"                 file="prod/QuantifiedExpr.xml"/>-->
+<!--    <test-set name="prod-ReturnClause"                   file="prod/ReturnClause.xml"/>-->
+<!--    <test-set name="prod-SequenceType"                   file="prod/SequenceType.xml"/>-->
+<!--    <test-set name="prod-StepExpr"                       file="prod/StepExpr.xml"/>-->
+<!--    <test-set name="prod-ValueComp"                      file="prod/ValueComp.xml"/>-->
+<!--    <test-set name="op-bang"                             file="op/bang.xml"/>-->
+<!--    <test-set name="op-concat"                           file="op/concat.xml"/>-->
+<!--    <test-set name="op-concatenate"                      file="op/concatenate.xml"/>-->
+<!--    <test-set name="op-except"                           file="op/except.xml"/>-->
+    <test-set name="op-intersect"                        file="op/intersect.xml"/>
+    <test-set name="op-is-same-node"                     file="op/is-same-node.xml"/>
+<!--    <test-set name="fn-abs"                              file="fn/abs.xml"/>-->
+
+</catalog>

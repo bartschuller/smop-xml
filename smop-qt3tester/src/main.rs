@@ -30,6 +30,10 @@ fn main() {
     let text = std::fs::read_to_string(catalog).unwrap();
     let doc = roxmltree::Document::parse(&text).unwrap();
     let root_catalog = doc.root_element();
+    let catalog = root_catalog
+        .attribute(("http://www.w3.org/XML/1998/namespace", "base"))
+        .unwrap_or(catalog);
+    println!("base: {}", catalog);
     let envs_and_sets: Vec<Node> = root_catalog.children().filter(|n| n.is_element()).collect();
     let (envs, test_sets): (Vec<_>, Vec<_>) = envs_and_sets
         .into_iter()
