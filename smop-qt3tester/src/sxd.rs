@@ -43,6 +43,10 @@ impl Environment for SXDEnvironment {
     fn set_context_document(&mut self, _file: &str) {
         unimplemented!()
     }
+
+    fn set_namespace(&mut self, _prefix: &str, _uri: &str) {
+        unimplemented!()
+    }
 }
 impl XpathValue for Value<'_> {}
 

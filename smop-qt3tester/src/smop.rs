@@ -54,6 +54,10 @@ impl Environment for SmopEnvironment {
         let xdm = Xdm::Node(Document::parse(text.as_str()).unwrap().root());
         self.context = self.context.clone_with_focus(xdm, 0)
     }
+
+    fn set_namespace(&mut self, prefix: &str, uri: &str) {
+        Rc::make_mut(&mut self.static_context).add_prefix_ns(prefix, uri)
+    }
 }
 impl XpathValue for Xdm {}
 

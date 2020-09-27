@@ -14,16 +14,19 @@ pub struct EnvironmentSpec {
     pub(crate) name: Option<String>,
     pub(crate) reference: Option<String>,
     pub(crate) sources: Vec<Source>,
+    pub(crate) namespaces: Vec<(String, String)>,
 }
 impl EnvironmentSpec {
     pub(crate) fn new(node: &Node, file: &Path) -> Self {
         let name = node.attribute("name").map(|s| s.to_string());
         let reference = node.attribute("ref").map(|s| s.to_string());
         let sources = Source::find_sources(node, file);
+        let namespaces = Self::find_namespaces(node);
         EnvironmentSpec {
             name,
             reference,
             sources,
+            namespaces,
         }
     }
     pub(crate) fn find_environments(node: &Node, file: &Path) -> Vec<EnvironmentSpec> {
@@ -31,6 +34,18 @@ impl EnvironmentSpec {
             .filter_map(|n| {
                 if n.is_element() && n.has_tag_name("environment") {
                     Some(EnvironmentSpec::new(&n, file))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn find_namespaces(node: &Node) -> Vec<(String, String)> {
+        node.children()
+            .filter_map(|n| {
+                if n.is_element() && n.has_tag_name("namespace") {
+                    Some((n.attribute("prefix").unwrap().to_string(), n.attribute("uri").unwrap().to_string()))
                 } else {
                     None
                 }

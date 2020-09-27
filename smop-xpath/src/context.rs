@@ -104,7 +104,7 @@ impl StaticContext {
             None => XdmError::xqtm("XPST0003", &e.to_string()),
         })
     }
-    fn add_prefix_ns(&mut self, prefix: &str, ns: &str) {
+    pub fn add_prefix_ns(&mut self, prefix: &str, ns: &str) {
         self.namespaces.insert(prefix.to_string(), ns.to_string());
         self.prefixes.insert(ns.to_string(), prefix.to_string());
     }

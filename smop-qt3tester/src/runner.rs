@@ -5,6 +5,7 @@ use std::fmt;
 pub trait XpathValue {}
 pub trait Environment {
     fn set_context_document(&mut self, file: &str);
+    fn set_namespace(&mut self, prefix: &str, uri: &str);
 }
 #[derive(Debug)]
 pub enum TestError {

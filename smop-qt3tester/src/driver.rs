@@ -45,7 +45,11 @@ impl<R: TestRunner> Driver<R> {
                     if source.role.as_str() == Some(".") {
                         environment.set_context_document(source.file.as_str())
                     } else {
+                        // FIXME
                     }
+                }
+                for namespace in &environment_spec.namespaces {
+                    environment.set_namespace(&*namespace.0, &*namespace.1)
                 }
                 print!("{}: {}", case.name, case.test);
                 let result = self.runner.evaluate(&environment, case.test.as_str());

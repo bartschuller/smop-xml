@@ -146,6 +146,20 @@ pub(crate) fn register(ctx: &mut StaticContext) {
     let qname = ctx.qname("xs", "double").unwrap();
     ctx.add_function(qname, xs_double_1_meta);
 
+    let xs_integer_1_meta = Function {
+        args: vec![SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_any_atomic_type).unwrap()),
+            Occurrence::ZeroOrMore,
+        )],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_integer).unwrap()),
+            Occurrence::One,
+        ),
+        code: xs_integer_1,
+    };
+    let qname = ctx.qname("xs", "integer").unwrap();
+    ctx.add_function(qname, xs_integer_1_meta);
+
     let fn_string_1_meta = Function {
         args: vec![SequenceType::Item(Item::Item, Occurrence::Optional)],
         type_: SequenceType::Item(
@@ -167,6 +181,15 @@ pub(crate) fn register(ctx: &mut StaticContext) {
     ctx.add_function(qname, fn_string_0_meta);
 
     let qname = ctx.qname("fn", "name").unwrap();
+    let fn_name_0_meta = Function {
+        args: vec![],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_string).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_name_0,
+    };
+    ctx.add_function(qname.clone(), fn_name_0_meta);
     let fn_name_1_meta = Function {
         args: vec![SequenceType::Item(
             Item::KindTest(KindTest::AnyKind),
@@ -179,6 +202,29 @@ pub(crate) fn register(ctx: &mut StaticContext) {
         code: fn_name_1,
     };
     ctx.add_function(qname, fn_name_1_meta);
+
+    let qname = ctx.qname("fn", "local-name").unwrap();
+    let fn_local_name_0_meta = Function {
+        args: vec![],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_string).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_local_name_0,
+    };
+    ctx.add_function(qname.clone(), fn_local_name_0_meta);
+    let fn_local_name_1_meta = Function {
+        args: vec![SequenceType::Item(
+            Item::KindTest(KindTest::AnyKind),
+            Occurrence::Optional,
+        )],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_string).unwrap()),
+            Occurrence::One,
+        ),
+        code: fn_local_name_1,
+    };
+    ctx.add_function(qname, fn_local_name_1_meta);
 
     let qname = ctx.qname("fn", "empty").unwrap();
     let fn_empty_1_meta = Function {
@@ -373,6 +419,14 @@ pub(crate) fn register(ctx: &mut StaticContext) {
         code: array_size_1,
     };
     ctx.add_function(qname, array_size_1_meta);
+
+    let qname = ctx.qname("fn", "error").unwrap();
+    let error_0_meta = Function {
+        args: vec![],
+        type_: SequenceType::EmptySequence,
+        code: error_0,
+    };
+    ctx.add_function(qname, error_0_meta);
 }
 
 pub(crate) fn fn_boolean_1() -> CompiledFunction {
@@ -446,6 +500,13 @@ pub(crate) fn xs_double_1() -> CompiledFunction {
             .map_or(Ok(Xdm::EmptySequence), |x| x.double().map(Xdm::Double))
     })
 }
+pub(crate) fn xs_integer_1() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, args| {
+        args.first()
+            .map_or(Ok(Xdm::EmptySequence), |x| x.integer().map(Xdm::Integer))
+    })
+}
+
 pub(crate) fn fn_string_0() -> CompiledFunction {
     CompiledFunction::new(|ctx, mut _args| {
         ctx.focus
@@ -462,6 +523,17 @@ pub(crate) fn fn_string_1() -> CompiledFunction {
         })
     })
 }
+pub(crate) fn fn_name_0() -> CompiledFunction {
+    CompiledFunction::new(|ctx, _args| match ctx.focus.as_ref().map(|f|&f.sequence) {
+        Some(Xdm::Node(ref node)) => Ok(Xdm::String(
+            node.node_name().map_or("".to_string(), |q| q.to_string()),
+        )),
+        _ => Err(XdmError::xqtm(
+            "XPTY0004",
+            "expected a node in context in call to name()",
+        )),
+    })
+}
 pub(crate) fn fn_name_1() -> CompiledFunction {
     CompiledFunction::new(|_ctx, args| match args.first().unwrap() {
         Xdm::Node(node) => Ok(Xdm::String(
@@ -470,6 +542,28 @@ pub(crate) fn fn_name_1() -> CompiledFunction {
         _ => Err(XdmError::xqtm(
             "XPTY0004",
             "expected a node as argument to name()",
+        )),
+    })
+}
+pub(crate) fn fn_local_name_0() -> CompiledFunction {
+    CompiledFunction::new(|ctx, _args| match ctx.focus.as_ref().map(|f|&f.sequence) {
+        Some(Xdm::Node(ref node)) => Ok(Xdm::String(
+            node.node_name().map_or("".to_string(), |q| q.name),
+        )),
+        _ => Err(XdmError::xqtm(
+            "XPTY0004",
+            "expected a node in context in call to local-name()",
+        )),
+    })
+}
+pub(crate) fn fn_local_name_1() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, args| match args.first().unwrap() {
+        Xdm::Node(node) => Ok(Xdm::String(
+            node.node_name().map_or("".to_string(), |q| q.name),
+        )),
+        _ => Err(XdmError::xqtm(
+            "XPTY0004",
+            "expected a node as argument to local-name()",
         )),
     })
 }
@@ -604,6 +698,14 @@ pub(crate) fn array_size_1() -> CompiledFunction {
             "array:size() called on a non-array",
         )),
     })
+}
+pub(crate) fn error_0() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, _args|
+        Err(XdmError::xqtm(
+            "FOER0000",
+            "error() called",
+        ))
+    )
 }
 pub(crate) fn string_compare(s1: &str, s2: &str) -> i8 {
     s1.cmp(s2) as i8

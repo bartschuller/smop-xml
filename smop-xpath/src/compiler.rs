@@ -155,7 +155,8 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                                     }
                                     Ok(Xdm::Double(l_res.double()?.$op(r_res.double()?)))
                                 }),
-                                _ => todo!("compile more Arithmetic cases"),
+                                "xs:string" => return Err(XdmError::xqtm("XPTY0004", "Can't do arithmetic on strings")),
+                                type_ => todo!("compile more Arithmetic cases: {}", type_),
                             })
                         };
                     }
