@@ -20,65 +20,6 @@ use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
 use std::result::Result;
 
-// // https://www.w3.org/TR/xpath-datamodel-31/#qnames-and-notations
-// #[derive(Debug, Clone)]
-// pub struct QName {
-//     pub name: String,
-//     pub ns: Option<String>,
-//     pub prefix: Option<String>,
-// }
-//
-// impl QName {
-//     /// Note that a prefix is only allowed when a namespace is also provided. The following panics:
-//     /// ```should_panic
-//     /// # use xpath::xdm::QName;
-//     /// let wrong = QName::new("foo".to_string(), None, Some("wrong".to_string()));
-//     /// ```
-//     pub fn new(name: String, ns: Option<String>, prefix: Option<String>) -> Self {
-//         assert!(!(prefix.is_some() && ns.is_none()));
-//         QName { name, ns, prefix }
-//     }
-//     pub fn wellknown(s: &str) -> Self {
-//         let colon = s.find(':').unwrap();
-//         let prefix = &s[..colon];
-//         let name = &s[colon + 1..];
-//         let ns = match prefix {
-//             "xs" => "http://www.w3.org/2001/XMLSchema",
-//             "fn" => "http://www.w3.org/2005/xpath-functions",
-//             &_ => panic!("not so well known prefix: {}", prefix),
-//         };
-//         QName {
-//             name: name.to_string(),
-//             ns: Some(ns.to_string()),
-//             prefix: Some(prefix.to_string()),
-//         }
-//     }
-// }
-// impl PartialEq for QName {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.name.eq(&other.name) && self.ns.eq(&other.ns)
-//     }
-// }
-// impl Eq for QName {}
-// impl Hash for QName {
-//     fn hash<H: Hasher>(&self, state: &mut H) {
-//         self.ns.hash(state);
-//         self.name.hash(state)
-//     }
-// }
-// impl Display for QName {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-//         if self.ns.is_some() {
-//             if self.prefix.is_some() {
-//                 write!(f, "{}:{}", self.prefix.as_ref().unwrap(), self.name)
-//             } else {
-//                 write!(f, "Q{{{}}}{}", self.ns.as_ref().unwrap(), self.name)
-//             }
-//         } else {
-//             write!(f, "{}", self.name)
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Xdm {
