@@ -5,7 +5,6 @@ use smop::SmopRunner;
 use sxd::SXDRunner;
 mod driver;
 mod model;
-mod reporter;
 
 use crate::model::{EnvironmentSpec, TestSet};
 use clap::{crate_description, crate_name, crate_version, App, Arg};

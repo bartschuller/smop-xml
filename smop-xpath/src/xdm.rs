@@ -29,6 +29,7 @@ pub enum Xdm {
     Decimal(Decimal),
     Integer(i64),
     Double(f64),
+    Float(f32),
     Node(Node),
     Array(Vec<Xdm>),
     Map(HashMap<Xdm, Xdm>),
@@ -59,6 +60,11 @@ impl Error for XdmError {}
 impl From<nod::parse::Error> for XdmError {
     fn from(re: nod::parse::Error) -> Self {
         XdmError::xqtm("FODC0006", re.to_string())
+    }
+}
+impl From<std::num::ParseFloatError> for XdmError {
+    fn from(pfe: std::num::ParseFloatError) -> Self {
+        XdmError::xqtm("FORG0001", pfe.to_string())
     }
 }
 impl Display for XdmError {
@@ -97,7 +103,8 @@ impl Xdm {
             | Xdm::Boolean(_)
             | Xdm::Decimal(_)
             | Xdm::Integer(_)
-            | Xdm::Double(_) => Ok(self),
+            | Xdm::Double(_)
+            | Xdm::Float(_) => Ok(self),
             Xdm::Node(ns) => Ok(Xdm::String(ns.string_value())), // FIXME
             Xdm::Array(v) => {
                 let res: XdmResult<Vec<_>> = v.into_iter().map(|x| x.atomize()).collect();
@@ -120,6 +127,7 @@ impl Xdm {
             Xdm::Decimal(d) => Ok(!d.is_zero()),
             Xdm::Integer(i) => Ok(*i != 0_i64),
             Xdm::Double(d) => Ok(!(d.is_nan() || d.is_zero())),
+            Xdm::Float(f) => Ok(!(f.is_nan() || f.is_zero())),
             Xdm::Node(_) => Ok(true),
             Xdm::Array(_) => Err(XdmError::xqtm("FORG0006", "boolean value of array")),
             Xdm::Map(_) => Err(XdmError::xqtm("FORG0006", "boolean value of map")),
@@ -174,14 +182,29 @@ impl Xdm {
     }
     pub fn double(&self) -> XdmResult<f64> {
         match self {
-            Xdm::Decimal(d) => Ok(d.to_f64().unwrap()),
+            Xdm::Decimal(d) => Ok(d.to_f64().unwrap_or(NAN)),
             Xdm::Integer(i) => Ok(*i as f64),
             Xdm::Double(d) => Ok(*d),
+            Xdm::Float(f) => Ok(f.to_f64().unwrap_or(NAN)),
             Xdm::String(s) => Ok(s.parse::<f64>().unwrap_or(NAN)),
             Xdm::Node(_) => Ok(self.string()?.parse::<f64>().unwrap_or(NAN)),
             _ => {
                 println!("xs:double({:?})", self);
                 todo!("finish double conversion")
+            }
+        }
+    }
+    pub fn float(&self) -> XdmResult<f32> {
+        match self {
+            Xdm::Decimal(d) => Ok(d.to_f32().unwrap_or(f32::NAN)),
+            Xdm::Integer(i) => Ok(*i as f32),
+            Xdm::Double(d) => Ok(d.to_f32().unwrap_or(f32::NAN)),
+            Xdm::Float(f) => Ok(*f),
+            Xdm::String(s) => Ok(s.parse::<f32>().unwrap_or(f32::NAN)),
+            Xdm::Node(_) => Ok(self.string()?.parse::<f32>().unwrap_or(f32::NAN)),
+            _ => {
+                println!("xs:float({:?})", self);
+                todo!("finish float conversion")
             }
         }
     }
@@ -210,6 +233,17 @@ impl Xdm {
                     Ok((if d.is_sign_positive() { "INF" } else { "-INF" }).to_string())
                 } else {
                     Ok(format!("{:E}", d))
+                }
+            }
+            Xdm::Float(f) => {
+                if f.abs() >= 0.000001 && f.abs() < 1000000.0 {
+                    Ok(f.to_string())
+                } else if f.is_zero() {
+                    Ok((if f.is_sign_positive() { "0" } else { "-0" }).to_string())
+                } else if f.is_infinite() {
+                    Ok((if f.is_sign_positive() { "INF" } else { "-INF" }).to_string())
+                } else {
+                    Ok(format!("{:E}", f))
                 }
             }
             Xdm::Node(n) => Ok(n.string_value()),
@@ -250,6 +284,7 @@ impl Xdm {
             Xdm::Decimal(_) => simple(ctx, "xs:decimal"),
             Xdm::Integer(_) => simple(ctx, "xs:integer"),
             Xdm::Double(_) => simple(ctx, "xs:double"),
+            Xdm::Float(_) => simple(ctx, "xs:float"),
             Xdm::Node(n) => Ok(SequenceType::Item(
                 Item::KindTest(match n.node_kind() {
                     NodeKind::Document => KindTest::Document,
@@ -363,7 +398,8 @@ impl Xdm {
             | Xdm::Boolean(_)
             | Xdm::Decimal(_)
             | Xdm::Integer(_)
-            | Xdm::Double(_) => {
+            | Xdm::Double(_)
+            | Xdm::Float(_) => {
                 self.xpath_compare(other, Comp::EQ)
                     .map_or(false, |x| x.boolean().unwrap_or(false))
                     || (self.is_nan() && other.is_nan())

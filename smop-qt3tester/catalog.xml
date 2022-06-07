@@ -75,15 +75,16 @@
 <!--    <test-set name="prod-StepExpr"                       file="prod/StepExpr.xml"/>-->
 <!--    <test-set name="prod-ValueComp"                      file="prod/ValueComp.xml"/>-->
 <!--    <test-set name="op-bang"                             file="op/bang.xml"/>-->
-<!--    <test-set name="op-concat"                           file="op/concat.xml"/>-->
+    <test-set name="op-concat"                           file="op/concat.xml"/>
 <!--    <test-set name="op-concatenate"                      file="op/concatenate.xml"/>-->
 <!--    <test-set name="op-except"                           file="op/except.xml"/>-->
 <!--    <test-set name="op-intersect"                        file="op/intersect.xml"/>-->
 <!--    <test-set name="op-is-same-node"                     file="op/is-same-node.xml"/>-->
 <!--    <test-set name="op-node-after"                       file="op/node-after.xml"/>-->
 <!--    <test-set name="op-node-before"                      file="op/node-before.xml"/>-->
-    <test-set name="op-numeric-add"                      file="op/numeric-add.xml"/>
+<!--    <test-set name="op-numeric-add"                      file="op/numeric-add.xml"/> schema-aware -->
 <!--    <test-set name="op-numeric-equal"                    file="op/numeric-equal.xml"/> &lt;!&ndash; includes tests from NumericEqual.xml but not NumericEqualSI.xml &ndash;&gt;-->
+    <test-set name="op-to"                               file="op/to.xml"/>
 <!--    <test-set name="op-union"                            file="op/union.xml"/>-->
 <!--    <test-set name="fn-abs"                              file="fn/abs.xml"/>-->
 

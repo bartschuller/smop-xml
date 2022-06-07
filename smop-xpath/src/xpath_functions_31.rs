@@ -12,6 +12,7 @@ pub(crate) fn register(ctx: &mut StaticContext) {
     let xs_string = QName::wellknown("xs:string");
     let xs_any_atomic_type = QName::wellknown("xs:anyAtomicType");
     let xs_double = QName::wellknown("xs:double");
+    let xs_float = QName::wellknown("xs:float");
     let xs_integer = QName::wellknown("xs:integer");
 
     let fn_boolean_1_meta = Function {
@@ -145,6 +146,20 @@ pub(crate) fn register(ctx: &mut StaticContext) {
     };
     let qname = ctx.qname("xs", "double").unwrap();
     ctx.add_function(qname, xs_double_1_meta);
+
+    let xs_float_1_meta = Function {
+        args: vec![SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_any_atomic_type).unwrap()),
+            Occurrence::ZeroOrMore,
+        )],
+        type_: SequenceType::Item(
+            Item::AtomicOrUnion(ctx.schema_type(&xs_float).unwrap()),
+            Occurrence::One,
+        ),
+        code: xs_float_1,
+    };
+    let qname = ctx.qname("xs", "float").unwrap();
+    ctx.add_function(qname, xs_float_1_meta);
 
     let xs_integer_1_meta = Function {
         args: vec![SequenceType::Item(
@@ -500,6 +515,12 @@ pub(crate) fn xs_double_1() -> CompiledFunction {
             .map_or(Ok(Xdm::EmptySequence), |x| x.double().map(Xdm::Double))
     })
 }
+pub(crate) fn xs_float_1() -> CompiledFunction {
+    CompiledFunction::new(|_ctx, args| {
+        args.first()
+            .map_or(Ok(Xdm::EmptySequence), |x| x.float().map(Xdm::Float))
+    })
+}
 pub(crate) fn xs_integer_1() -> CompiledFunction {
     CompiledFunction::new(|_ctx, args| {
         args.first()
@@ -671,6 +692,7 @@ pub(crate) fn fn_subsequence_2() -> CompiledFunction {
             | Xdm::Decimal(_)
             | Xdm::Integer(_)
             | Xdm::Double(_)
+            | Xdm::Float(_)
             | Xdm::Node(_)
             | Xdm::Array(_)
             | Xdm::Map(_) => {
@@ -800,6 +822,12 @@ mod tests {
         let args = vec![Xdm::String("😎".to_string())];
         let result = fn_string_length_1().execute(&ctx, args);
         assert_eq!(result, Ok(Xdm::Integer(1)));
+        Ok(())
+    }
+    #[test]
+    fn parse_float() -> XdmResult<()> {
+        let f: f32 = "-3.4028235E38".parse()?;
+        assert!(!f.is_nan());
         Ok(())
     }
 }

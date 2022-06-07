@@ -249,6 +249,7 @@ impl Default for StaticContext {
         add_simple_type(&mut sc, "xs:boolean", "xs:anyAtomicType");
         add_simple_type(&mut sc, "xs:decimal", "xs:anyAtomicType");
         add_simple_type(&mut sc, "xs:double", "xs:anyAtomicType");
+        add_simple_type(&mut sc, "xs:float", "xs:anyAtomicType");
         add_simple_type(&mut sc, "xs:integer", "xs:decimal");
         crate::xpath_functions_31::register(&mut sc);
         sc
