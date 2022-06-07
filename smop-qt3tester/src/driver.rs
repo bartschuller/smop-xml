@@ -52,6 +52,7 @@ impl<R: TestRunner> Driver<R> {
                     environment.set_namespace(&*namespace.0, &*namespace.1)
                 }
                 print!("{}: {}", case.name, case.test);
+                let _unused = &case.description;
                 let result = self.runner.evaluate(&environment, case.test.as_str());
                 let result = self
                     .runner

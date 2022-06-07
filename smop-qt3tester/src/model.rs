@@ -174,7 +174,7 @@ impl Assertion {
 #[derive(Debug)]
 pub struct TestCase {
     pub(crate) name: String,
-    description: String,
+    pub(crate) description: String,
     pub(crate) environment: Option<EnvironmentSpec>,
     pub(crate) dependencies: Vec<Dependency>,
     pub(crate) test: String,

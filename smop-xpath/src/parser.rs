@@ -598,14 +598,14 @@ impl XpathParser {
     // 66
     fn FunctionItemExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [NamedFunctionRef(e)] => unimplemented!(),
+            [NamedFunctionRef(_e)] => unimplemented!(),
             [InlineFunctionExpr(e)] => e,
         ))
     }
     // 67
     fn NamedFunctionRef(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [EQName(qname), IntegerLiteral(i)] => Expr::Sequence(vec![], ()), // FIXME
+            [EQName(_qname), IntegerLiteral(_i)] => Expr::Sequence(vec![], ()), // FIXME
         ))
     }
     // 68
@@ -650,7 +650,7 @@ impl XpathParser {
     // 76
     fn UnaryLookup(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
-            [NamedFunctionRef(e)] => Expr::Sequence(vec![], ()), // FIXME
+            [NamedFunctionRef(_e)] => Expr::Sequence(vec![], ()), // FIXME
         ))
     }
     // 77
