@@ -19,3 +19,4 @@ itertools = "^0.9"
 smop-xpath = {path="../smop-xpath"}
 smop-xmltree = {path="../smop-xmltree"}
 junit-report = "^0.4"
+time = "^0.2"
