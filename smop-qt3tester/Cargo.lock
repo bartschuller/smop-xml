@@ -350,15 +350,6 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "284f18f85651fe11e8a991b2adb42cb078325c996ed026d994719efcfca1d54b"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
@@ -814,7 +805,7 @@ name = "smop-qt3tests"
 version = "0.1.0"
 dependencies = [
  "clap",
- "itertools 0.12.1",
+ "itertools",
  "junit-report",
  "roxmltree",
  "smop-xmltree",
@@ -836,7 +827,7 @@ name = "smop-xpath"
 version = "0.1.0"
 dependencies = [
  "im",
- "itertools 0.9.0",
+ "itertools",
  "lazy_static",
  "num-traits",
  "pest",

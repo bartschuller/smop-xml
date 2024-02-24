@@ -4,7 +4,6 @@ use crate::ast::{
 use crate::context::StaticContext;
 use crate::types::{Item, KindTest, Occurrence, SchemaType, SequenceType};
 use crate::xdm::{XdmError, XdmResult};
-use itertools::Itertools;
 use pest_consume::*;
 use rust_decimal::Decimal;
 use smop_xmltree::nod::QName;
@@ -362,7 +361,7 @@ impl XpathParser {
     fn SimpleMapExpr(input: Node) -> Result<Expr<()>> {
         Ok(match_nodes!(input.into_children();
             [PathExpr(es)..] => es.into_iter()
-                                  .fold1(|e1, e2| Expr::SimpleMap(Box::new(e1), Box::new(e2), ()))
+                                  .reduce(|e1, e2| Expr::SimpleMap(Box::new(e1), Box::new(e2), ()))
                                   .unwrap(),
         ))
     }
@@ -940,7 +939,7 @@ impl XpathParser {
 
 fn path(v: Vec<Expr<()>>) -> Expr<()> {
     v.into_iter()
-        .fold1(|e1, e2| Expr::Path(Box::new(e1), Box::new(e2), ()))
+        .reduce(|e1, e2| Expr::Path(Box::new(e1), Box::new(e2), ()))
         .unwrap()
 }
 
