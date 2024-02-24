@@ -220,16 +220,16 @@ impl TestCase {
                 }
             })
             .unwrap();
-        let tc = TestCase {
+        
+        //println!("{:?}", tc);
+        TestCase {
             name,
             description,
             environment,
             dependencies,
             test,
             result,
-        };
-        //println!("{:?}", tc);
-        tc
+        }
     }
 }
 #[derive(Debug)]
@@ -358,7 +358,7 @@ impl TestSet {
             .children()
             .filter_map(|n| {
                 if n.is_element() && n.has_tag_name("test-case") {
-                    Some(TestCase::new(&n, &file))
+                    Some(TestCase::new(&n, file))
                 } else {
                     None
                 }

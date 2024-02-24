@@ -23,11 +23,11 @@ impl SmopRunner {
     pub fn new() -> SmopRunner {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
         let context = static_context.new_dynamic_context();
-        let runner = SmopRunner {
+        
+        SmopRunner {
             static_context,
             context,
-        };
-        runner
+        }
     }
     fn xpath_equals(&self, v1: &Xdm, v2: &Xdm) -> bool {
         v1.xpath_compare(v2, Comp::EQ)
@@ -102,7 +102,7 @@ impl TestRunner for SmopRunner {
             Assertion::Assert(xpath) => match result {
                 Ok(v) => {
                     let result_q = QName::new("result".to_string(), None, None);
-                    let mut static_context = (&*self.static_context).clone();
+                    let mut static_context = (*self.static_context).clone();
                     static_context.set_variable_type(
                         &result_q,
                         SequenceType::Item(Item::Item, Occurrence::ZeroOrMore),
@@ -290,7 +290,7 @@ impl TestRunner for SmopRunner {
             }
             Assertion::AllOf(v) => {
                 let all_checks = v.iter().map(|a| self.check(result, a));
-                let mut failures = all_checks.filter_map(|o| o).peekable();
+                let mut failures = all_checks.flatten().peekable();
                 if failures.peek().is_none() {
                     None
                 } else {

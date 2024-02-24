@@ -21,8 +21,8 @@ pub struct SXDRunner<'a> {
 }
 impl<'a> SXDRunner<'a> {
     pub fn new(package: &'a Package) -> SXDRunner<'a> {
-        let runner = SXDRunner { package };
-        runner
+        
+        SXDRunner { package }
     }
     fn xpath_equals(&self, v1: &Value<'a>, v2: &Value<'a>) -> bool {
         match v1 {
@@ -167,7 +167,7 @@ impl<'a> TestRunner for SXDRunner<'a> {
             }
             Assertion::AllOf(v) => {
                 let all_checks = v.iter().map(|a| self.check(result, a));
-                let mut failures = all_checks.filter_map(|o| o).peekable();
+                let mut failures = all_checks.flatten().peekable();
                 if failures.peek().is_none() {
                     None
                 } else {

@@ -49,7 +49,7 @@ impl<R: TestRunner> Driver<R> {
                     }
                 }
                 for namespace in &environment_spec.namespaces {
-                    environment.set_namespace(&*namespace.0, &*namespace.1)
+                    environment.set_namespace(&namespace.0, &namespace.1)
                 }
                 print!("{}: {}", case.name, case.test);
                 let _unused = &case.description;
@@ -62,7 +62,7 @@ impl<R: TestRunner> Driver<R> {
             }
         }
     }
-    fn dependencies_met(&self, deps: &Vec<Dependency>) -> bool {
+    fn dependencies_met(&self, deps: &[Dependency]) -> bool {
         deps.iter().all(|dep| self.dependency_met(dep))
     }
     fn dependency_met(&self, dep: &Dependency) -> bool {
