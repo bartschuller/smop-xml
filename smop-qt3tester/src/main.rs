@@ -7,7 +7,7 @@ mod driver;
 mod model;
 
 use crate::model::{EnvironmentSpec, TestSet};
-use clap::{crate_description, crate_name, crate_version, App, Arg};
+use clap::{crate_description, crate_name, crate_version, Arg, Command};
 use driver::Driver;
 use roxmltree::Node;
 use std::collections::HashMap;
@@ -15,16 +15,16 @@ use std::path::Path;
 use sxd_document::Package;
 
 fn main() {
-    let matches = App::new(crate_name!())
+    let matches = Command::new(crate_name!())
         .version(crate_version!())
         .about(crate_description!())
         .arg(
-            Arg::with_name("catalog")
+            Arg::new("catalog")
                 .help("path to the catalog.xml")
                 .required(true),
         )
         .get_matches();
-    let catalog = matches.value_of("catalog").unwrap();
+    let catalog = matches.get_one::<String>("catalog").unwrap();
     println!("Going to read catalog from {}", catalog);
     let text = std::fs::read_to_string(catalog).unwrap();
     let doc = roxmltree::Document::parse(&text).unwrap();
