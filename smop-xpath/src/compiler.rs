@@ -589,7 +589,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                 let cp = p.compile()?;
                 Ok(CompiledExpr::new(move |c| {
                     let seq = ce.execute(c)?;
-                    let mut iter = seq.into_iter().enumerate();
+                    let iter = seq.into_iter().enumerate();
                     let mut result: Vec<Xdm> = Vec::new();
                     for (pos, x) in iter {
                         let context = c.clone_with_focus(x, pos);

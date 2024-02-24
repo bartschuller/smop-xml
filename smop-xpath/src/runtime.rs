@@ -71,7 +71,9 @@ impl DynamicContext {
         Ok(())
     }
 }
-pub struct CompiledExpr(Box<dyn for<'context> Fn(&'context DynamicContext) -> XdmResult<Xdm>>);
+
+type CompiledExprClosure = dyn for<'context> Fn(&'context DynamicContext) -> XdmResult<Xdm>;
+pub struct CompiledExpr(Box<CompiledExprClosure>);
 
 impl CompiledExpr {
     pub fn new(

@@ -20,6 +20,7 @@ impl<R> From<XdmError> for pest::error::Error<R> {
     }
 }
 
+#[allow(clippy::result_large_err)]
 pub(crate) fn parse(ctx: &StaticContext, input: &str) -> Result<Expr<()>> {
     let root = XpathParser::parse_with_userdata(Rule::Xpath, input, ctx);
     //let root2 = root.clone();
@@ -480,6 +481,7 @@ impl XpathParser {
         Ok(())
     }
     // 46
+    #[allow(suspicious_double_ref_op)]
     fn NodeTest(input: Node) -> Result<NodeTest> {
         let sc = input.user_data().clone();
         Ok(match_nodes!(input.into_children();
@@ -492,6 +494,7 @@ impl XpathParser {
         ))
     }
     // 48
+    #[allow(suspicious_double_ref_op)]
     fn Wildcard(input: Node) -> Result<Wildcard> {
         let sc = input.user_data().clone();
         Ok(match_nodes!(input.clone().into_children();
@@ -905,6 +908,7 @@ impl XpathParser {
     }
     // Numbers refer to the grammar in REC-xml-names
     // 8
+    #[allow(suspicious_double_ref_op)]
     fn PrefixedName(input: Node) -> Result<QName> {
         let sc = input.user_data().clone();
         Ok(match_nodes!(input.into_children();
@@ -1200,7 +1204,7 @@ mod tests {
     fn bool1() {
         let context: StaticContext = Default::default();
         let output = context.parse("true()");
-        assert!(!output.is_err())
+        assert!(output.is_ok())
     }
 
     #[test]

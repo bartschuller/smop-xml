@@ -545,7 +545,7 @@ pub(crate) fn fn_string_1() -> CompiledFunction {
     })
 }
 pub(crate) fn fn_name_0() -> CompiledFunction {
-    CompiledFunction::new(|ctx, _args| match ctx.focus.as_ref().map(|f|&f.sequence) {
+    CompiledFunction::new(|ctx, _args| match ctx.focus.as_ref().map(|f| &f.sequence) {
         Some(Xdm::Node(ref node)) => Ok(Xdm::String(
             node.node_name().map_or("".to_string(), |q| q.to_string()),
         )),
@@ -567,7 +567,7 @@ pub(crate) fn fn_name_1() -> CompiledFunction {
     })
 }
 pub(crate) fn fn_local_name_0() -> CompiledFunction {
-    CompiledFunction::new(|ctx, _args| match ctx.focus.as_ref().map(|f|&f.sequence) {
+    CompiledFunction::new(|ctx, _args| match ctx.focus.as_ref().map(|f| &f.sequence) {
         Some(Xdm::Node(ref node)) => Ok(Xdm::String(
             node.node_name().map_or("".to_string(), |q| q.name),
         )),
@@ -672,12 +672,7 @@ pub(crate) fn fn_deep_equal_2() -> CompiledFunction {
     CompiledFunction::new(|_ctx, args| Ok(Xdm::Boolean(args[0].deep_equal(&args[1]))))
 }
 pub(crate) fn fn_exists_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, args| {
-        Ok(Xdm::Boolean(match args[0] {
-            Xdm::EmptySequence => false,
-            _ => true,
-        }))
-    })
+    CompiledFunction::new(|_ctx, args| Ok(Xdm::Boolean(!matches!(args[0], Xdm::EmptySequence))))
 }
 pub(crate) fn fn_data_1() -> CompiledFunction {
     CompiledFunction::new(|_ctx, mut args| args.remove(0).atomize())
@@ -722,12 +717,7 @@ pub(crate) fn array_size_1() -> CompiledFunction {
     })
 }
 pub(crate) fn error_0() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, _args|
-        Err(XdmError::xqtm(
-            "FOER0000",
-            "error() called",
-        ))
-    )
+    CompiledFunction::new(|_ctx, _args| Err(XdmError::xqtm("FOER0000", "error() called")))
 }
 pub(crate) fn string_compare(s1: &str, s2: &str) -> i8 {
     s1.cmp(s2) as i8

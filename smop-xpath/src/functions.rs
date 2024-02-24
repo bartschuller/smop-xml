@@ -17,10 +17,11 @@ pub struct Function {
     pub code: fn() -> CompiledFunction,
 }
 
+type CompiledFunctionClosure =
+    dyn for<'context> Fn(&'context DynamicContext, Vec<Xdm>) -> XdmResult<Xdm>;
+
 #[derive(Clone)]
-pub struct CompiledFunction(
-    Rc<dyn for<'context> Fn(&'context DynamicContext, Vec<Xdm>) -> XdmResult<Xdm>>,
-);
+pub struct CompiledFunction(Rc<CompiledFunctionClosure>);
 
 impl CompiledFunction {
     pub fn new(

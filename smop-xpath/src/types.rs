@@ -122,9 +122,7 @@ impl SequenceType {
         );
         let mut iter = ts.iter();
         let init = iter.next().unwrap();
-        iter.fold(Ok(init.clone()), |st1, st2| {
-            SequenceType::add(ctx, &st1?, st2)
-        })
+        iter.try_fold(init.clone(), |st1, st2| SequenceType::add(ctx, &st1, st2))
     }
     pub(crate) fn atomize(&self, ctx: &Rc<StaticContext>) -> XdmResult<Self> {
         Ok(match self {
@@ -243,9 +241,7 @@ pub enum Variety {
 impl SchemaType {
     fn lub(st1: &Rc<SchemaType>, st2: &Rc<SchemaType>) -> Rc<SchemaType> {
         let succ = |st: &Rc<SchemaType>| {
-            std::iter::successors(Some(st.clone()), |e| {
-                e.base_type.as_ref().cloned()
-            })
+            std::iter::successors(Some(st.clone()), |e| e.base_type.as_ref().cloned())
         };
         for outer in succ(st1) {
             for inner in succ(st2) {

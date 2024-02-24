@@ -26,9 +26,7 @@ pub struct Xpath(CompiledExpr);
 impl Xpath {
     pub fn compile(context: &Rc<StaticContext>, xpath: &str) -> XdmResult<Xpath> {
         let expr = context.parse(xpath)?;
-        expr.type_(Rc::clone(context))?
-            .compile()
-            .map(Xpath)
+        expr.type_(Rc::clone(context))?.compile().map(Xpath)
     }
 
     pub fn evaluate(&self, context: &DynamicContext) -> XdmResult<Xdm> {
@@ -92,10 +90,10 @@ mod tests {
         let context: DynamicContext = static_context.new_dynamic_context();
         let xpath = Xpath::compile(&static_context, "0")?;
         let result = xpath.evaluate(&context)?;
-        assert_eq!(result.boolean()?, false);
+        assert!(!result.boolean()?);
         let xpath = Xpath::compile(&static_context, "1")?;
         let result = xpath.evaluate(&context)?;
-        assert_eq!(result.boolean()?, true);
+        assert!(result.boolean()?);
         Ok(())
     }
     #[test]

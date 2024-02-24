@@ -1,7 +1,7 @@
-use std::rc::Rc;
 use smop_xpath::runtime::DynamicContext;
 use smop_xpath::xdm::{Xdm, XdmResult};
 use smop_xpath::{StaticContext, Xpath};
+use std::rc::Rc;
 
 #[test]
 fn fn_concat1() -> XdmResult<()> {
@@ -24,7 +24,7 @@ fn nan1() -> XdmResult<()> {
     let context: DynamicContext = static_context.new_dynamic_context();
     let xpath = Xpath::compile(&static_context, r#"not(xs:double("NaN"))"#)?;
     let result = xpath.evaluate(&context)?;
-    assert_eq!(result.boolean()?, true);
+    assert!(result.boolean()?);
     Ok(())
 }
 

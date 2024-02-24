@@ -259,8 +259,8 @@ impl Expr<()> {
             Expr::Quantified(quantifier, bindings, predicate, _) => {
                 let mut curr_ctx = Rc::clone(&ctx);
                 let mut new_ctx: StaticContext;
-                let mut bs_typed: Vec<(QName, Box<Expr<(SequenceType, Rc<StaticContext>)>>)> =
-                    Vec::with_capacity(bindings.len());
+                type TypedBinding = (QName, Box<Expr<(SequenceType, Rc<StaticContext>)>>);
+                let mut bs_typed: Vec<TypedBinding> = Vec::with_capacity(bindings.len());
                 for x in bindings {
                     let (var, expr) = x;
                     let binding_type = expr.type_(Rc::clone(&curr_ctx))?;

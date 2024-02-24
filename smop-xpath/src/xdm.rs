@@ -20,7 +20,6 @@ use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
 use std::result::Result;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Xdm {
     EmptySequence,
@@ -383,17 +382,12 @@ impl Xdm {
     }
     #[inline]
     pub(crate) fn is_nan(&self) -> bool {
-        match self {
-            Xdm::Double(d) if d.is_nan() => true,
-            _ => false,
-        }
+        matches!(self,
+            Xdm::Double(d) if d.is_nan())
     }
     pub fn deep_equal(&self, other: &Xdm) -> bool {
         match self {
-            Xdm::EmptySequence => match other {
-                Xdm::EmptySequence => true,
-                _ => false,
-            },
+            Xdm::EmptySequence => matches!(other, Xdm::EmptySequence),
             Xdm::String(_)
             | Xdm::Boolean(_)
             | Xdm::Decimal(_)
