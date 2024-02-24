@@ -674,7 +674,7 @@ fn process_element<'input>(
 
     let new_element_id: Option<Idx> = match end_token {
         ElementEnd::Open | ElementEnd::Empty => {
-            let tag_ns_uri = get_ns_by_prefix(doc, namespaces.clone(), tag_name.prefix, text)?;
+            let tag_ns_uri = get_ns_by_prefix(doc, namespaces, tag_name.prefix, text)?;
             let prefix = if tag_name.prefix.as_str() == "" {
                 None
             } else {
@@ -698,7 +698,7 @@ fn process_element<'input>(
                 &mut pd.awaiting_subtree,
             );
             let final_num_attributes =
-                resolve_attributes(new_element_id, namespaces.clone(), doc, text, pd)?;
+                resolve_attributes(new_element_id, namespaces, doc, text, pd)?;
             if let NodeType::Element {
                 qname,
                 num_attributes: _,
@@ -759,7 +759,7 @@ fn process_element<'input>(
 
 fn resolve_namespaces(start_idx: usize, parent_id: Idx, doc: &mut Document) -> ShortRange {
     if let NodeType::Element { ref namespaces, .. } = doc.nodes[parent_id.get_usize()].node_type {
-        let parent_ns = namespaces.clone();
+        let parent_ns = *namespaces;
         if start_idx == doc.namespaces.len() {
             return parent_ns;
         }
@@ -779,11 +779,11 @@ fn resolve_namespaces(start_idx: usize, parent_id: Idx, doc: &mut Document) -> S
 }
 
 // returns number of attributes
-fn resolve_attributes<'input>(
+fn resolve_attributes(
     element_id: Idx,
     namespaces: ShortRange,
     doc: &mut Document,
-    text: &'input str,
+    text: &str,
     pd: &mut ParserData,
 ) -> Result<u32, Error> {
     let start_idx = doc.nodes.len();
@@ -803,7 +803,7 @@ fn resolve_attributes<'input>(
             // always has no value.'
             None
         } else {
-            get_ns_by_prefix(doc, namespaces.clone(), attr.prefix, text)?
+            get_ns_by_prefix(doc, namespaces, attr.prefix, text)?
         };
 
         let attr_name_idx = qname_idx(
@@ -834,7 +834,7 @@ fn resolve_attributes<'input>(
                 qname: attr_name_idx,
                 value: value_string_idx,
             },
-            attr.value_range.clone(),
+            attr.value_range,
             &mut pd.awaiting_subtree,
         );
     }

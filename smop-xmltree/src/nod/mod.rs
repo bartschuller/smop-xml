@@ -132,7 +132,7 @@ impl Idx {
     }
     #[inline]
     pub fn get(&self) -> u32 {
-        self.0.get() as u32 - 1
+        self.0.get() - 1
     }
     #[inline]
     pub fn get_usize(&self) -> usize {
@@ -551,7 +551,7 @@ impl Node {
                 let attrs: Vec<Node> = self.attributes().collect();
                 other
                     .attributes()
-                    .all(|a1| attrs.iter().find(|a2| a1.deep_equal(a2)).is_some())
+                    .all(|a1| attrs.iter().any(|a2| a1.deep_equal(a2)))
             }
             NodeKind::Attribute => {
                 self.node_name() == other.node_name() && self.string_value() == other.string_value()
