@@ -274,7 +274,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         Ok(Xdm::flatten(values_vec))
                     } else if values_vec.is_empty() {
                         Ok(Xdm::flatten(
-                            nodes_btree.into_iter().map(|n| Xdm::Node(n)).collect(),
+                            nodes_btree.into_iter().map(Xdm::Node).collect(),
                         ))
                     } else {
                         Err(XdmError::xqtm(
@@ -558,7 +558,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                             }
                         }
                     }
-                    return Ok(Xdm::Boolean(false));
+                    Ok(Xdm::Boolean(false))
                 }))
             }
             Expr::NodeComp(e1, nc, e2, _) => {
@@ -591,7 +591,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     let seq = ce.execute(c)?;
                     let mut iter = seq.into_iter().enumerate();
                     let mut result: Vec<Xdm> = Vec::new();
-                    while let Some((pos, x)) = iter.next() {
+                    for (pos, x) in iter {
                         let context = c.clone_with_focus(x, pos);
                         let pred = cp.execute(&context)?;
                         match pred {
@@ -670,7 +670,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         return Ok(Xdm::EmptySequence);
                     }
                     Ok(Xdm::sequence(
-                        (from_i..=to_i).map(|i| Xdm::Integer(i)).collect(),
+                        (from_i..=to_i).map(Xdm::Integer).collect(),
                     ))
                 }))
             }

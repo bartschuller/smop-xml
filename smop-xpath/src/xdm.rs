@@ -122,7 +122,7 @@ impl Xdm {
     }
     pub fn boolean(&self) -> XdmResult<bool> {
         match self {
-            Xdm::String(s) => Ok(s.len() > 0),
+            Xdm::String(s) => Ok(!s.is_empty()),
             Xdm::Boolean(b) => Ok(*b),
             Xdm::Decimal(d) => Ok(!d.is_zero()),
             Xdm::Integer(i) => Ok(*i != 0_i64),
@@ -171,7 +171,7 @@ impl Xdm {
     }
     pub fn decimal(&self) -> XdmResult<Decimal> {
         match self {
-            Xdm::Decimal(d) => Ok(d.clone()),
+            Xdm::Decimal(d) => Ok(*d),
             Xdm::Integer(i) => Ok(Decimal::new(*i, 0)),
             Xdm::Double(d) => {
                 Ok(Decimal::from_f64(*d)
@@ -265,7 +265,7 @@ impl Xdm {
     pub fn string_joined(&self) -> XdmResult<String> {
         self.string().or_else(|error| {
             if let Xdm::Sequence(v) = self {
-                Ok(v.into_iter().map(|x| x.string().unwrap()).join(" "))
+                Ok(v.iter().map(|x| x.string().unwrap()).join(" "))
             } else {
                 Err(error)
             }
@@ -326,30 +326,30 @@ impl Xdm {
             (Xdm::Double(d1), x2) => {
                 !d1.is_nan()
                     && !x2.is_nan()
-                    && vc.comparison_true(double_compare(&d1, x2.double()?.borrow()))
+                    && vc.comparison_true(double_compare(d1, x2.double()?.borrow()))
             }
             (x1, Xdm::Double(d2)) => {
                 !d2.is_nan()
                     && !x1.is_nan()
-                    && vc.comparison_true(double_compare(x1.double()?.borrow(), &d2))
+                    && vc.comparison_true(double_compare(x1.double()?.borrow(), d2))
             }
             (Xdm::Decimal(d1), x2) => {
-                vc.comparison_true(decimal_compare(&d1, x2.decimal()?.borrow()))
+                vc.comparison_true(decimal_compare(d1, x2.decimal()?.borrow()))
             }
             (x1, Xdm::Decimal(d2)) => {
-                vc.comparison_true(decimal_compare(x1.decimal()?.borrow(), &d2))
+                vc.comparison_true(decimal_compare(x1.decimal()?.borrow(), d2))
             }
             (Xdm::Integer(i1), x2) => {
-                vc.comparison_true(integer_compare(&i1, x2.integer()?.borrow()))
+                vc.comparison_true(integer_compare(i1, x2.integer()?.borrow()))
             }
             (x1, Xdm::Integer(i2)) => {
-                vc.comparison_true(integer_compare(x1.integer()?.borrow(), &i2))
+                vc.comparison_true(integer_compare(x1.integer()?.borrow(), i2))
             }
             (Xdm::Boolean(b1), x2) => {
-                vc.comparison_true(boolean_compare(&b1, x2.boolean()?.borrow()))
+                vc.comparison_true(boolean_compare(b1, x2.boolean()?.borrow()))
             }
             (x1, Xdm::Boolean(b2)) => {
-                vc.comparison_true(boolean_compare(x1.boolean()?.borrow(), &b2))
+                vc.comparison_true(boolean_compare(x1.boolean()?.borrow(), b2))
             }
             (a1, a2) => unimplemented!("{:?} {} {:?}", a1, vc, a2),
         }))

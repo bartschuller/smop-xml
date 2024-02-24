@@ -231,7 +231,7 @@ impl Expr<()> {
                     SequenceType::EmptySequence => SequenceType::EmptySequence,
                     SequenceType::Item(it, _o) => SequenceType::Item(it, Occurrence::One),
                 };
-                let mut new_ctx = (&*ctx).clone();
+                let mut new_ctx = (*ctx).clone();
                 new_ctx.set_variable_type(&qname, bi_type);
                 let e_typed = e.type_(Rc::new(new_ctx))?;
                 let e_type = e_typed.t().0.clone();
@@ -245,7 +245,7 @@ impl Expr<()> {
             Expr::Let(qname, bs, e, _) => {
                 let bs_typed = bs.type_(Rc::clone(&ctx))?;
                 let bi_type = bs_typed.t().0.clone();
-                let mut new_ctx = (&*ctx).clone();
+                let mut new_ctx = (*ctx).clone();
                 new_ctx.set_variable_type(&qname, bi_type);
                 let e_typed = e.type_(Rc::new(new_ctx))?;
                 let e_type = e_typed.t().0.clone();
@@ -269,7 +269,7 @@ impl Expr<()> {
                         SequenceType::Item(it, _o) => SequenceType::Item(it, Occurrence::One),
                     };
                     bs_typed.push((var.clone(), Box::new(binding_type)));
-                    new_ctx = (&*curr_ctx).clone();
+                    new_ctx = (*curr_ctx).clone();
                     new_ctx.set_variable_type(&var, bi_type);
                     curr_ctx = Rc::new(new_ctx);
                 }

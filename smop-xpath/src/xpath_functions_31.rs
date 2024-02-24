@@ -622,7 +622,7 @@ pub(crate) fn fn_trace_1() -> CompiledFunction {
 pub(crate) fn fn_trace_2() -> CompiledFunction {
     CompiledFunction::new(|ctx, mut args| {
         let val = args.remove(0);
-        let label = args.get(0).unwrap();
+        let label = args.first().unwrap();
         ctx.trace_label(&val, label)?;
         Ok(val)
     })

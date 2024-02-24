@@ -277,7 +277,7 @@ impl Display for Literal {
             Literal::Integer(i) => write!(f, "{}", i),
             Literal::Decimal(d) => write!(f, "{}", d),
             Literal::Double(d) => write!(f, "{:e}", d),
-            Literal::String(s) => write!(f, "\"{}\"", s.replace("\"", "\"\"")),
+            Literal::String(s) => write!(f, "\"{}\"", s.replace('\"', "\"\"")),
         }
     }
 }

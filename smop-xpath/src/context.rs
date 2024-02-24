@@ -19,6 +19,12 @@ pub struct Context {
     pub dynamic_context: DynamicContext,
 }
 
+impl Default for Context {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Context {
     pub fn new() -> Self {
         let sc: Rc<StaticContext> = Rc::new(Default::default());
@@ -101,7 +107,7 @@ impl StaticContext {
             Some(caps) => {
                 XdmError::xqtm(caps.get(1).unwrap().as_str(), caps.get(2).unwrap().as_str())
             }
-            None => XdmError::xqtm("XPST0003", &e.to_string()),
+            None => XdmError::xqtm("XPST0003", e.to_string()),
         })
     }
     pub fn add_prefix_ns(&mut self, prefix: &str, ns: &str) {
@@ -139,7 +145,7 @@ impl StaticContext {
         let ename = ename.into();
         self.schema_types.get(&ename).cloned().ok_or(XdmError::xqtm(
             "XPST0008",
-            &format!("no schema definition for {} found", ename),
+            format!("no schema definition for {} found", ename),
         ))
     }
     pub(crate) fn add_function(&mut self, qname: QName, f: Function) {

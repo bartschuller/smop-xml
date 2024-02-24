@@ -293,7 +293,7 @@ impl XpathParser {
         Ok(match_nodes!(input.clone().into_children();
             [CastExpr(e)] => e,
             [CastExpr(e), SingleType(qo)] =>
-                cast_expr(*sc, e, qo.0, qo.1, true).map_err(|e| input.error(e.message))?
+                cast_expr(sc, e, qo.0, qo.1, true).map_err(|e| input.error(e.message))?
         ))
     }
     // 28
@@ -302,7 +302,7 @@ impl XpathParser {
         Ok(match_nodes!(input.clone().into_children();
             [ArrowExpr(e)] => e,
             [ArrowExpr(e), SingleType(qo)] =>
-                cast_expr(*sc, e, qo.0, qo.1, false).map_err(|e| input.error(e.message))?
+                cast_expr(sc, e, qo.0, qo.1, false).map_err(|e| input.error(e.message))?
         ))
     }
     // 29
@@ -842,14 +842,14 @@ impl XpathParser {
     fn IntegerLiteral(input: Node) -> Result<Literal> {
         match input.as_str().parse() {
             Ok(i) => Ok(Literal::Integer(i)),
-            Err(e) => Err(input.error(format!("err:FOAR0002 {}", e.to_string()))),
+            Err(e) => Err(input.error(format!("err:FOAR0002 {}", e))),
         }
     }
     // 114
     fn DecimalLiteral(input: Node) -> Result<Literal> {
         match Decimal::from_str(input.as_str()) {
             Ok(d) => Ok(Literal::Decimal(d)),
-            Err(e) => Err(input.error(format!("err:FOAR0002 {}", e.to_string()))),
+            Err(e) => Err(input.error(format!("err:FOAR0002 {}", e))),
         }
     }
     // 115

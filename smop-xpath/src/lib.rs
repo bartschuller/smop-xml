@@ -28,7 +28,7 @@ impl Xpath {
         let expr = context.parse(xpath)?;
         expr.type_(Rc::clone(context))?
             .compile()
-            .map(|compiled| Xpath(compiled))
+            .map(Xpath)
     }
 
     pub fn evaluate(&self, context: &DynamicContext) -> XdmResult<Xdm> {

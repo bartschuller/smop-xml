@@ -244,7 +244,7 @@ impl SchemaType {
     fn lub(st1: &Rc<SchemaType>, st2: &Rc<SchemaType>) -> Rc<SchemaType> {
         let succ = |st: &Rc<SchemaType>| {
             std::iter::successors(Some(st.clone()), |e| {
-                e.base_type.as_ref().map(|s| s.clone())
+                e.base_type.as_ref().cloned()
             })
         };
         for outer in succ(st1) {

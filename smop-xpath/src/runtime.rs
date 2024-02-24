@@ -79,7 +79,7 @@ impl CompiledExpr {
     ) -> Self {
         CompiledExpr(Box::new(closure))
     }
-    pub fn execute<'context>(&self, context: &'context DynamicContext) -> XdmResult<Xdm> {
+    pub fn execute(&self, context: &DynamicContext) -> XdmResult<Xdm> {
         self.0(context)
     }
 }
