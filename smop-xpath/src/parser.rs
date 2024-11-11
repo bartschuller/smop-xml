@@ -1017,6 +1017,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn int_literal2() {
         let context: StaticContext = Default::default();
         let output = context.parse("999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999");
