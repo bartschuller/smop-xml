@@ -747,6 +747,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     }
                 }))
             }
+            Expr::PredicatePattern(_, _) | Expr::EquivalentExpressionPattern(_, _) => todo!()
         }
     }
 }

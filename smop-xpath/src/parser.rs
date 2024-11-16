@@ -20,12 +20,36 @@ impl<R> From<XdmError> for pest::error::Error<R> {
 }
 
 #[allow(clippy::result_large_err)]
-pub(crate) fn parse(ctx: &StaticContext, input: &str) -> Result<Expr<()>> {
-    let root = XpathParser::parse_with_userdata(Rule::Xpath, input, ctx);
+pub(crate) fn parse_xpath_expression(ctx: &StaticContext, input: &str) -> Result<Expr<()>> {
+    let starting_rule = Rule::Xpath;
+    let root = XpathParser::parse_with_userdata(starting_rule, input, ctx);
     //let root2 = root.clone();
     //pest_ascii_tree::print_ascii_tree(root2.map(|n| n.as_pairs().to_owned()));
     let root = root?.single()?;
     let parse = XpathParser::Xpath(root);
+    parse.map_err(|e| {
+        e.with_path("literal string").renamed_rules(|rule| {
+            match *rule {
+                Rule::EOI => "end of input",
+                Rule::Literal => "a literal",
+                _ => {
+                    println!("unhandled grammar prettifier: {:?}", rule);
+                    "UNHANDLED"
+                }
+            }
+            .to_owned()
+        })
+    })
+}
+
+#[allow(clippy::result_large_err)]
+pub(crate) fn parse_xpath_pattern(ctx: &StaticContext, input: &str) -> Result<Expr<()>> {
+    let starting_rule = Rule::XsltPattern30;
+    let root = XpathParser::parse_with_userdata(starting_rule, input, ctx);
+    //let root2 = root.clone();
+    //pest_ascii_tree::print_ascii_tree(root2.map(|n| n.as_pairs().to_owned()));
+    let root = root?.single()?;
+    let parse = XpathParser::XsltPattern30(root);
     parse.map_err(|e| {
         e.with_path("literal string").renamed_rules(|rule| {
             match *rule {
@@ -935,6 +959,208 @@ impl XpathParser {
     fn LocalPart(input: Node) -> Result<String> {
         Ok(input.as_str().to_string())
     }
+
+    pub fn XsltPattern30(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [Pattern30(expr), EOI(_)] => expr,
+        ))
+    }
+    // Numbers refer to the grammar in XSLT 3.0
+    // 1
+    pub fn Pattern30(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [PredicatePattern(pp)] => Expr::PredicatePattern(pp, ()),
+            [UnionExprP(uep)] => Expr::EquivalentExpressionPattern(Box::new(uep), ()),
+        ))
+    }
+    // 2
+    pub fn PredicatePattern(input: Node) -> Result<Vec<Expr<()>>> {
+        Ok(match_nodes!(input.into_children();
+            [PredicateList(pl)] => pl,
+        ))
+    }
+
+    // 3
+    fn UnionExprP(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [IntersectExceptExprP(e)] => e,
+            [IntersectExceptExprP(e1), UnionExprPa(es)..] => {
+                es.fold(e1, |a, b| Expr::Combine(Box::new(a), CombineOp::Union, Box::new(b), ()))
+            }
+        ))
+    }
+    fn UnionExprPa(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [IntersectExceptExprP(e)] => e,
+        ))
+    }
+    // 4
+    fn IntersectExceptExprP(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [PathExprP(e)] => e,
+            [PathExprP(e), IntersectOrExceptP(c_es)..] => {
+                c_es.fold(e, |a, (op, b)|Expr::Combine(Box::new(a), op, Box::new(b), ()))
+            }
+        ))
+    }
+    fn IntersectOrExceptP(input: Node) -> Result<(CombineOp, Expr<()>)> {
+        Ok(match_nodes!(input.into_children();
+            [IntersectExprP(c_e)] => c_e,
+            [ExceptExprP(c_e)] => c_e,
+        ))
+    }
+    fn IntersectExprP(input: Node) -> Result<(CombineOp, Expr<()>)> {
+        Ok(match_nodes!(input.into_children();
+            [PathExprP(e)] => (CombineOp::Intersect, e),
+        ))
+    }
+    fn ExceptExprP(input: Node) -> Result<(CombineOp, Expr<()>)> {
+        Ok(match_nodes!(input.into_children();
+            [PathExprP(e)] => (CombineOp::Except, e),
+        ))
+    }
+    // 5
+    fn PathExprP(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [RootedPath(rp)] => rp,
+            [InitialSlashSlash(_), RelativePathExprP(mut v)] => {
+                v.insert(0, slash_ast());
+                v.insert(1, slash_slash_ast());
+                path(v)
+            },
+            [InitialSlash(_), RelativePathExprP(mut v)] => {
+                v.insert(0, slash_ast());
+                path(v)
+            },
+            [RelativePathExprP(v)] => path(v), // FIXME
+        ))
+    }
+    // 6
+    fn RootedPathA(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [VarRef(eq_name), Predicate(pes)..] => {
+                pes.fold(Expr::VarRef(eq_name, ()), |a, b| Expr::Filter(Box::new(a), Box::new(b), ()))
+            },
+            [FunctionCallP(e), Predicate(pes)..] => {
+                pes.fold(e, |a, b| Expr::Filter(Box::new(a), Box::new(b), ()))
+            },
+        ))
+    }
+    fn RootedPathB(input: Node) -> Result<Vec<Expr<()>>> {
+        Ok(match_nodes!(input.into_children();
+            [Slash(_), RelativePathExprP(v)] => v,
+            [SlashSlash(_), RelativePathExprP(mut v)] => {
+                v.insert(0, slash_slash_ast());
+                v
+            }
+        ))
+    }
+    fn RootedPath(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [RootedPathA(rpa)] => rpa,
+            [RootedPathA(rpa), RootedPathB(_rpb)] => rpa, // FIXME
+        ))
+    }
+    // 7
+    fn FunctionCallP(input: Node) -> Result<Expr<()>> {
+        // We check whether the function exists in the typing phase
+        match_nodes!(input.clone().into_children();
+            [OuterFunctionName(f), ArgumentListP(args)] =>
+                Ok(Expr::FunctionCall(f, args, ())),
+        )
+    }
+    // 8
+    fn OuterFunctionName(input: Node) -> Result<QName> {
+        Ok(match_nodes!(input.into_children();
+            [OuterFunctionNameUnprefixed(q)] => q,
+            [URIQualifiedName(q)] => q,
+        ))
+    }
+    // 8a
+    fn OuterFunctionNameUnprefixed(input: Node) -> Result<QName> {
+        Ok(QName::new(input.as_str().to_string(), None, None))
+    }
+    // 9
+    fn ArgumentListP(input: Node) -> Result<Vec<Expr<()>>> {
+        Ok(match_nodes!(input.into_children();
+            [ArgumentP(a)..] => {
+                let args: Vec<_> = a.collect();
+                args
+            },
+        ))
+    }
+    // 10
+    fn ArgumentP(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [Literal(lit)] => Expr::Literal(lit, ()),
+            [VarRef(eq_name)] => Expr::VarRef(eq_name, ()),
+        ))
+    }
+    // 11
+    fn RelativePathExprP(input: Node) -> Result<Vec<Expr<()>>> {
+        Ok(match_nodes!(input.into_children();
+            [StepExprP(e)] => vec![e],
+            [StepExprP(e), SlashStepP(v)..] => {
+                let mut v: Vec<Expr<()>> = v.flatten().collect();
+                v.insert(0, e);
+                v
+            }
+        ))
+    }
+    fn SlashStepP(input: Node) -> Result<Vec<Expr<()>>> {
+        Ok(match_nodes!(input.into_children();
+            [Slash(_), StepExprP(e)] => vec![e],
+            [SlashSlash(_), StepExprP(e)] => {
+                vec![slash_slash_ast(), e]
+            }
+        ))
+    }
+    // 12
+    fn StepExprP(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [PostfixExprP(e)] => e, // FIXME
+            [AxisStepP(e)] => e, // FIXME
+        ))
+    }
+    // 13
+    fn PostfixExprP(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [ParenthesizedExprP(e), Predicate(pes)..] => {
+                pes.fold(e, |a, b| Expr::Filter(Box::new(a), Box::new(b), ()))
+            }
+        ))
+    }
+    // 14
+    fn ParenthesizedExprP(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [UnionExprP(e)] => e,
+        ))
+    }
+    // 15
+    fn AxisStepP(input: Node) -> Result<Expr<()>> {
+        Ok(match_nodes!(input.into_children();
+            [ForwardStepP(s), PredicateList(p)] => Expr::Step(s.0, s.1, p, ()),
+        ))
+    }
+    // 16
+    fn ForwardStepP(input: Node) -> Result<(Axis, NodeTest)> {
+        Ok(match_nodes!(input.into_children();
+            [ForwardAxisP(a), NodeTest(t)] => (a, t),
+            [AbbrevForwardStep(at)] => (at.0, at.1),
+        ))
+    }
+    // 17
+    fn ForwardAxisP(input: Node) -> Result<Axis> {
+        Ok(match input.as_str() {
+            "child" => Axis::Child,
+            "descendant" => Axis::Descendant,
+            "attribute" => Axis::Attribute,
+            "self" => Axis::Self_,
+            "descendant-or-self" => Axis::DescendantOrSelf,
+            "namespace" => return Err(input.error("err:XPST0010 namespace axis is not supported")),
+            _ => unreachable!(),
+        })
+    }
 }
 
 fn path(v: Vec<Expr<()>>) -> Expr<()> {
@@ -1001,9 +1227,10 @@ fn cast_expr(
 
 #[cfg(test)]
 mod tests {
-    use super::StaticContext;
+    use super::{Result, Rule, StaticContext, XpathParser};
     use crate::ast::{ArithmeticOp, Expr, Literal};
     use crate::context::ExpandedName;
+    use pest_consume::Parser;
     use rust_decimal::Decimal;
     use smop_xmltree::nod::QName;
     use std::rc::Rc;
@@ -1629,5 +1856,18 @@ mod tests {
         let input = r#""foo" castable as xs:double"#;
         let output = context.parse(input);
         assert_eq!(input, format!("{}", output.unwrap()))
+    }
+
+    #[test]
+    fn pattern1() -> Result<()> {
+        let ctx: StaticContext = Default::default();
+        let input = "foo";
+
+        let starting_rule = Rule::XsltPattern30;
+        let root = XpathParser::parse_with_userdata(starting_rule, input, &ctx);
+        let root = root?.single()?;
+        let output = XpathParser::XsltPattern30(root)?;
+
+        Ok(assert_eq!("child::foo", format!("{}", output))) // FIXME this shows the underlying expression, not the pattern.
     }
 }

@@ -54,6 +54,8 @@ pub enum Expr<T> {
     ),
     Combine(Box<Expr<T>>, CombineOp, Box<Expr<T>>, T),
     SimpleMap(Box<Expr<T>>, Box<Expr<T>>, T),
+    PredicatePattern(Vec<Expr<T>>, T),
+    EquivalentExpressionPattern(Box<Expr<T>>, T),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -315,6 +317,8 @@ impl<T> Expr<T> {
             Expr::Combine(_, _, _, t) => t,
             Expr::SimpleMap(_, _, t) => t,
             Expr::Cast { t, .. } => t,
+            Expr::PredicatePattern(_, t) => t,
+            Expr::EquivalentExpressionPattern(_, t) => t,
         }
     }
 }
@@ -462,6 +466,8 @@ impl<T> Display for Expr<T> {
                 simple_type,
                 if *optional { " ?" } else { "" }
             ),
+            Expr::PredicatePattern(_v, _) => todo!(),
+            Expr::EquivalentExpressionPattern(e, _) => write!(f, "{}", e),
         }
     }
 }

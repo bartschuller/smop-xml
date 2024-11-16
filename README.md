@@ -22,6 +22,10 @@ It is alpha-quality software.
 - https://www.w3.org/TR/xmlschema-1/
 - https://www.w3.org/TR/xmlschema-2/
 - https://www.w3.org/TR/xmlschema11-2/
+- https://www.w3.org/TR/xslt-30/
+- https://www.w3.org/TR/xslt-xquery-serialization-31/
+- https://spec.xproc.org/lastcall-2024-08/head/xproc/
+- https://spec.xproc.org/3.0/steps/
 
 ## Current musings
 
@@ -31,10 +35,10 @@ The runtime data model (`smop_xpath::xdm`) is currently an enum and doesn't stor
 
 Licensed under either of
 
- * Apache License, Version 2.0
-   ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license
-   ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0
+  ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license
+  ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
 

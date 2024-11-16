@@ -378,6 +378,7 @@ impl Expr<()> {
                     t: (result_type, ctx),
                 })
             }
+            Expr::PredicatePattern(_, _) | Expr::EquivalentExpressionPattern(_, _) => todo!()
         }
     }
 }

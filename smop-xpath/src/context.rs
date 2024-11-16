@@ -1,6 +1,6 @@
 use crate::ast::Expr;
 use crate::functions::{Function, FunctionKey};
-use crate::parser::parse;
+use crate::parser::{parse_xpath_expression, parse_xpath_pattern};
 use crate::runtime::DynamicContext;
 use crate::types::{Item, Occurrence, SchemaType, SequenceType, TypeTree, Variety};
 use crate::xdm::{XdmError, XdmResult};
@@ -8,7 +8,6 @@ use im::HashMap;
 use regex::Regex;
 use smop_xmltree::nod::QName;
 use smop_xmltree::option_ext::OptionExt;
-use std::error::Error;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
@@ -102,8 +101,20 @@ impl StaticContext {
         lazy_static! {
             static ref RE: Regex = Regex::new(r"^err:(\w+) (.*)$").unwrap();
         }
-        #[allow(deprecated)]
-        parse(self, input).map_err(|e| match RE.captures(e.description()) {
+
+        parse_xpath_expression(self, input).map_err(|e| match RE.captures(e.to_string().as_str()) {
+            Some(caps) => {
+                XdmError::xqtm(caps.get(1).unwrap().as_str(), caps.get(2).unwrap().as_str())
+            }
+            None => XdmError::xqtm("XPST0003", e.to_string()),
+        })
+    }
+    pub fn parse_pattern(&self, input: &str) -> XdmResult<Expr<()>> {
+        lazy_static! {
+            static ref RE: Regex = Regex::new(r"^err:(\w+) (.*)$").unwrap();
+        }
+
+        parse_xpath_pattern(self, input).map_err(|e| match RE.captures(e.to_string().as_str()) {
             Some(caps) => {
                 XdmError::xqtm(caps.get(1).unwrap().as_str(), caps.get(2).unwrap().as_str())
             }

@@ -82,6 +82,11 @@ ValueComp = { "eq" | "ne" | "lt" | "le" | "gt" | "ge" }
 NodeComp = { "is" | "<<" | ">>" }
 // 35
 SimpleMapExpr = { PathExpr ~ ( "!" ~ PathExpr )* }
+
+// [36]    	PathExpr 	   ::=    	("/" RelativePathExpr?)
+//                                | ("//" RelativePathExpr)
+//                                | RelativePathExpr 	/* xgc: leading-lone-slash */
+// [37]    	RelativePathExpr 	   ::=    	StepExpr (("/" | "//") StepExpr)*
 // 36
 PathExpr = { (InitialSlashSlash ~ RelativePathExpr) | (InitialSlash ~ RelativePathExpr?) | RelativePathExpr }
 InitialSlash = { "/" }
@@ -348,3 +353,79 @@ NameStartChar = @{ 'A'..'Z' | "_" | 'a'..'z' | '\u{C0}'..'\u{D6}' | '\u{D8}'..'\
 // 4a
 NameChar = @{ NameStartChar | "-" | "." | '0'..'9' | '\u{b7}'..'\u{b7}' | '\u{300}'..'\u{36f}' |
                               '\u{203f}'..'\u{2040}' }
+
+// Patterns, for XSLT
+
+XsltPattern30 = { SOI ~ Pattern30 ~ EOI }
+
+// Numbers refer to the grammar in XSLT 3.0
+// 1
+Pattern30 = { PredicatePattern | UnionExprP }
+// 2
+PredicatePattern = _{ "." ~ PredicateList }
+// 3
+UnionExprP = { IntersectExceptExprP ~ UnionExprPa* }
+UnionExprPa = { ("union" | "|") ~ IntersectExceptExprP }
+// 4
+IntersectExceptExprP = { PathExprP ~  IntersectOrExceptP* }
+IntersectOrExceptP = { IntersectExprP | ExceptExprP }
+IntersectExprP = { "intersect" ~ PathExprP }
+ExceptExprP = { "except" ~ PathExprP }
+// 5
+PathExprP = { RootedPath
+    | (InitialSlashSlash ~ RelativePathExprP)
+    | (InitialSlash ~ RelativePathExprP?)
+    | RelativePathExprP
+}
+
+// 6
+RootedPathA = { (
+    VarRef
+    | FunctionCallP
+    ) ~ PredicateList
+}
+RootedPathB = { (SlashSlash | Slash) ~ RelativePathExprP }
+RootedPath = { RootedPathA ~ RootedPathB? }
+// 7
+FunctionCallP = { OuterFunctionName ~ ArgumentListP }
+// 8a
+OuterFunctionNameUnprefixed = {
+    "doc"
+    | "id"
+    | "element-with-id"
+    | "key"
+    | "root"
+}
+// 8
+OuterFunctionName = {
+    OuterFunctionNameUnprefixed | URIQualifiedName
+}
+// 9
+ArgumentListP = { "(" ~ (ArgumentP ~ ("," ~ ArgumentP)*)? ~ ")" }
+// 10
+ArgumentP = { VarRef | Literal }
+// 11
+RelativePathExprP = { StepExprP ~ SlashStepP* }
+SlashStepP = { (SlashSlash | Slash) ~ StepExprP }
+// 12
+StepExprP
+    = { PostfixExprP | AxisStepP }
+// 13
+PostfixExprP = { ParenthesizedExprP ~ PredicateList }
+// 14
+ParenthesizedExprP = { "(" ~ UnionExprP ~ ")" }
+// 15
+AxisStepP = { ForwardStepP ~ PredicateList }
+// 16
+ForwardStepP = { (
+    ForwardAxisP ~ ColonColon ~ NodeTest
+    ) | AbbrevForwardStep }
+// 17
+ForwardAxisP = {
+    "child"
+    | "descendant"
+    | "attribute"
+    | "self"
+    | "descendant-or-self"
+    | "namespace"
+    }
