@@ -5,20 +5,21 @@ use crate::types::{Occurrence, SequenceType};
 use crate::xdm::*;
 use itertools::Itertools;
 use rust_decimal::Decimal;
-use smop_xmltree::nod::{NodeKind, QName};
-use smop_xmltree::option_ext::OptionExt;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
+use xot::ValueType;
+use xot::xmlname::{NameStrInfo, OwnedName};
+use crate::xot::eqv;
 
 #[derive(Debug, PartialEq)]
 pub enum Expr<T> {
     Literal(Literal, T),
-    VarRef(QName, T),
+    VarRef(OwnedName, T),
     Sequence(Vec<Expr<T>>, T),
     ContextItem(T),
     IfThenElse(Box<Expr<T>>, Box<Expr<T>>, Box<Expr<T>>, T),
-    FunctionCall(QName, Vec<Expr<T>>, T),
+    FunctionCall(OwnedName, Vec<Expr<T>>, T),
     Or(Vec<Expr<T>>, T),
     And(Vec<Expr<T>>, T),
     Concat(Vec<Expr<T>>, T),
@@ -39,15 +40,15 @@ pub enum Expr<T> {
     GeneralComp(Box<Expr<T>>, Comp, Box<Expr<T>>, T),
     NodeComp(Box<Expr<T>>, NodeComp, Box<Expr<T>>, T),
     Filter(Box<Expr<T>>, Box<Expr<T>>, T),
-    For(QName, Box<Expr<T>>, Box<Expr<T>>, T),
-    Let(QName, Box<Expr<T>>, Box<Expr<T>>, T),
-    Quantified(Quantifier, Vec<(QName, Box<Expr<T>>)>, Box<Expr<T>>, T),
+    For(OwnedName, Box<Expr<T>>, Box<Expr<T>>, T),
+    Let(OwnedName, Box<Expr<T>>, Box<Expr<T>>, T),
+    Quantified(Quantifier, Vec<(OwnedName, Box<Expr<T>>)>, Box<Expr<T>>, T),
     Range(Box<Expr<T>>, Box<Expr<T>>, T),
     ArraySquare(Vec<Expr<T>>, T),
     ArrayCurly(Box<Expr<T>>, T),
     Map(Vec<(Expr<T>, Expr<T>)>, T),
     InlineFunction(
-        Vec<(QName, Option<SequenceType>)>,
+        Vec<(OwnedName, Option<SequenceType>)>,
         Option<SequenceType>,
         Box<Expr<T>>,
         T,
@@ -111,40 +112,40 @@ pub enum Axis {
 pub enum NodeTest {
     KindTest(KindTest),
     WildcardTest(Wildcard),
-    NameTest(QName),
+    NameTest(OwnedName),
 }
 
 impl NodeTest {
     pub(crate) fn matches(
         &self,
-        node_kind: NodeKind,
-        principal_node_kind: NodeKind,
-        node_name: Option<QName>,
+        node_kind: ValueType,
+        principal_node_kind: ValueType,
+        node_name: Option<OwnedName>,
     ) -> bool {
         match self {
             NodeTest::KindTest(kt) => match kt {
-                KindTest::Document => node_kind == NodeKind::Document,
+                KindTest::Document => node_kind == ValueType::Document,
                 KindTest::Element(opt_name, _type) => {
-                    node_kind == NodeKind::Element
+                    node_kind == ValueType::Element
                         && match (opt_name, node_name) {
                             (None, _) => true,
-                            (Some(qn1), Some(ref qn2)) => qn1.eqv(qn2),
+                            (Some(qn1), Some(ref qn2)) => eqv(qn1, qn2),
                             (Some(_), None) => false,
                         }
                 }
                 KindTest::Attribute(opt_name, _type) => {
-                    node_kind == NodeKind::Attribute
+                    node_kind == ValueType::Attribute
                         && match (opt_name, node_name) {
                             (None, _) => true,
-                            (Some(qn1), Some(ref qn2)) => qn1.eqv(qn2),
+                            (Some(qn1), Some(ref qn2)) => eqv(qn1, qn2),
                             (Some(_), None) => false,
                         }
                 }
                 KindTest::SchemaElement(_) => unimplemented!(),
                 KindTest::SchemaAttribute(_) => unimplemented!(),
-                KindTest::PI(_) => node_kind == NodeKind::PI,
-                KindTest::Comment => node_kind == NodeKind::Comment,
-                KindTest::Text => node_kind == NodeKind::Text,
+                KindTest::PI(_) => node_kind == ValueType::ProcessingInstruction,
+                KindTest::Comment => node_kind == ValueType::Comment,
+                KindTest::Text => node_kind == ValueType::Text,
                 KindTest::NamespaceNode => false, // namespace axis is not supported
                 KindTest::AnyKind => true,
             },
@@ -156,9 +157,9 @@ impl NodeTest {
                     match wc {
                         Wildcard::Any => true,
                         Wildcard::AnyWithLocalName(local_name) => {
-                            qname.name.as_str() == local_name.as_str()
+                            qname.local_name() == local_name.as_str()
                         }
-                        Wildcard::AnyInNs(ns) => qname.ns.as_str() == Some(ns.as_str()),
+                        Wildcard::AnyInNs(ns) => qname.namespace() == ns.as_str(),
                     }
                 } else {
                     *wc == Wildcard::Any
@@ -169,7 +170,7 @@ impl NodeTest {
                     return false;
                 }
                 if let Some(node_qname) = node_name {
-                    node_qname.eqv(test_qname)
+                    eqv(&node_qname, test_qname)
                 } else {
                     false
                 }
@@ -387,12 +388,12 @@ impl<T> Display for Expr<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Expr::Literal(l, _) => l.fmt(f),
-            Expr::VarRef(qname, _) => write!(f, "${}", qname),
+            Expr::VarRef(qname, _) => write!(f, "${}", qname.full_name()),
             Expr::Sequence(v, _) => write!(f, "({})", v.iter().format(", ")),
             Expr::ContextItem(_) => f.write_str("."),
             Expr::IfThenElse(i, t, e, _) => write!(f, "if ({}) then {} else {}", i, t, e),
             Expr::FunctionCall(name, args, _) => {
-                write!(f, "{}({})", name, args.iter().format(", "))
+                write!(f, "{}({})", name.full_name(), args.iter().format(", "))
             }
             Expr::Or(v, _) => write!(f, "{}", v.iter().format(" or ")),
             Expr::And(v, _) => write!(f, "{}", v.iter().format(" and ")),
@@ -413,14 +414,14 @@ impl<T> Display for Expr<T> {
             Expr::GeneralComp(e1, gc, e2, _) => write!(f, "{} {} {}", e1, gc.general_str(), e2),
             Expr::NodeComp(e1, nc, e2, _) => write!(f, "{} {} {}", e1, nc, e2),
             Expr::Filter(e, p, _) => write!(f, "{}[{}]", e, p),
-            Expr::For(qname, bs, ret, _) => write!(f, "for ${} in {} return {}", qname, bs, ret),
-            Expr::Let(qname, bs, ret, _) => write!(f, "let ${} := {} return {}", qname, bs, ret),
+            Expr::For(qname, bs, ret, _) => write!(f, "for ${} in {} return {}", qname.full_name(), bs, ret),
+            Expr::Let(qname, bs, ret, _) => write!(f, "let ${} := {} return {}", qname.full_name(), bs, ret),
             Expr::Quantified(quantifier, bindings, predicate, _) => {
                 write!(f, "{} ", quantifier)?;
                 let last = bindings.len() - 1;
                 for x in bindings.iter().enumerate() {
                     let (i, (var, expr)) = x;
-                    write!(f, "${} in {}", var, expr)?;
+                    write!(f, "${} in {}", var.full_name(), expr)?;
                     if i < last {
                         write!(f, ", ")?;
                     }
@@ -441,8 +442,8 @@ impl<T> Display for Expr<T> {
                     f(&kv
                         .1
                         .as_ref()
-                        .map(|t| format!("${} as {}", kv.0, t))
-                        .unwrap_or_else(|| format!("${}", kv.0)))
+                        .map(|t| format!("${} as {}", kv.0.full_name(), t))
+                        .unwrap_or_else(|| format!("${}", kv.0.full_name())))
                 });
                 let st = ost
                     .as_ref()
@@ -476,7 +477,7 @@ impl Display for NodeTest {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             NodeTest::KindTest(kt) => write!(f, "{}", kt),
-            NodeTest::NameTest(qname) => write!(f, "{}", qname),
+            NodeTest::NameTest(qname) => write!(f, "{}", qname.full_name()),
             NodeTest::WildcardTest(wildcard) => write!(f, "{}", wildcard),
         }
     }
@@ -493,24 +494,25 @@ impl Literal {
     pub(crate) fn type_(&self, ctx: &StaticContext) -> SequenceType {
         match self {
             Literal::Integer(_) => SequenceType::Item(
-                Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:integer")).unwrap()),
+                Item::AtomicOrUnion(ctx.schema_type(&ctx.wellknown("xs:integer")).unwrap()),
                 Occurrence::One,
             ),
             Literal::Decimal(_) => SequenceType::Item(
-                Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:decimal")).unwrap()),
+                Item::AtomicOrUnion(ctx.schema_type(&ctx.wellknown("xs:decimal")).unwrap()),
                 Occurrence::One,
             ),
             Literal::Double(_) => SequenceType::Item(
-                Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:double")).unwrap()),
+                Item::AtomicOrUnion(ctx.schema_type(&ctx.wellknown("xs:double")).unwrap()),
                 Occurrence::One,
             ),
             Literal::String(_) => SequenceType::Item(
-                Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown("xs:string")).unwrap()),
+                Item::AtomicOrUnion(ctx.schema_type(&ctx.wellknown("xs:string")).unwrap()),
                 Occurrence::One,
             ),
         }
     }
 }
+
 impl Comp {
     pub(crate) fn comparison_true(&self, c: i8) -> bool {
         match (self, c) {

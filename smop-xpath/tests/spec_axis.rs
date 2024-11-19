@@ -1,4 +1,3 @@
-use smop_xmltree::nod::Document;
 use std::rc::Rc;
 use smop_xpath::runtime::DynamicContext;
 use smop_xpath::xdm::{Xdm, XdmResult};
@@ -11,6 +10,13 @@ static WORKS_MOD: &str = include_str!("works-mod.xml");
 #[test]
 fn axis1() -> XdmResult<()> {
     let static_context: Rc<StaticContext> = Rc::new(Default::default());
+    let xot = &static_context.xot;
+    let doc = r##"<root>
+            <other stringattr="foo" numattr="42">foo</other>
+            <mychild>bar bar</mychild>
+            <other stringattr="baz" numattr="0">baz</other>
+        </root>"##;
+    let rodoc = xot.parse(doc)?;
     let xdm = Xdm::Node(Document::parse(TREE_REPEAT).unwrap().root());
     let context: DynamicContext = static_context
         .new_dynamic_context()

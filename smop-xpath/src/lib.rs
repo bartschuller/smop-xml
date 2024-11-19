@@ -9,11 +9,11 @@ pub mod context;
 mod functions;
 pub mod parser;
 pub mod runtime;
-mod smop_xmltree;
 mod typer;
 pub mod types;
 pub mod xdm;
 mod xpath_functions_31;
+mod xot;
 
 pub use crate::context::StaticContext;
 use crate::runtime::{CompiledExpr, DynamicContext};
@@ -36,14 +36,14 @@ impl Xpath {
 
 #[cfg(test)]
 mod tests {
-    use crate::context::ExpandedName;
+    use xot::xmlname::OwnedName;
+use crate::context::ExpandedName;
     use crate::runtime::DynamicContext;
     use crate::types::Item;
     use crate::types::{Occurrence, SequenceType};
     use crate::xdm::{Xdm, XdmResult};
     use crate::{StaticContext, Xpath};
     use rust_decimal::Decimal;
-    use smop_xmltree::nod::{Document, QName};
     use std::rc::Rc;
     use std::str::FromStr;
 
@@ -220,55 +220,59 @@ mod tests {
     }
     #[test]
     fn roxml1() -> XdmResult<()> {
-        let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let mut static_context: StaticContext = Default::default();
+        let mut xot = &mut static_context.xot;
+        let sc = Rc::new(static_context);
         let doc = r##"<root>
             <other stringattr="foo" numattr="42">foo</other>
             <mychild>bar bar</mychild>
             <other stringattr="baz" numattr="0">baz</other>
         </root>"##;
-        let rodoc = Document::parse(doc)?;
-        let context: DynamicContext = static_context.new_dynamic_context();
-        let xdm = Xdm::Node(rodoc.root());
+        let rodoc = xot.parse(doc)?;
+        let context: DynamicContext = sc.new_dynamic_context();
+        let xdm = Xdm::Node(rodoc);
         let context = context.clone_with_focus(xdm, 0);
         //let xpath = Xpath::compile(&static_context, "/root/mychild/@numattr")?;
-        let xpath = Xpath::compile(&static_context, "string-join(child::root/child::mychild)")?;
+        let xpath = Xpath::compile(&sc, "string-join(child::root/child::mychild)")?;
         let result = xpath.evaluate(&context)?;
-        assert_eq!(result.string(), Ok("bar bar".to_string()));
+        assert_eq!(result.string(sc.as_ref()), Ok("bar bar".to_string()));
         let xpath = Xpath::compile(
-            &static_context,
+            &sc,
             "child::root/child::other[attribute::stringattr eq 'foo']",
         )?;
         let result = xpath.evaluate(&context)?;
-        assert_eq!(result.string(), Ok("foo".to_string()));
+        assert_eq!(result.string(sc.as_ref()), Ok("foo".to_string()));
         let xpath = Xpath::compile(
-            &static_context,
+            &sc,
             "child::root/child::other[attribute::stringattr eq 'foo']/attribute::numattr",
         )?;
         let result = xpath.evaluate(&context)?;
-        assert_eq!(result.integer(), Ok(42));
+        assert_eq!(result.integer(sc.as_ref()), Ok(42));
         Ok(())
     }
     #[test]
     fn roxml2() -> XdmResult<()> {
         let static_context: Rc<StaticContext> = Rc::new(Default::default());
+        let xot = &static_context.xot;
         let doc = r##"<root>
             <other stringattr="foo" numattr="42">foo</other>
             <mychild>bar bar</mychild>
             <other stringattr="baz" numattr="0">baz</other>
         </root>"##;
-        let context: DynamicContext = static_context.new_dynamic_context().with_xml(doc)?;
+        let rodoc = xot.parse(doc)?;
+        let context: DynamicContext = static_context.new_dynamic_context().with_node(rodoc)?;
         let xpath = Xpath::compile(
             &static_context,
             "(fn:root(self::node()) treat as document-node())/root/other[1]/@numattr",
         )?;
         let result = xpath.evaluate(&context)?;
-        assert_eq!(result.string(), Ok("42".to_string()));
+        assert_eq!(result.string(&static_context), Ok("42".to_string()));
         let xpath = Xpath::compile(&static_context, "/root/other[1]/@numattr")?;
         let result = xpath.evaluate(&context)?;
-        assert_eq!(result.string(), Ok("42".to_string()));
+        assert_eq!(result.string(&static_context), Ok("42".to_string()));
         let xpath = Xpath::compile(&static_context, "count(//self::element())")?;
         let result = xpath.evaluate(&context)?;
-        assert_eq!(result.integer(), Ok(4));
+        assert_eq!(result.integer(&static_context), Ok(4));
         Ok(())
     }
     #[test]
@@ -334,7 +338,7 @@ mod tests {
         let static_context = Rc::new(static_context);
         let xpath = Xpath::compile(&static_context, "$a")?;
         let mut context: DynamicContext = static_context.new_dynamic_context();
-        context.set_variable(QName::new("a".to_string(), None, None), Xdm::Integer(42));
+        context.set_variable(OwnedName::new("a".to_string(), String::new(), String::new()), Xdm::Integer(42));
         let result = xpath.evaluate(&context)?;
         assert_eq!(result.integer()?, 42);
         Ok(())

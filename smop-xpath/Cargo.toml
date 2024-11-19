@@ -12,6 +12,7 @@ pest_consume = "^1.1"
 pest_ascii_tree = "^0.1"
 num-traits = "^0.2"
 im = "^15"
+xot = "0.27.1"
 xmlparser = "^0.13"
 smop-xmltree = {path="../smop-xmltree"}
 lazy_static = "^1.4"

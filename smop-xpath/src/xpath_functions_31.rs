@@ -5,15 +5,15 @@ use crate::xdm::{Xdm, XdmError, XdmResult};
 use crate::StaticContext;
 
 use rust_decimal::Decimal;
-use smop_xmltree::nod::QName;
+use xot::xmlname::NameStrInfo;
 
 pub(crate) fn register(ctx: &mut StaticContext) {
-    let xs_boolean = QName::wellknown("xs:boolean");
-    let xs_string = QName::wellknown("xs:string");
-    let xs_any_atomic_type = QName::wellknown("xs:anyAtomicType");
-    let xs_double = QName::wellknown("xs:double");
-    let xs_float = QName::wellknown("xs:float");
-    let xs_integer = QName::wellknown("xs:integer");
+    let xs_boolean = ctx.wellknown("xs:boolean");
+    let xs_string = ctx.wellknown("xs:string");
+    let xs_any_atomic_type = ctx.wellknown("xs:anyAtomicType");
+    let xs_double = ctx.wellknown("xs:double");
+    let xs_float = ctx.wellknown("xs:float");
+    let xs_integer = ctx.wellknown("xs:integer");
 
     let fn_boolean_1_meta = Function {
         args: vec![SequenceType::Item(Item::Item, Occurrence::ZeroOrMore)],
@@ -465,66 +465,66 @@ pub(crate) fn fn_false_0() -> CompiledFunction {
     CompiledFunction::new(|_ctx, _args| Ok(Xdm::Boolean(false)))
 }
 pub(crate) fn fn_root_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, args| {
+    CompiledFunction::new(|ctx, args| {
         if let Some(Xdm::Node(oh)) = args.first() {
-            Ok(Xdm::Node(oh.document().root()))
+            Ok(Xdm::Node(ctx.static_context.xot.root(oh.clone())))
         } else {
             unreachable!()
         }
     })
 }
 pub(crate) fn fn_string_join_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, mut args| {
+    CompiledFunction::new(|ctx, mut args| {
         let x = args.remove(0);
         Ok(match x {
             Xdm::Sequence(v) => {
                 let mut res = String::new();
                 for x in v {
-                    let s = x.string()?;
+                    let s = x.string(ctx.static_context.as_ref())?;
                     res.push_str(s.as_str());
                 }
                 Xdm::String(res)
             }
-            _ => Xdm::String(x.string()?),
+            _ => Xdm::String(x.string(ctx.static_context.as_ref())?),
         })
     })
 }
 pub(crate) fn fn_string_join_2() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, args| {
+    CompiledFunction::new(|ctx, args| {
         let x = &args[0];
-        let sep_string = args[1].string()?;
+        let sep_string = args[1].string(ctx.static_context.as_ref())?;
         Ok(match x {
             Xdm::Sequence(v) => {
-                let strings: XdmResult<Vec<_>> = v.iter().map(|x| x.string()).collect();
+                let strings: XdmResult<Vec<_>> = v.iter().map(|x| x.string(ctx.static_context.as_ref())).collect();
                 let res = strings?.join(sep_string.as_str());
                 Xdm::String(res)
             }
-            _ => Xdm::String(x.string()?),
+            _ => Xdm::String(x.string(ctx.static_context.as_ref())?),
         })
     })
 }
 pub(crate) fn fn_concat_2() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, args| {
-        let strings: XdmResult<Vec<_>> = args.into_iter().map(|x| x.string()).collect();
+    CompiledFunction::new(|ctx, args| {
+        let strings: XdmResult<Vec<_>> = args.into_iter().map(|x| x.string(ctx.static_context.as_ref())).collect();
         Ok(Xdm::String(strings?.concat()))
     })
 }
 pub(crate) fn xs_double_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, args| {
+    CompiledFunction::new(|ctx, args| {
         args.first()
-            .map_or(Ok(Xdm::EmptySequence), |x| x.double().map(Xdm::Double))
+            .map_or(Ok(Xdm::EmptySequence), |x| x.double(ctx.static_context.as_ref()).map(Xdm::Double))
     })
 }
 pub(crate) fn xs_float_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, args| {
+    CompiledFunction::new(|ctx, args| {
         args.first()
-            .map_or(Ok(Xdm::EmptySequence), |x| x.float().map(Xdm::Float))
+            .map_or(Ok(Xdm::EmptySequence), |x| x.float(ctx.static_context.as_ref()).map(Xdm::Float))
     })
 }
 pub(crate) fn xs_integer_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, args| {
+    CompiledFunction::new(|ctx, args| {
         args.first()
-            .map_or(Ok(Xdm::EmptySequence), |x| x.integer().map(Xdm::Integer))
+            .map_or(Ok(Xdm::EmptySequence), |x| x.integer(ctx.static_context.as_ref()).map(Xdm::Integer))
     })
 }
 
@@ -533,21 +533,24 @@ pub(crate) fn fn_string_0() -> CompiledFunction {
         ctx.focus
             .as_ref()
             .map_or(Ok(Xdm::String("".to_string())), |focus| {
-                focus.sequence.string().map(Xdm::String)
+                focus.sequence.string(ctx.static_context.as_ref()).map(Xdm::String)
             })
     })
 }
 pub(crate) fn fn_string_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, args| {
+    CompiledFunction::new(|ctx, args| {
         args.first().map_or(Ok(Xdm::String("".to_string())), |x| {
-            x.string().map(Xdm::String)
+            x.string(ctx.static_context.as_ref()).map(Xdm::String)
         })
     })
 }
 pub(crate) fn fn_name_0() -> CompiledFunction {
     CompiledFunction::new(|ctx, _args| match ctx.focus.as_ref().map(|f| &f.sequence) {
         Some(Xdm::Node(ref node)) => Ok(Xdm::String(
-            node.node_name().map_or("".to_string(), |q| q.to_string()),
+            ctx.static_context.xot.node_name_ref(node.clone())
+                .ok()
+                .flatten()
+                .map_or(String::new(), |r| r.full_name().to_string())
         )),
         _ => Err(XdmError::xqtm(
             "XPTY0004",
@@ -556,9 +559,12 @@ pub(crate) fn fn_name_0() -> CompiledFunction {
     })
 }
 pub(crate) fn fn_name_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, args| match args.first().unwrap() {
+    CompiledFunction::new(|ctx, args| match args.first().unwrap() {
         Xdm::Node(node) => Ok(Xdm::String(
-            node.node_name().map_or("".to_string(), |q| q.to_string()),
+            ctx.static_context.xot.node_name_ref(node.clone())
+                .ok()
+                .flatten()
+                .map_or(String::new(), |r| r.full_name().to_string())
         )),
         _ => Err(XdmError::xqtm(
             "XPTY0004",
@@ -569,7 +575,10 @@ pub(crate) fn fn_name_1() -> CompiledFunction {
 pub(crate) fn fn_local_name_0() -> CompiledFunction {
     CompiledFunction::new(|ctx, _args| match ctx.focus.as_ref().map(|f| &f.sequence) {
         Some(Xdm::Node(ref node)) => Ok(Xdm::String(
-            node.node_name().map_or("".to_string(), |q| q.name),
+            ctx.static_context.xot.node_name_ref(node.clone())
+                .ok()
+                .flatten()
+                .map_or(String::new(), |r| r.local_name().to_string())
         )),
         _ => Err(XdmError::xqtm(
             "XPTY0004",
@@ -578,9 +587,12 @@ pub(crate) fn fn_local_name_0() -> CompiledFunction {
     })
 }
 pub(crate) fn fn_local_name_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, args| match args.first().unwrap() {
+    CompiledFunction::new(|ctx, args| match args.first().unwrap() {
         Xdm::Node(node) => Ok(Xdm::String(
-            node.node_name().map_or("".to_string(), |q| q.name),
+            ctx.static_context.xot.node_name_ref(node.clone())
+                .ok()
+                .flatten()
+                .map_or(String::new(), |r| r.local_name().to_string())
         )),
         _ => Err(XdmError::xqtm(
             "XPTY0004",
@@ -629,7 +641,7 @@ pub(crate) fn fn_trace_2() -> CompiledFunction {
 }
 pub(crate) fn fn_string_length_0() -> CompiledFunction {
     CompiledFunction::new(|ctx, _args| match &ctx.focus {
-        Some(focus) => Ok(Xdm::Integer(focus.sequence.string()?.chars().count() as i64)),
+        Some(focus) => Ok(Xdm::Integer(focus.sequence.string(ctx.static_context.as_ref())?.chars().count() as i64)),
         None => Err(XdmError::xqtm(
             "XPDY0002",
             "context item not defined in string-length()",
@@ -637,16 +649,17 @@ pub(crate) fn fn_string_length_0() -> CompiledFunction {
     })
 }
 pub(crate) fn fn_string_length_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, args| Ok(Xdm::Integer(args[0].string()?.chars().count() as i64)))
+    CompiledFunction::new(|ctx, args| Ok(Xdm::Integer(args[0].string(ctx.static_context.as_ref())?.chars().count() as i64)))
 }
 pub(crate) fn fn_contains_2() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, args| {
-        Ok(Xdm::Boolean(args[0].string()?.contains(&args[1].string()?)))
+    CompiledFunction::new(|ctx, args| {
+        let sc = ctx.static_context.as_ref();
+        Ok(Xdm::Boolean(args[0].string(sc)?.contains(&args[1].string(sc)?)))
     })
 }
 pub(crate) fn fn_number_0() -> CompiledFunction {
     CompiledFunction::new(|ctx, _args| match &ctx.focus {
-        Some(focus) => Ok(Xdm::Double(focus.sequence.double()?)),
+        Some(focus) => Ok(Xdm::Double(focus.sequence.double(ctx.static_context.as_ref())?)),
         None => Err(XdmError::xqtm(
             "XPDY0002",
             "context item not defined in number()",
@@ -654,7 +667,7 @@ pub(crate) fn fn_number_0() -> CompiledFunction {
     })
 }
 pub(crate) fn fn_number_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, args| Ok(Xdm::Double(args[0].double()?)))
+    CompiledFunction::new(|ctx, args| Ok(Xdm::Double(args[0].double(ctx.static_context.as_ref())?)))
 }
 pub(crate) fn fn_exactly_one_1() -> CompiledFunction {
     CompiledFunction::new(|_ctx, mut args| {
@@ -669,17 +682,17 @@ pub(crate) fn fn_exactly_one_1() -> CompiledFunction {
     })
 }
 pub(crate) fn fn_deep_equal_2() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, args| Ok(Xdm::Boolean(args[0].deep_equal(&args[1]))))
+    CompiledFunction::new(|ctx, args| Ok(Xdm::Boolean(args[0].deep_equal(&args[1], ctx.static_context.as_ref()))))
 }
 pub(crate) fn fn_exists_1() -> CompiledFunction {
     CompiledFunction::new(|_ctx, args| Ok(Xdm::Boolean(!matches!(args[0], Xdm::EmptySequence))))
 }
 pub(crate) fn fn_data_1() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, mut args| args.remove(0).atomize())
+    CompiledFunction::new(|ctx, mut args| args.remove(0).atomize(ctx.static_context.as_ref()))
 }
 pub(crate) fn fn_subsequence_2() -> CompiledFunction {
-    CompiledFunction::new(|_ctx, mut args| {
-        let starting_loc = 0.max(args[1].double()?.round() as i64 - 1) as usize;
+    CompiledFunction::new(|ctx, mut args| {
+        let starting_loc = 0.max(args[1].double(ctx.static_context.as_ref())?.round() as i64 - 1) as usize;
         Ok(match &args[0] {
             Xdm::EmptySequence => Xdm::EmptySequence,
             Xdm::String(_)

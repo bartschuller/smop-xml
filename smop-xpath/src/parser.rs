@@ -4,9 +4,9 @@ use crate::ast::{
 use crate::context::StaticContext;
 use crate::types::{Item, KindTest, Occurrence, SchemaType, SequenceType};
 use crate::xdm::{XdmError, XdmResult};
+use xot::xmlname::OwnedName;
 use pest_consume::*;
 use rust_decimal::Decimal;
-use smop_xmltree::nod::QName;
 use std::rc::Rc;
 use std::str::FromStr;
 
@@ -83,7 +83,7 @@ impl XpathParser {
         Ok(())
     }
     // 3
-    fn Param(input: Node) -> Result<(QName, Option<SequenceType>)> {
+    fn Param(input: Node) -> Result<(OwnedName, Option<SequenceType>)> {
         Ok(match_nodes!(input.into_children();
             [EQName(qname), SequenceType(st)] => (qname, Some(st)),
             [EQName(qname)] => (qname, None),
@@ -124,13 +124,13 @@ impl XpathParser {
         ))
     }
     // 9
-    fn SimpleForClause(input: Node) -> Result<Vec<(QName, Box<Expr<()>>)>> {
+    fn SimpleForClause(input: Node) -> Result<Vec<(OwnedName, Box<Expr<()>>)>> {
         Ok(match_nodes!(input.into_children();
             [SimpleForBinding(b)..] => b.collect(),
         ))
     }
     // 10
-    fn SimpleForBinding(input: Node) -> Result<(QName, Box<Expr<()>>)> {
+    fn SimpleForBinding(input: Node) -> Result<(OwnedName, Box<Expr<()>>)> {
         Ok(match_nodes!(input.into_children();
             [EQName(qn), ExprSingle(e)] => (qn, Box::new(e)),
         ))
@@ -144,13 +144,13 @@ impl XpathParser {
         ))
     }
     // 12
-    fn SimpleLetClause(input: Node) -> Result<Vec<(QName, Expr<()>)>> {
+    fn SimpleLetClause(input: Node) -> Result<Vec<(OwnedName, Expr<()>)>> {
         Ok(match_nodes!(input.into_children();
             [SimpleLetBinding(b)..] => b.collect(),
         ))
     }
     // 13
-    fn SimpleLetBinding(input: Node) -> Result<(QName, Expr<()>)> {
+    fn SimpleLetBinding(input: Node) -> Result<(OwnedName, Expr<()>)> {
         Ok(match_nodes!(input.into_children();
             [EQName(qn), ExprSingle(e)] => (qn, e),
         ))
@@ -391,17 +391,18 @@ impl XpathParser {
     }
     // 36
     fn PathExpr(input: Node) -> Result<Expr<()>> {
-        Ok(match_nodes!(input.into_children();
+        let sc = input.user_data();
+        Ok(match_nodes!(input.clone().into_children();
             [InitialSlashSlash(_), RelativePathExpr(mut v)] => {
-                v.insert(0, slash_ast());
+                v.insert(0, slash_ast(sc));
                 v.insert(1, slash_slash_ast());
                 path(v)
             },
             [InitialSlash(_), RelativePathExpr(mut v)] => {
-                v.insert(0, slash_ast());
+                v.insert(0, slash_ast(sc));
                 path(v)
             },
-            [InitialSlash(_)] => slash_ast(),
+            [InitialSlash(_)] => slash_ast(sc),
             [RelativePathExpr(v)] => path(v), // FIXME
         ))
     }
@@ -508,9 +509,8 @@ impl XpathParser {
     fn NodeTest(input: Node) -> Result<NodeTest> {
         let sc = input.user_data().clone();
         Ok(match_nodes!(input.into_children();
-            [EQName(mut qname)] => {
-                sc.qname_for_element(&mut qname);
-                NodeTest::NameTest(qname)
+            [EQName(qname)] => {
+                NodeTest::NameTest(sc.qname_for_element(qname))
             },
             [Wildcard(wildcard)] => NodeTest::WildcardTest(wildcard),
             [KindTest(kind)] => NodeTest::KindTest(kind),
@@ -597,7 +597,7 @@ impl XpathParser {
         ))
     }
     // 59
-    fn VarRef(input: Node) -> Result<QName> {
+    fn VarRef(input: Node) -> Result<OwnedName> {
         Ok(match_nodes!(input.into_children();
             [EQName(eq)] => eq
         ))
@@ -642,7 +642,7 @@ impl XpathParser {
             }
         ))
     }
-    fn ParamListMaybe(input: Node) -> Result<Vec<(QName, Option<SequenceType>)>> {
+    fn ParamListMaybe(input: Node) -> Result<Vec<(OwnedName, Option<SequenceType>)>> {
         Ok(match_nodes!(input.into_children();
             [Param(p)..] => p.collect(),
             [] => vec![],
@@ -680,7 +680,7 @@ impl XpathParser {
         ))
     }
     // 77
-    fn SingleType(input: Node) -> Result<(QName, bool)> {
+    fn SingleType(input: Node) -> Result<(OwnedName, bool)> {
         Ok(match_nodes!(input.into_children();
             [EQName(qname)] => (qname, false),
             [EQName(qname), SingleTypeOptional(_)] => (qname, true),
@@ -783,7 +783,7 @@ impl XpathParser {
         ))
     }
     // 91
-    fn AttribNameOrWildcard(input: Node) -> Result<Option<QName>> {
+    fn AttribNameOrWildcard(input: Node) -> Result<Option<OwnedName>> {
         Ok(match_nodes!(input.into_children();
             [] => None,
             [EQName(qname)] => Some(qname)
@@ -805,7 +805,7 @@ impl XpathParser {
         ))
     }
     // 95
-    fn ElementNameOrWildcard(input: Node) -> Result<Option<QName>> {
+    fn ElementNameOrWildcard(input: Node) -> Result<Option<OwnedName>> {
         Ok(match_nodes!(input.into_children();
             [] => None,
             [EQName(qname)] => Some(qname)
@@ -852,13 +852,13 @@ impl XpathParser {
         ))
     }
     // 112
-    fn EQName(input: Node) -> Result<QName> {
+    fn EQName(input: Node) -> Result<OwnedName> {
         Ok(match_nodes!(input.into_children();
             [URIQualifiedName(q)] => q,
             [QName(q)] => q,
         ))
     }
-    fn FunctionCallEQName(input: Node) -> Result<QName> {
+    fn FunctionCallEQName(input: Node) -> Result<OwnedName> {
         Ok(match_nodes!(input.into_children();
             [URIQualifiedName(q)] => q,
             [FunctionCallQName(q)] => q,
@@ -903,9 +903,9 @@ impl XpathParser {
         Ok(unescaped)
     }
     // 117
-    fn URIQualifiedName(input: Node) -> Result<QName> {
+    fn URIQualifiedName(input: Node) -> Result<OwnedName> {
         Ok(match_nodes!(input.into_children();
-            [BracedURILiteralContent(ns), NCName(name)] => QName::new(name, Some(ns), None),
+            [BracedURILiteralContent(ns), NCName(name)] => OwnedName::new(name, ns, String::new()),
         ))
     }
     // 118
@@ -913,13 +913,13 @@ impl XpathParser {
         Ok(input.as_str().to_string())
     }
     // 122
-    fn QName(input: Node) -> Result<QName> {
+    fn QName(input: Node) -> Result<OwnedName> {
         Ok(match_nodes!(input.into_children();
             [PrefixedName(q)] => q,
             [UnprefixedName(q)] => q,
         ))
     }
-    fn FunctionCallQName(input: Node) -> Result<QName> {
+    fn FunctionCallQName(input: Node) -> Result<OwnedName> {
         Ok(match_nodes!(input.into_children();
             [PrefixedName(q)] => q,
             [FunctionCallUnprefixedName(q)] => q,
@@ -932,18 +932,18 @@ impl XpathParser {
     // Numbers refer to the grammar in REC-xml-names
     // 8
     #[allow(suspicious_double_ref_op)]
-    fn PrefixedName(input: Node) -> Result<QName> {
+    fn PrefixedName(input: Node) -> Result<OwnedName> {
         let sc = input.user_data().clone();
         Ok(match_nodes!(input.into_children();
-            [Prefix(p), LocalPart(l)] => QName::new(l, Some(sc.namespace(&p).unwrap()), Some(p)),
+            [Prefix(p), LocalPart(l)] => OwnedName::new(l, sc.namespace(&p).unwrap(), p),
         ))
     }
     // 9
-    fn UnprefixedName(input: Node) -> Result<QName> {
-        Ok(QName::new(input.as_str().to_string(), None, None))
+    fn UnprefixedName(input: Node) -> Result<OwnedName> {
+        Ok(OwnedName::new(input.as_str().to_string(), String::new(), String::new()))
     }
-    fn FunctionCallUnprefixedName(input: Node) -> Result<QName> {
-        Ok(QName::new(input.as_str().to_string(), None, None))
+    fn FunctionCallUnprefixedName(input: Node) -> Result<OwnedName> {
+        Ok(OwnedName::new(input.as_str().to_string(), String::new(), String::new()))
     }
     // 10
     fn Prefix(input: Node) -> Result<String> {
@@ -1021,15 +1021,16 @@ impl XpathParser {
     }
     // 5
     fn PathExprP(input: Node) -> Result<Expr<()>> {
-        Ok(match_nodes!(input.into_children();
+        let sc = input.user_data();
+        Ok(match_nodes!(input.clone().into_children();
             [RootedPath(rp)] => rp,
             [InitialSlashSlash(_), RelativePathExprP(mut v)] => {
-                v.insert(0, slash_ast());
+                v.insert(0, slash_ast(sc));
                 v.insert(1, slash_slash_ast());
                 path(v)
             },
             [InitialSlash(_), RelativePathExprP(mut v)] => {
-                v.insert(0, slash_ast());
+                v.insert(0, slash_ast(sc));
                 path(v)
             },
             [RelativePathExprP(v)] => path(v), // FIXME
@@ -1070,15 +1071,15 @@ impl XpathParser {
         )
     }
     // 8
-    fn OuterFunctionName(input: Node) -> Result<QName> {
+    fn OuterFunctionName(input: Node) -> Result<OwnedName> {
         Ok(match_nodes!(input.into_children();
             [OuterFunctionNameUnprefixed(q)] => q,
             [URIQualifiedName(q)] => q,
         ))
     }
     // 8a
-    fn OuterFunctionNameUnprefixed(input: Node) -> Result<QName> {
-        Ok(QName::new(input.as_str().to_string(), None, None))
+    fn OuterFunctionNameUnprefixed(input: Node) -> Result<OwnedName> {
+        Ok(OwnedName::new(input.as_str().to_string(), String::new(), String::new()))
     }
     // 9
     fn ArgumentListP(input: Node) -> Result<Vec<Expr<()>>> {
@@ -1169,10 +1170,10 @@ fn path(v: Vec<Expr<()>>) -> Expr<()> {
         .unwrap()
 }
 
-fn slash_ast() -> Expr<()> {
+fn slash_ast(sc: &&StaticContext) -> Expr<()> {
     Expr::TreatAs(
         Box::new(Expr::FunctionCall(
-            QName::wellknown("fn:root"),
+            sc.wellknown("fn:root"),
             vec![Expr::Step(
                 Axis::Self_,
                 NodeTest::KindTest(KindTest::AnyKind),
@@ -1212,7 +1213,7 @@ fn arrow_exprs(e: Expr<()>, fs: Vec<Expr<()>>) -> Expr<()> {
 fn cast_expr(
     sc: &StaticContext,
     e: Expr<()>,
-    qname: QName,
+    qname: OwnedName,
     optional: bool,
     only_check: bool,
 ) -> XdmResult<Expr<()>> {
@@ -1232,9 +1233,9 @@ mod tests {
     use crate::context::ExpandedName;
     use pest_consume::Parser;
     use rust_decimal::Decimal;
-    use smop_xmltree::nod::QName;
     use std::rc::Rc;
     use std::str::FromStr;
+    use xot::xmlname::OwnedName;
 
     #[test]
     fn int_literal1() {
@@ -1442,10 +1443,10 @@ mod tests {
         assert_eq!(
             output,
             Ok(Expr::FunctionCall(
-                QName::new(
+                OwnedName::new(
                     "myfunc".to_string(),
-                    Some("http://example.com/".to_string()),
-                    None
+                    "http://example.com/".to_string(),
+                    String::new()
                 ),
                 vec![
                     Expr::ContextItem(()),

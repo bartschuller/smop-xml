@@ -2,8 +2,9 @@ use crate::xdm::{Xdm, XdmResult};
 use crate::StaticContext;
 
 use im::HashMap;
-use smop_xmltree::nod::{Document, QName};
 use std::rc::Rc;
+use xot::xmlname::OwnedName;
+use xot::{Node};
 
 #[derive(Clone)]
 pub struct Focus {
@@ -24,13 +25,12 @@ impl Focus {
 pub struct DynamicContext {
     pub focus: Option<Focus>,
     pub static_context: Rc<StaticContext>,
-    pub(crate) variables: HashMap<QName, Xdm>,
+    pub(crate) variables: HashMap<OwnedName, Xdm>,
 }
 
 impl DynamicContext {
-    pub fn with_xml(&self, xml: &str) -> XdmResult<Self> {
-        let doc = Document::parse(xml)?;
-        let xdm = Xdm::Node(doc.root());
+    pub fn with_node(&self, node: Node) -> XdmResult<Self> {
+        let xdm = Xdm::Node(node);
         Ok(self.clone_with_focus(xdm, 0))
     }
     pub fn clone_with_focus(&self, sequence: Xdm, position: usize) -> Self {
@@ -40,7 +40,7 @@ impl DynamicContext {
             variables: self.variables.clone(),
         }
     }
-    pub fn clone_with_variable(&self, qname: QName, value: Xdm) -> Self {
+    pub fn clone_with_variable(&self, qname: OwnedName, value: Xdm) -> Self {
         let mut ret = DynamicContext {
             focus: self.focus.clone(),
             static_context: Rc::clone(&self.static_context),
@@ -49,22 +49,23 @@ impl DynamicContext {
         ret.set_variable(qname, value);
         ret
     }
-    pub fn varref(&self, qname: &QName) -> Option<Xdm> {
+    pub fn varref(&self, qname: &OwnedName) -> Option<Xdm> {
         self.variables.get(qname).cloned()
     }
-    pub fn set_variable(&mut self, qname: QName, value: Xdm) {
+    pub fn set_variable(&mut self, qname: OwnedName, value: Xdm) {
         self.variables.insert(qname, value);
     }
 
     pub fn trace(&self, value: &Xdm) {
-        match value.string_joined() {
+        match value.string_joined(self.static_context.as_ref()) {
             Ok(s) => println!("{}", s),
             Err(_) => println!("{:?}", value),
         }
     }
     pub fn trace_label(&self, value: &Xdm, label: &Xdm) -> XdmResult<()> {
-        let label_string = label.string_joined()?;
-        match value.string_joined() {
+        let sc = self.static_context.as_ref();
+        let label_string = label.string_joined(sc)?;
+        match value.string_joined(sc) {
             Ok(s) => println!("{} {}", label_string, s),
             Err(_) => println!("{} {:?}", label_string, value),
         }

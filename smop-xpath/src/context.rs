@@ -1,3 +1,4 @@
+use xot::Xot;
 use crate::ast::Expr;
 use crate::functions::{Function, FunctionKey};
 use crate::parser::{parse_xpath_expression, parse_xpath_pattern};
@@ -6,12 +7,11 @@ use crate::types::{Item, Occurrence, SchemaType, SequenceType, TypeTree, Variety
 use crate::xdm::{XdmError, XdmResult};
 use im::HashMap;
 use regex::Regex;
-use smop_xmltree::nod::QName;
-use smop_xmltree::option_ext::OptionExt;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::rc::Rc;
+use xot::xmlname::{NameStrInfo, OwnedName};
 
 pub struct Context {
     pub static_context: Rc<StaticContext>,
@@ -57,11 +57,11 @@ impl Display for ExpandedName {
         }
     }
 }
-impl From<&QName> for ExpandedName {
-    fn from(qname: &QName) -> Self {
+impl From<&OwnedName> for ExpandedName {
+    fn from(owned_name: &OwnedName) -> Self {
         ExpandedName {
-            ns: qname.ns.as_str().unwrap_or("").to_string(),
-            name: qname.name.clone(),
+            ns: owned_name.namespace().to_string(),
+            name: owned_name.local_name().to_string()
         }
     }
 }
@@ -73,19 +73,20 @@ impl From<(&str, &str)> for ExpandedName {
         }
     }
 }
-impl PartialEq<ExpandedName> for QName {
+impl PartialEq<ExpandedName> for OwnedName {
     fn eq(&self, other: &ExpandedName) -> bool {
-        self.ns.as_str().unwrap_or("") == other.ns.as_str() && self.name == other.name
+        self.namespace() == other.ns.as_str() && self.local_name() == other.name
     }
 }
-impl PartialEq<QName> for ExpandedName {
-    fn eq(&self, other: &QName) -> bool {
-        self.ns.as_str() == other.ns.as_str().unwrap_or("") && self.name == other.name
+impl PartialEq<OwnedName> for ExpandedName {
+    fn eq(&self, other: &OwnedName) -> bool {
+        self.ns.as_str() == other.namespace() && self.name == other.local_name()
     }
 }
 
 #[derive(Clone)]
 pub struct StaticContext {
+    pub xot: Xot,
     namespaces: HashMap<String, String>,
     prefixes: HashMap<String, String>,
     schema_types: HashMap<ExpandedName, Rc<SchemaType>>,
@@ -94,6 +95,7 @@ pub struct StaticContext {
     default_element_namespace: Option<String>,
     variable_types: HashMap<ExpandedName, SequenceType>,
     pub context_item_type: SequenceType,
+
 }
 
 impl StaticContext {
@@ -121,6 +123,17 @@ impl StaticContext {
             None => XdmError::xqtm("XPST0003", e.to_string()),
         })
     }
+    pub fn wellknown(&self, s: &str) -> OwnedName {
+        let colon = s.find(':').unwrap();
+        let prefix = &s[..colon];
+        let name = &s[colon + 1..];
+        let ns = match prefix {
+            "xs" => "http://www.w3.org/2001/XMLSchema",
+            "fn" => "http://www.w3.org/2005/xpath-functions",
+            &_ => panic!("not so well known prefix: {}", prefix),
+        };
+        OwnedName::new(name.to_string(), ns.to_string(), prefix.to_string())
+    }
     pub fn add_prefix_ns(&mut self, prefix: &str, ns: &str) {
         self.namespaces.insert(prefix.to_string(), ns.to_string());
         self.prefixes.insert(ns.to_string(), prefix.to_string());
@@ -134,22 +147,24 @@ impl StaticContext {
     pub fn prefix(&self, ns: &str) -> Option<String> {
         self.prefixes.get(ns).cloned()
     }
-    pub(crate) fn qname<S: AsRef<str>>(&self, prefix: S, local_name: S) -> Option<QName> {
+    pub(crate) fn qname<S: AsRef<str>>(&self, prefix: S, local_name: S) -> Option<OwnedName> {
         self.namespaces.get(prefix.as_ref()).map(|ns| {
-            QName::new(
+            OwnedName::new(
                 local_name.as_ref().to_string(),
-                Some(ns.to_string()),
-                Some(prefix.as_ref().to_string()),
+                ns.to_string(),
+                prefix.as_ref().to_string(),
             )
         })
     }
-    pub(crate) fn qname_for_element(&self, qname: &mut QName) {
-        if qname.ns.is_none() {
-            qname.ns = self.default_element_namespace.clone();
-        }
+    pub(crate) fn qname_for_element(&self, qname: OwnedName) -> OwnedName {
+        let new_ns = match &self.default_element_namespace {
+            Some(ns) => ns.as_str(),
+            None => &"",
+        };
+        qname.with_default_namespace(new_ns)
     }
     fn add_schema_type(&mut self, t: Rc<SchemaType>) {
-        let k: ExpandedName = (t.ns.as_str().unwrap_or(""), t.name.as_str().unwrap()).into();
+        let k: ExpandedName = (&t.name).into();
         self.schema_types.insert(k, t);
     }
     pub(crate) fn schema_type<E: Into<ExpandedName>>(&self, ename: E) -> XdmResult<Rc<SchemaType>> {
@@ -159,35 +174,30 @@ impl StaticContext {
             format!("no schema definition for {} found", ename),
         ))
     }
-    pub(crate) fn add_function(&mut self, qname: QName, f: Function) {
+    pub(crate) fn add_function(&mut self, qname: OwnedName, f: Function) {
         self.functions.insert(
             FunctionKey {
-                name: qname.name,
-                ns: qname.ns.unwrap(),
+                name: qname.local_name().to_string(),
+                ns: qname.namespace().to_string(),
                 arity: f.args.len(),
             },
             f,
         );
     }
-    pub(crate) fn function(&self, qname: &QName, arity: usize) -> Option<&Function> {
-        let ns = qname.ns.as_ref().or(if qname.prefix.is_none() {
-            self.default_function_namespace.as_ref()
-        } else {
-            None
-        });
+    pub(crate) fn function(&self, qname: &OwnedName, arity: usize) -> Option<&Function> {
         let key = FunctionKey {
-            name: qname.name.clone(),
-            ns: ns?.clone(),
+            name: qname.local_name().to_string(),
+            ns: qname.namespace().to_string(),
             arity,
         };
         self.functions.get(&key).or_else(|| {
-            if ns.as_str() == Some("http://www.w3.org/2005/xpath-functions")
-                && qname.name.as_str() == "concat"
+            if qname.namespace() == "http://www.w3.org/2005/xpath-functions"
+                && qname.local_name() == "concat"
                 && arity > 2
             {
                 let key = FunctionKey {
-                    name: qname.name.clone(),
-                    ns: ns?.clone(),
+                    name: qname.local_name().to_string(),
+                    ns: qname.namespace().to_string(),
                     arity: 2,
                 };
                 self.functions.get(&key)
@@ -217,24 +227,20 @@ impl StaticContext {
 }
 
 fn add_simple_type(sc: &mut StaticContext, qname: &str, base: &str) {
-    let qname = QName::wellknown(qname);
-    let base = sc.schema_type(&QName::wellknown(base)).unwrap();
+    let qname = sc.wellknown(qname);
+    let base = sc.schema_type(&sc.wellknown(base)).unwrap();
     let type_ = SchemaType {
-        name: Some(qname.name.clone()),
-        ns: qname.ns.as_ref().cloned(),
-        prefix: qname.prefix.as_ref().cloned(),
+        name: qname,
         base_type: Some(base),
         tree: TypeTree::Simple(Variety::Atomic),
     };
     sc.add_schema_type(Rc::new(type_));
 }
 fn add_complex_type(sc: &mut StaticContext, qname: &str, base: Option<&str>) {
-    let qname = QName::wellknown(qname);
-    let base = base.map(|base| sc.schema_type(&QName::wellknown(base)).unwrap());
+    let qname = sc.wellknown(qname);
+    let base = base.map(|base| sc.schema_type(&sc.wellknown(base)).unwrap());
     let type_ = SchemaType {
-        name: Some(qname.name.clone()),
-        ns: qname.ns.as_ref().cloned(),
-        prefix: qname.prefix.as_ref().cloned(),
+        name: qname,
         base_type: base,
         tree: TypeTree::Complex,
     };
@@ -242,7 +248,10 @@ fn add_complex_type(sc: &mut StaticContext, qname: &str, base: Option<&str>) {
 }
 impl Default for StaticContext {
     fn default() -> Self {
+        let xot = Xot::new();
+
         let mut sc = StaticContext {
+            xot,
             namespaces: HashMap::new(),
             prefixes: HashMap::new(),
             schema_types: HashMap::new(),

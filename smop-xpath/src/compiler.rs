@@ -1,16 +1,16 @@
 use crate::ast::{ArithmeticOp, Axis, Expr, NodeComp, Quantifier};
 use crate::context::StaticContext;
 use crate::runtime::{CompiledExpr, DynamicContext};
-use crate::smop_xmltree::AxisIter;
 use crate::types::SequenceType;
 use crate::xdm::{Xdm, XdmError, XdmResult};
 use crate::xpath_functions_31::{double_compare, string_compare};
 use num_traits::ToPrimitive;
-use smop_xmltree::nod::{Node, NodeKind, QName};
 use std::borrow::Borrow;
 use std::collections::{BTreeSet, HashMap};
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::rc::Rc;
+use xot::xmlname::{NameStrInfo, OwnedName};
+use xot::{Node, ValueType};
 
 impl Expr<(SequenceType, Rc<StaticContext>)> {
     pub(crate) fn compile(self) -> XdmResult<CompiledExpr> {
@@ -18,7 +18,10 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
             Expr::Literal(l, _) => l.compile(),
             Expr::VarRef(qname, _) => Ok(CompiledExpr::new(move |c| {
                 c.varref(&qname).ok_or_else(|| {
-                    XdmError::xqtm("XPST0008", format!("variable `{}` not found", qname))
+                    XdmError::xqtm(
+                        "XPST0008",
+                        format!("variable `{}` not found", qname.full_name()),
+                    )
                 })
             })),
             Expr::Sequence(s, _t) => {
@@ -110,7 +113,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                 Ok(CompiledExpr::new(move |c| {
                     let strings: XdmResult<Vec<_>> = v_c
                         .iter()
-                        .map(|e| e.execute(c).map(|x| x.string()))
+                        .map(|e| e.execute(c).map(|x| x.string(c.static_context.as_ref())))
                         .collect();
                     let strings: XdmResult<Vec<_>> = strings?.into_iter().collect();
                     Ok(Xdm::String(strings?.concat()))
@@ -137,7 +140,11 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                                     if l_res.count() == 0 || r_res.count() == 0 {
                                         return Ok(Xdm::EmptySequence);
                                     }
-                                    Ok(Xdm::Integer(l_res.integer()?.$op(r_res.integer()?)))
+                                    Ok(Xdm::Integer(
+                                        l_res
+                                            .integer(c.static_context.as_ref())?
+                                            .$op(r_res.integer(c.static_context.as_ref())?),
+                                    ))
                                 }),
                                 "xs:decimal" => CompiledExpr::new(move |c| {
                                     let l_res = $l.execute(c)?;
@@ -153,9 +160,18 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                                     if l_res.count() == 0 || r_res.count() == 0 {
                                         return Ok(Xdm::EmptySequence);
                                     }
-                                    Ok(Xdm::Double(l_res.double()?.$op(r_res.double()?)))
+                                    Ok(Xdm::Double(
+                                        l_res
+                                            .double(c.static_context.as_ref())?
+                                            .$op(r_res.double(c.static_context.as_ref())?),
+                                    ))
                                 }),
-                                "xs:string" => return Err(XdmError::xqtm("XPTY0004", "Can't do arithmetic on strings")),
+                                "xs:string" => {
+                                    return Err(XdmError::xqtm(
+                                        "XPTY0004",
+                                        "Can't do arithmetic on strings",
+                                    ))
+                                }
                                 type_ => todo!("compile more Arithmetic cases: {}", type_),
                             })
                         };
@@ -169,7 +185,9 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         ArithmeticOp::Idiv => Ok(match type_string.as_ref() {
                             "xs:integer" => CompiledExpr::new(move |c| {
                                 Ok(Xdm::Integer(
-                                    l_c.execute(c)?.integer()?.div(r_c.execute(c)?.integer()?),
+                                    l_c.execute(c)?
+                                        .integer(c.static_context.as_ref())?
+                                        .div(r_c.execute(c)?.integer(c.static_context.as_ref())?),
                                 ))
                             }),
                             "xs:decimal" => CompiledExpr::new(move |c| {
@@ -189,7 +207,10 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                             }),
                             "xs:double" | "xs:anyAtomicType" => CompiledExpr::new(move |c| {
                                 Ok(Xdm::Integer(
-                                    l_c.execute(c)?.double()?.div(r_c.execute(c)?.double()?) as i64,
+                                    l_c.execute(c)?
+                                        .double(c.static_context.as_ref())?
+                                        .div(r_c.execute(c)?.double(c.static_context.as_ref())?)
+                                        as i64,
                                 ))
                             }),
                             _ => todo!("compile more Arithmetic cases"),
@@ -207,13 +228,19 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     let type_string = i.to_string();
                     Ok(match type_string.as_ref() {
                         "xs:integer" => CompiledExpr::new(move |c| {
-                            Ok(Xdm::Integer(-e_c.execute(c)?.integer()?))
+                            Ok(Xdm::Integer(
+                                -e_c.execute(c)?.integer(c.static_context.as_ref())?,
+                            ))
                         }),
                         "xs:decimal" => CompiledExpr::new(move |c| {
                             Ok(Xdm::Decimal(-e_c.execute(c)?.decimal()?))
                         }),
                         "xs:double" | "xs:anyAtomicType" | "item()" => {
-                            CompiledExpr::new(move |c| Ok(Xdm::Double(-e_c.execute(c)?.double()?)))
+                            CompiledExpr::new(move |c| {
+                                Ok(Xdm::Double(
+                                    -e_c.execute(c)?.double(c.static_context.as_ref())?,
+                                ))
+                            })
                         }
                         _ => todo!("compile more unary minus cases: {}", type_string),
                     })
@@ -261,27 +288,28 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     }?;
 
                     let mut values_vec: Vec<Xdm> = Vec::new();
-                    let mut nodes_btree: BTreeSet<Node> = BTreeSet::new();
-                    for x in raw_result {
-                        match x {
-                            Xdm::Node(node) => {
-                                nodes_btree.insert(node);
-                            }
-                            y => values_vec.push(y),
-                        }
-                    }
-                    if nodes_btree.is_empty() {
-                        Ok(Xdm::flatten(values_vec))
-                    } else if values_vec.is_empty() {
-                        Ok(Xdm::flatten(
-                            nodes_btree.into_iter().map(Xdm::Node).collect(),
-                        ))
-                    } else {
-                        Err(XdmError::xqtm(
-                            "XPTY0018",
-                            "result of a path operator contains both nodes and non-nodes",
-                        ))
-                    }
+                    unimplemented!();
+                    // let mut nodes_btree: BTreeSet<Node> = BTreeSet::new();
+                    // for x in raw_result {
+                    //     match x {
+                    //         Xdm::Node(node) => {
+                    //             nodes_btree.insert(node);
+                    //         }
+                    //         y => values_vec.push(y),
+                    //     }
+                    // }
+                    // if nodes_btree.is_empty() {
+                    //     Ok(Xdm::flatten(values_vec))
+                    // } else if values_vec.is_empty() {
+                    //     Ok(Xdm::flatten(
+                    //         nodes_btree.into_iter().map(Xdm::Node).collect(),
+                    //     ))
+                    // } else {
+                    //     Err(XdmError::xqtm(
+                    //         "XPTY0018",
+                    //         "result of a path operator contains both nodes and non-nodes",
+                    //     ))
+                    // }
                 }))
             }
             Expr::Step(axis, nt, ps, _) => {
@@ -297,24 +325,33 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         Xdm::Node(n) => Ok(n),
                         _ => Err(XdmError::xqtm("XPTY0020", "context item is not a node")),
                     }?;
+                    let xot = &c.static_context.as_ref().xot;
                     let node_iterator: Box<dyn Iterator<Item = (usize, Node)>> = match axis {
                         Axis::Child => Box::new(
-                            ro_node
-                                .children()
+                            xot.children(ro_node.clone())
                                 .filter(|child| {
                                     nt.matches(
-                                        child.node_kind(),
-                                        NodeKind::Element,
-                                        child.node_name(),
+                                        xot.value_type(child.clone()),
+                                        ValueType::Element,
+                                        xot.node_name_ref(child.clone())
+                                            .ok()
+                                            .flatten()
+                                            .map(|r| r.to_owned()),
                                     )
                                 })
                                 .enumerate(),
                         ),
                         Axis::Attribute => Box::new(
-                            ro_node
-                                .attributes()
+                            xot.attribute_nodes(ro_node.clone())
                                 .filter(|a| {
-                                    nt.matches(a.node_kind(), NodeKind::Attribute, a.node_name())
+                                    nt.matches(
+                                        xot.value_type(a.clone()),
+                                        ValueType::Attribute,
+                                        xot.node_name_ref(a.clone())
+                                            .ok()
+                                            .flatten()
+                                            .map(|r| r.to_owned()),
+                                    )
                                 })
                                 .enumerate(),
                         ),
@@ -322,65 +359,74 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                             std::iter::once(ro_node.clone())
                                 .filter(|ro_node| {
                                     nt.matches(
-                                        ro_node.node_kind(),
-                                        NodeKind::Element,
-                                        ro_node.node_name(),
+                                        xot.value_type(ro_node.clone()),
+                                        ValueType::Element,
+                                        xot.node_name_ref(ro_node.clone())
+                                            .ok()
+                                            .flatten()
+                                            .map(|r| r.to_owned()),
                                     )
                                 })
                                 .enumerate(),
                         ),
                         Axis::DescendantOrSelf => Box::new(
-                            ro_node
-                                .descendants_or_self()
-                                .filter(|child| {
+                            xot.descendants(ro_node.clone())
+                                .filter(|a| {
                                     nt.matches(
-                                        child.node_kind(),
-                                        NodeKind::Element,
-                                        child.node_name(),
+                                        xot.value_type(a.clone()),
+                                        ValueType::Element,
+                                        xot.node_name_ref(a.clone())
+                                            .ok()
+                                            .flatten()
+                                            .map(|r| r.to_owned()),
                                     )
                                 })
                                 .enumerate(),
                         ),
                         Axis::Descendant => Box::new(
-                            ro_node
-                                .descendants_or_self()
+                            xot.descendants(ro_node.clone())
                                 .skip(1)
-                                .filter(|child| {
+                                .filter(|a| {
                                     nt.matches(
-                                        child.node_kind(),
-                                        NodeKind::Element,
-                                        child.node_name(),
+                                        xot.value_type(a.clone()),
+                                        ValueType::Element,
+                                        xot.node_name_ref(a.clone())
+                                            .ok()
+                                            .flatten()
+                                            .map(|r| r.to_owned()),
                                     )
                                 })
                                 .enumerate(),
                         ),
                         Axis::Parent => Box::new(
-                            ro_node
-                                .parent()
+                            xot.parent(ro_node.clone())
                                 .into_iter()
-                                .filter(|parent| {
+                                .filter(|a| {
                                     nt.matches(
-                                        parent.node_kind(),
-                                        NodeKind::Element,
-                                        parent.node_name(),
+                                        xot.value_type(a.clone()),
+                                        ValueType::Element,
+                                        xot.node_name_ref(a.clone())
+                                            .ok()
+                                            .flatten()
+                                            .map(|r| r.to_owned()),
                                     )
                                 })
                                 .enumerate(),
                         ),
                         Axis::PrecedingSibling => {
-                            if ro_node.node_kind() == NodeKind::Attribute {
+                            if xot.value_type(ro_node.clone()) == ValueType::Attribute {
                                 Box::new(std::iter::empty())
                             } else {
                                 Box::new(
-                                    AxisIter {
-                                        node: ro_node.previous_sibling(),
-                                        next: |n| n.previous_sibling(),
-                                    }
-                                    .filter(|sibling| {
+                                    xot.preceding(ro_node.clone())
+                                    .filter(|a| {
                                         nt.matches(
-                                            sibling.node_kind(),
-                                            NodeKind::Element,
-                                            sibling.node_name(),
+                                            xot.value_type(a.clone()),
+                                            ValueType::Element,
+                                            xot.node_name_ref(a.clone())
+                                                .ok()
+                                                .flatten()
+                                                .map(|r| r.to_owned()),
                                         )
                                     })
                                     .enumerate(),
@@ -388,19 +434,19 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                             }
                         }
                         Axis::Ancestor => {
-                            if ro_node.node_kind() == NodeKind::Document {
+                            if xot.value_type(ro_node.clone()) == ValueType::Document {
                                 Box::new(std::iter::empty())
                             } else {
                                 Box::new(
-                                    AxisIter {
-                                        node: ro_node.parent(),
-                                        next: |n| n.parent(),
-                                    }
-                                    .filter(|sibling| {
+                                    xot.ancestors(ro_node.clone()).skip(1)
+                                    .filter(|a| {
                                         nt.matches(
-                                            sibling.node_kind(),
-                                            NodeKind::Element,
-                                            sibling.node_name(),
+                                            xot.value_type(a.clone()),
+                                            ValueType::Element,
+                                            xot.node_name_ref(a.clone())
+                                                .ok()
+                                                .flatten()
+                                                .map(|r| r.to_owned()),
                                         )
                                     })
                                     .enumerate(),
@@ -408,33 +454,33 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                             }
                         }
                         Axis::AncestorOrSelf => Box::new(
-                            AxisIter {
-                                node: Some(ro_node.clone()),
-                                next: |n| n.parent(),
-                            }
-                            .filter(|sibling| {
+                            xot.ancestors(ro_node.clone())
+                            .filter(|a| {
                                 nt.matches(
-                                    sibling.node_kind(),
-                                    NodeKind::Element,
-                                    sibling.node_name(),
+                                    xot.value_type(a.clone()),
+                                    ValueType::Element,
+                                    xot.node_name_ref(a.clone())
+                                        .ok()
+                                        .flatten()
+                                        .map(|r| r.to_owned()),
                                 )
                             })
                             .enumerate(),
                         ),
                         Axis::FollowingSibling => {
-                            if ro_node.node_kind() == NodeKind::Attribute {
+                            if xot.value_type(ro_node.clone()) == ValueType::Attribute {
                                 Box::new(std::iter::empty())
                             } else {
                                 Box::new(
-                                    AxisIter {
-                                        node: ro_node.next_sibling(),
-                                        next: |n| n.next_sibling(),
-                                    }
-                                    .filter(|sibling| {
+                                    xot.following_siblings(ro_node.clone()).skip(1)
+                                    .filter(|a| {
                                         nt.matches(
-                                            sibling.node_kind(),
-                                            NodeKind::Element,
-                                            sibling.node_name(),
+                                            xot.value_type(a.clone()),
+                                            ValueType::Element,
+                                            xot.node_name_ref(a.clone())
+                                                .ok()
+                                                .flatten()
+                                                .map(|r| r.to_owned()),
                                         )
                                     })
                                     .enumerate(),
@@ -442,27 +488,29 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                             }
                         }
                         Axis::Following => Box::new(
-                            ro_node
-                                .following_or_self()
-                                .skip(1)
-                                .filter(|child| {
+                            xot.following(ro_node.clone())
+                                .filter(|a| {
                                     nt.matches(
-                                        child.node_kind(),
-                                        NodeKind::Element,
-                                        child.node_name(),
+                                        xot.value_type(a.clone()),
+                                        ValueType::Element,
+                                        xot.node_name_ref(a.clone())
+                                            .ok()
+                                            .flatten()
+                                            .map(|r| r.to_owned()),
                                     )
                                 })
                                 .enumerate(),
                         ),
                         Axis::Preceding => Box::new(
-                            ro_node
-                                .preceding_or_self()
-                                .skip(1)
-                                .filter(|child| {
+                            xot.preceding(ro_node.clone())
+                                .filter(|a| {
                                     nt.matches(
-                                        child.node_kind(),
-                                        NodeKind::Element,
-                                        child.node_name(),
+                                        xot.value_type(a.clone()),
+                                        ValueType::Element,
+                                        xot.node_name_ref(a.clone())
+                                            .ok()
+                                            .flatten()
+                                            .map(|r| r.to_owned()),
                                     )
                                 })
                                 .enumerate(),
@@ -483,7 +531,10 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                                 let pred = predicate.execute(&context).unwrap();
                                 match pred {
                                     Xdm::Decimal(_) | Xdm::Integer(_) | Xdm::Double(_) => {
-                                        if pred.integer().unwrap() as usize - 1 != poss[pred_num] {
+                                        if pred.integer(c.static_context.as_ref()).unwrap() as usize
+                                            - 1
+                                            != poss[pred_num]
+                                        {
                                             include = false;
                                         }
                                     }
@@ -516,17 +567,17 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                 let c1 = e1.compile()?;
                 let c2 = e2.compile()?;
                 Ok(CompiledExpr::new(move |c| {
-                    let a1 = c1.execute(c)?.atomize()?;
-                    let a2 = c2.execute(c)?.atomize()?;
-                    a1.xpath_compare(&a2, vc)
+                    let a1 = c1.execute(c)?.atomize(c.static_context.as_ref())?;
+                    let a2 = c2.execute(c)?.atomize(c.static_context.as_ref())?;
+                    a1.xpath_compare(&a2, vc, c.static_context.as_ref())
                 }))
             }
             Expr::GeneralComp(e1, vc, e2, _) => {
                 let c1 = e1.compile()?;
                 let c2 = e2.compile()?;
                 Ok(CompiledExpr::new(move |c| {
-                    let a1_seq = c1.execute(c)?.atomize()?;
-                    let a2_seq = c2.execute(c)?.atomize()?;
+                    let a1_seq = c1.execute(c)?.atomize(c.static_context.as_ref())?;
+                    let a2_seq = c2.execute(c)?.atomize(c.static_context.as_ref())?;
                     let a2_vec: Vec<_> = a2_seq.into_iter().collect();
                     let true_val = Ok(Xdm::Boolean(true));
                     for ref a1 in a1_seq {
@@ -547,8 +598,8 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                                     if !a1.is_nan()
                                         && !a2.is_nan()
                                         && vc.comparison_true(double_compare(
-                                            a1.double()?.borrow(),
-                                            a2.double()?.borrow(),
+                                            a1.double(c.static_context.as_ref())?.borrow(),
+                                            a2.double(c.static_context.as_ref())?.borrow(),
                                         ))
                                     {
                                         return true_val;
@@ -573,8 +624,8 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     if let (Xdm::Node(n1), Xdm::Node(n2)) = (s1, s2) {
                         Ok(Xdm::Boolean(match nc {
                             NodeComp::Is => n1 == n2,
-                            NodeComp::Before => n1 < n2,
-                            NodeComp::After => n1 > n2,
+                            NodeComp::Before => unimplemented!(),//n1 < n2,
+                            NodeComp::After => unimplemented!(),//n1 > n2,
                         }))
                     } else {
                         Err(XdmError::xqtm(
@@ -596,7 +647,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                         let pred = cp.execute(&context)?;
                         match pred {
                             Xdm::Decimal(_) | Xdm::Integer(_) | Xdm::Double(_) => {
-                                if pred.integer()? - 1 == pos as i64 {
+                                if pred.integer(c.static_context.as_ref())? - 1 == pos as i64 {
                                     result.push(context.focus.unwrap().sequence);
                                 }
                             }
@@ -635,7 +686,7 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                 }))
             }
             Expr::Quantified(quantifier, bindings, predicate, _) => {
-                let bs_compiled: XdmResult<Vec<(QName, CompiledExpr)>> = bindings
+                let bs_compiled: XdmResult<Vec<(OwnedName, CompiledExpr)>> = bindings
                     .into_iter()
                     .map(|(q, b)| b.compile().map(|comp| (q, comp)))
                     .collect();
@@ -664,14 +715,12 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     if from.count() == 0 || to.count() == 0 {
                         return Ok(Xdm::EmptySequence);
                     }
-                    let from_i = from.integer()?;
-                    let to_i = to.integer()?;
+                    let from_i = from.integer(c.static_context.as_ref())?;
+                    let to_i = to.integer(c.static_context.as_ref())?;
                     if from_i > to_i {
                         return Ok(Xdm::EmptySequence);
                     }
-                    Ok(Xdm::sequence(
-                        (from_i..=to_i).map(Xdm::Integer).collect(),
-                    ))
+                    Ok(Xdm::sequence((from_i..=to_i).map(Xdm::Integer).collect()))
                 }))
             }
             Expr::ArraySquare(s, _) => {
@@ -747,14 +796,14 @@ impl Expr<(SequenceType, Rc<StaticContext>)> {
                     }
                 }))
             }
-            Expr::PredicatePattern(_, _) | Expr::EquivalentExpressionPattern(_, _) => todo!()
+            Expr::PredicatePattern(_, _) | Expr::EquivalentExpressionPattern(_, _) => todo!(),
         }
     }
 }
 
 fn quantified(
     c: &DynamicContext,
-    bs_compiled: &Vec<(QName, CompiledExpr)>,
+    bs_compiled: &Vec<(OwnedName, CompiledExpr)>,
     binding_index: usize,
     pred_compiled: &CompiledExpr,
     default_return_value: bool,

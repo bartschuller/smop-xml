@@ -1,10 +1,10 @@
 use crate::xdm::{XdmError, XdmResult};
 use crate::StaticContext;
-use smop_xmltree::nod::QName;
 use smop_xmltree::option_ext::OptionExt;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
+use xot::xmlname::{NameStrInfo, OwnedName};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum SequenceType {
@@ -25,10 +25,10 @@ pub enum Item {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum KindTest {
     Document,
-    Element(Option<QName>, Option<QName>),
-    Attribute(Option<QName>, Option<QName>),
-    SchemaElement(QName),
-    SchemaAttribute(QName),
+    Element(Option<OwnedName>, Option<OwnedName>),
+    Attribute(Option<OwnedName>, Option<OwnedName>),
+    SchemaElement(OwnedName),
+    SchemaAttribute(OwnedName),
     PI(Option<String>),
     Comment,
     Text,
@@ -42,22 +42,22 @@ impl Display for KindTest {
             KindTest::Document => write!(f, "document-node()"),
             KindTest::Element(opt_name, opt_type) => match (opt_name, opt_type) {
                 (None, None) => write!(f, "element()"),
-                (Some(qname), None) => write!(f, "element({})", qname),
+                (Some(qname), None) => write!(f, "element({})", qname.full_name()),
                 (Some(qname), Some(schema_type)) => {
-                    write!(f, "element({}, {})", qname, schema_type)
+                    write!(f, "element({}, {})", qname.full_name(), schema_type.full_name())
                 }
-                (None, Some(schema_type)) => write!(f, "element(*, {})", schema_type),
+                (None, Some(schema_type)) => write!(f, "element(*, {})", schema_type.full_name()),
             },
             KindTest::Attribute(opt_name, opt_type) => match (opt_name, opt_type) {
                 (None, None) => write!(f, "attribute()"),
-                (Some(qname), None) => write!(f, "attribute({})", qname),
+                (Some(qname), None) => write!(f, "attribute({})", qname.full_name()),
                 (Some(qname), Some(schema_type)) => {
-                    write!(f, "attribute({}, {})", qname, schema_type)
+                    write!(f, "attribute({}, {})", qname.full_name(), schema_type.full_name())
                 }
-                (None, Some(schema_type)) => write!(f, "attribute(*, {})", schema_type),
+                (None, Some(schema_type)) => write!(f, "attribute(*, {})", schema_type.full_name()),
             },
-            KindTest::SchemaElement(name) => write!(f, "schema-element({})", name),
-            KindTest::SchemaAttribute(name) => write!(f, "schema-attribute({})", name),
+            KindTest::SchemaElement(name) => write!(f, "schema-element({})", name.full_name()),
+            KindTest::SchemaAttribute(name) => write!(f, "schema-attribute({})", name.full_name()),
             KindTest::PI(opt_target) => write!(
                 f,
                 "processing-instruction({})",
@@ -149,7 +149,7 @@ impl SequenceType {
 }
 fn any_atomic_type(ctx: &Rc<StaticContext>) -> Item {
     Item::AtomicOrUnion(
-        ctx.schema_type(&QName::wellknown("xs:anyAtomicType"))
+        ctx.schema_type(&ctx.wellknown("xs:anyAtomicType"))
             .unwrap(),
     )
 }
@@ -218,9 +218,7 @@ impl Display for Occurrence {
 
 #[derive(Debug, PartialEq)]
 pub struct SchemaType {
-    pub(crate) name: Option<String>,
-    pub(crate) ns: Option<String>,
-    pub(crate) prefix: Option<String>,
+    pub(crate) name: OwnedName,
     pub(crate) base_type: Option<Rc<SchemaType>>,
     pub(crate) tree: TypeTree,
 }
@@ -255,13 +253,7 @@ impl SchemaType {
 }
 impl Display for SchemaType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if let (Some(ref name), Some(ref prefix)) = (&self.name, &self.prefix) {
-            write!(f, "{}:{}", prefix, name)
-        } else if let (Some(ref name), Some(ref ns)) = (&self.name, &self.ns) {
-            write!(f, "Q{{{}}}:{}", ns, name)
-        } else {
-            write!(f, "{:?}", self)
-        }
+        write!(f, "{}", self.name.full_name())
     }
 }
 

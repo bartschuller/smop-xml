@@ -8,8 +8,6 @@ use itertools::Itertools;
 use num_traits::cast::FromPrimitive;
 use rust_decimal::prelude::{ToPrimitive, Zero};
 use rust_decimal::Decimal;
-use smop_xmltree::nod;
-use smop_xmltree::nod::{Node, NodeKind, QName};
 use std::borrow::Borrow;
 use std::collections::{BTreeSet, HashMap};
 use std::error::Error;
@@ -19,6 +17,8 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
 use std::result::Result;
+use xot::{Node, ValueType};
+use xot::xmlname::{NameStrInfo, OwnedName};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Xdm {
@@ -39,7 +39,7 @@ pub type XdmResult<T> = Result<T, XdmError>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct XdmError {
-    pub code: QName,
+    pub code: OwnedName,
     pub message: String,
 }
 
@@ -49,15 +49,15 @@ static ERR: &str = "err";
 impl XdmError {
     pub fn xqtm<S1: Into<String>, S2: Into<String>>(code: S1, msg: S2) -> XdmError {
         XdmError {
-            code: QName::new(code.into(), Some(ERR_NS.to_string()), Some(ERR.to_string())),
+            code: OwnedName::new(code.into(), ERR_NS.to_string(), ERR.to_string()),
             message: msg.into(),
         }
     }
 }
 impl Error for XdmError {}
 
-impl From<nod::parse::Error> for XdmError {
-    fn from(re: nod::parse::Error) -> Self {
+impl From<xot::Error> for XdmError {
+    fn from(re: xot::Error) -> Self {
         XdmError::xqtm("FODC0006", re.to_string())
     }
 }
@@ -68,7 +68,7 @@ impl From<std::num::ParseFloatError> for XdmError {
 }
 impl Display for XdmError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.code, self.message)
+        write!(f, "{}: {}", self.code.full_name(), self.message)
     }
 }
 impl Xdm {
@@ -95,7 +95,7 @@ impl Xdm {
         add(&mut res, v);
         Xdm::sequence(res)
     }
-    pub fn atomize(self) -> XdmResult<Self> {
+    pub fn atomize(self, sc: &StaticContext) -> XdmResult<Self> {
         match self {
             Xdm::EmptySequence
             | Xdm::String(_)
@@ -104,9 +104,9 @@ impl Xdm {
             | Xdm::Integer(_)
             | Xdm::Double(_)
             | Xdm::Float(_) => Ok(self),
-            Xdm::Node(ns) => Ok(Xdm::String(ns.string_value())), // FIXME
+            Xdm::Node(ns) => Ok(Xdm::String(sc.xot.string_value(ns))), // FIXME
             Xdm::Array(v) => {
-                let res: XdmResult<Vec<_>> = v.into_iter().map(|x| x.atomize()).collect();
+                let res: XdmResult<Vec<_>> = v.into_iter().map(|x| x.atomize(sc)).collect();
                 Ok(Xdm::flatten(res?))
             }
             Xdm::Map(_) => Err(XdmError::xqtm(
@@ -114,7 +114,7 @@ impl Xdm {
                 "The argument to fn:data() contains a map.",
             )),
             Xdm::Sequence(v) => {
-                let res: XdmResult<Vec<_>> = v.into_iter().map(|x| x.atomize()).collect();
+                let res: XdmResult<Vec<_>> = v.into_iter().map(|x| x.atomize(sc)).collect();
                 Ok(Xdm::flatten(res?))
             }
         }
@@ -147,8 +147,8 @@ impl Xdm {
             _ => 1,
         }
     }
-    pub fn integer(&self) -> XdmResult<i64> {
-        match self.clone().atomize()? {
+    pub fn integer(&self, sc: &StaticContext) -> XdmResult<i64> {
+        match self.clone().atomize(sc)? {
             Xdm::Decimal(d) => Ok(d.to_i64().ok_or(XdmError::xqtm(
                 "FOCA0003",
                 "Input value too large for integer",
@@ -179,35 +179,35 @@ impl Xdm {
             _ => todo!("finish decimal conversion"),
         }
     }
-    pub fn double(&self) -> XdmResult<f64> {
+    pub fn double(&self, sc: &StaticContext) -> XdmResult<f64> {
         match self {
             Xdm::Decimal(d) => Ok(d.to_f64().unwrap_or(NAN)),
             Xdm::Integer(i) => Ok(*i as f64),
             Xdm::Double(d) => Ok(*d),
             Xdm::Float(f) => Ok(f.to_f64().unwrap_or(NAN)),
             Xdm::String(s) => Ok(s.parse::<f64>().unwrap_or(NAN)),
-            Xdm::Node(_) => Ok(self.string()?.parse::<f64>().unwrap_or(NAN)),
+            Xdm::Node(_) => Ok(self.string(sc)?.parse::<f64>().unwrap_or(NAN)),
             _ => {
                 println!("xs:double({:?})", self);
                 todo!("finish double conversion")
             }
         }
     }
-    pub fn float(&self) -> XdmResult<f32> {
+    pub fn float(&self, sc: &StaticContext) -> XdmResult<f32> {
         match self {
             Xdm::Decimal(d) => Ok(d.to_f32().unwrap_or(f32::NAN)),
             Xdm::Integer(i) => Ok(*i as f32),
             Xdm::Double(d) => Ok(d.to_f32().unwrap_or(f32::NAN)),
             Xdm::Float(f) => Ok(*f),
             Xdm::String(s) => Ok(s.parse::<f32>().unwrap_or(f32::NAN)),
-            Xdm::Node(_) => Ok(self.string()?.parse::<f32>().unwrap_or(f32::NAN)),
+            Xdm::Node(_) => Ok(self.string(sc)?.parse::<f32>().unwrap_or(f32::NAN)),
             _ => {
                 println!("xs:float({:?})", self);
                 todo!("finish float conversion")
             }
         }
     }
-    pub fn string(&self) -> XdmResult<String> {
+    pub fn string(&self, sc: &StaticContext) -> XdmResult<String> {
         match self {
             Xdm::String(s) => Ok(s.clone()),
             Xdm::Boolean(b) => Ok(if *b {
@@ -245,7 +245,7 @@ impl Xdm {
                     Ok(format!("{:E}", f))
                 }
             }
-            Xdm::Node(n) => Ok(n.string_value()),
+            Xdm::Node(n) => Ok(sc.xot.string_value(n.clone())),
             Xdm::Array(_) => Err(XdmError::xqtm(
                 "FOTY0014",
                 "can't convert an array to a string",
@@ -261,10 +261,10 @@ impl Xdm {
             )),
         }
     }
-    pub fn string_joined(&self) -> XdmResult<String> {
-        self.string().or_else(|error| {
+    pub fn string_joined(&self, sc: &StaticContext) -> XdmResult<String> {
+        self.string(sc).or_else(|error| {
             if let Xdm::Sequence(v) = self {
-                Ok(v.iter().map(|x| x.string().unwrap()).join(" "))
+                Ok(v.iter().map(|x| x.string(sc).unwrap()).join(" "))
             } else {
                 Err(error)
             }
@@ -273,7 +273,7 @@ impl Xdm {
     pub fn dynamic_type(&self, ctx: &StaticContext) -> XdmResult<SequenceType> {
         fn simple(ctx: &StaticContext, xs: &str) -> XdmResult<SequenceType> {
             Ok(SequenceType::Item(
-                Item::AtomicOrUnion(ctx.schema_type(&QName::wellknown(xs))?),
+                Item::AtomicOrUnion(ctx.schema_type(&ctx.wellknown(xs))?),
                 Occurrence::One,
             ))
         }
@@ -285,13 +285,14 @@ impl Xdm {
             Xdm::Double(_) => simple(ctx, "xs:double"),
             Xdm::Float(_) => simple(ctx, "xs:float"),
             Xdm::Node(n) => Ok(SequenceType::Item(
-                Item::KindTest(match n.node_kind() {
-                    NodeKind::Document => KindTest::Document,
-                    NodeKind::Element => KindTest::Element(n.node_name(), None),
-                    NodeKind::Attribute => KindTest::Attribute(n.node_name(), None),
-                    NodeKind::Text => KindTest::Text,
-                    NodeKind::PI => KindTest::PI(n.node_name().map(|q| q.name)),
-                    NodeKind::Comment => KindTest::Comment,
+                Item::KindTest(match ctx.xot.value_type(n.clone()) {
+                    ValueType::Document => KindTest::Document,
+                    ValueType::Element => KindTest::Element(ctx.xot.node_name_ref(n.clone())?.map(|r| r.to_owned()), None),
+                    ValueType::Attribute => KindTest::Attribute(ctx.xot.node_name_ref(n.clone())?.map(|r| r.to_owned()), None),
+                    ValueType::Text => KindTest::Text,
+                    ValueType::ProcessingInstruction => KindTest::PI(ctx.xot.node_name_ref(n.clone())?.map(|r| r.local_name().to_string())),
+                    ValueType::Comment => KindTest::Comment,
+                    ValueType::Namespace => KindTest::NamespaceNode,
                 }),
                 Occurrence::One,
             )),
@@ -304,7 +305,7 @@ impl Xdm {
             Xdm::Sequence(_v) => Ok(SequenceType::Item(Item::Item, Occurrence::OneOrMore)),
         }
     }
-    pub fn xpath_compare(&self, other: &Xdm, vc: Comp) -> XdmResult<Xdm> {
+    pub fn xpath_compare(&self, other: &Xdm, vc: Comp, sc: &StaticContext) -> XdmResult<Xdm> {
         match (self, other) {
             (Xdm::EmptySequence, _) | (_, Xdm::EmptySequence) => return Ok(Xdm::EmptySequence),
             (Xdm::Sequence(_), _) | (_, Xdm::Sequence(_)) => {
@@ -317,20 +318,20 @@ impl Xdm {
         }
         Ok(Xdm::Boolean(match (self, other) {
             (Xdm::String(s1), x2) => {
-                vc.comparison_true(string_compare(s1.as_str(), x2.string()?.as_str()))
+                vc.comparison_true(string_compare(s1.as_str(), x2.string(sc)?.as_str()))
             }
             (x1, Xdm::String(s2)) => {
-                vc.comparison_true(string_compare(x1.string()?.as_str(), s2.as_str()))
+                vc.comparison_true(string_compare(x1.string(sc)?.as_str(), s2.as_str()))
             }
             (Xdm::Double(d1), x2) => {
                 !d1.is_nan()
                     && !x2.is_nan()
-                    && vc.comparison_true(double_compare(d1, x2.double()?.borrow()))
+                    && vc.comparison_true(double_compare(d1, x2.double(sc)?.borrow()))
             }
             (x1, Xdm::Double(d2)) => {
                 !d2.is_nan()
                     && !x1.is_nan()
-                    && vc.comparison_true(double_compare(x1.double()?.borrow(), d2))
+                    && vc.comparison_true(double_compare(x1.double(sc)?.borrow(), d2))
             }
             (Xdm::Decimal(d1), x2) => {
                 vc.comparison_true(decimal_compare(d1, x2.decimal()?.borrow()))
@@ -339,10 +340,10 @@ impl Xdm {
                 vc.comparison_true(decimal_compare(x1.decimal()?.borrow(), d2))
             }
             (Xdm::Integer(i1), x2) => {
-                vc.comparison_true(integer_compare(i1, x2.integer()?.borrow()))
+                vc.comparison_true(integer_compare(i1, x2.integer(sc)?.borrow()))
             }
             (x1, Xdm::Integer(i2)) => {
-                vc.comparison_true(integer_compare(x1.integer()?.borrow(), i2))
+                vc.comparison_true(integer_compare(x1.integer(sc)?.borrow(), i2))
             }
             (Xdm::Boolean(b1), x2) => {
                 vc.comparison_true(boolean_compare(b1, x2.boolean()?.borrow()))
@@ -354,38 +355,39 @@ impl Xdm {
         }))
     }
     pub(crate) fn combine(self, other: Xdm, op: CombineOp) -> XdmResult<Xdm> {
-        let get_node = |x: Xdm| {
-            if let Xdm::Node(node) = x {
-                Ok(node)
-            } else {
-                Err(XdmError::xqtm(
-                    "XPTY0004",
-                    "non-node found in combine operation",
-                ))
-            }
-        };
-        let left: XdmResult<Vec<Node>> = self.into_iter().map(get_node).collect();
-        let left = BTreeSet::from_iter(left?);
-        let right: XdmResult<Vec<Node>> = other.into_iter().map(get_node).collect();
-        let right = BTreeSet::from_iter(right?);
-        Ok(Xdm::flatten(match op {
-            CombineOp::Union => left.union(&right).map(|n| Xdm::Node(n.clone())).collect(),
-            CombineOp::Intersect => left
-                .intersection(&right)
-                .map(|n| Xdm::Node(n.clone()))
-                .collect(),
-            CombineOp::Except => left
-                .difference(&right)
-                .map(|n| Xdm::Node(n.clone()))
-                .collect(),
-        }))
+        unimplemented!();
+        // let get_node = |x: Xdm| {
+        //     if let Xdm::Node(node) = x {
+        //         Ok(node)
+        //     } else {
+        //         Err(XdmError::xqtm(
+        //             "XPTY0004",
+        //             "non-node found in combine operation",
+        //         ))
+        //     }
+        // };
+        // let left: XdmResult<Vec<Node>> = self.into_iter().map(get_node).collect();
+        // let left = BTreeSet::from_iter(left?);
+        // let right: XdmResult<Vec<Node>> = other.into_iter().map(get_node).collect();
+        // let right = BTreeSet::from_iter(right?);
+        // Ok(Xdm::flatten(match op {
+        //     CombineOp::Union => left.union(&right).map(|n| Xdm::Node(n.clone())).collect(),
+        //     CombineOp::Intersect => left
+        //         .intersection(&right)
+        //         .map(|n| Xdm::Node(n.clone()))
+        //         .collect(),
+        //     CombineOp::Except => left
+        //         .difference(&right)
+        //         .map(|n| Xdm::Node(n.clone()))
+        //         .collect(),
+        // }))
     }
     #[inline]
     pub(crate) fn is_nan(&self) -> bool {
         matches!(self,
             Xdm::Double(d) if d.is_nan())
     }
-    pub fn deep_equal(&self, other: &Xdm) -> bool {
+    pub fn deep_equal(&self, other: &Xdm, sc: &StaticContext) -> bool {
         match self {
             Xdm::EmptySequence => matches!(other, Xdm::EmptySequence),
             Xdm::String(_)
@@ -394,19 +396,19 @@ impl Xdm {
             | Xdm::Integer(_)
             | Xdm::Double(_)
             | Xdm::Float(_) => {
-                self.xpath_compare(other, Comp::EQ)
+                self.xpath_compare(other, Comp::EQ, sc)
                     .map_or(false, |x| x.boolean().unwrap_or(false))
                     || (self.is_nan() && other.is_nan())
             }
             Xdm::Node(n1) => match other {
-                Xdm::Node(n2) => n1.deep_equal(n2),
+                Xdm::Node(n2) => sc.xot.deep_equal(n1.clone(), n2.clone()),
                 _ => false,
             },
             Xdm::Array(_) => unimplemented!(),
             Xdm::Map(_) => unimplemented!(),
             Xdm::Sequence(v1) => match other {
                 Xdm::Sequence(v2) if v1.len() == v2.len() => {
-                    v1.iter().zip(v2.iter()).all(|(a, b)| a.deep_equal(b))
+                    v1.iter().zip(v2.iter()).all(|(a, b)| a.deep_equal(b, sc))
                 }
                 _ => false,
             },
@@ -452,29 +454,29 @@ impl IntoIterator for Xdm {
 
 #[cfg(test)]
 mod tests {
+    use xot::xmlname::{NameStrInfo, OwnedName};
     use crate::xdm::Xdm;
-    use smop_xmltree::nod::QName;
 
     #[test]
     fn qname1() {
-        let qname1 = QName::new("local".to_string(), None, None);
-        let qname2 = QName::new("local".to_string(), Some("".to_string()), None);
-        let qname3 = QName::new(
+        let qname1 = OwnedName::new("local".to_string(), String::new(), String::new());
+        let qname2 = OwnedName::new("local".to_string(), String::new(), String::new());
+        let qname3 = OwnedName::new(
             "local".to_string(),
-            Some("http://example.com/".to_string()),
-            None,
+            "http://example.com/".to_string(),
+        String::new(),
         );
-        let qname4 = QName::new(
+        let qname4 = OwnedName::new(
             "local".to_string(),
-            Some("http://example.com/".to_string()),
-            Some("ex".to_string()),
+            "http://example.com/".to_string(),
+            "ex".to_string(),
         );
-        let _qname5 = QName::new(
+        let _qname5 = OwnedName::new(
             "local".to_string(),
-            Some("http://example.com/".to_string()),
-            Some("ex2".to_string()),
+            "http://example.com/".to_string(),
+            "ex2".to_string(),
         );
-        let qname6 = QName::new("other".to_string(), None, None);
+        let qname6 = OwnedName::new("other".to_string(), String::new(), String::new());
         assert_ne!(qname1, qname2);
         assert_ne!(qname2, qname3);
         assert_ne!(qname1, qname6);
@@ -483,21 +485,23 @@ mod tests {
         //assert_eq!(qname4, qname5);
         //assert_eq!(qname5, qname3);
 
-        assert_eq!(format!("{}", qname1), "local");
-        assert_eq!(format!("{}", qname2), "Q{}local");
-        assert_eq!(format!("{}", qname3), "Q{http://example.com/}local");
-        assert_eq!(format!("{}", qname4), "ex:local");
+        assert_eq!(format!("{}", qname1.full_name()), "local");
+        assert_eq!(format!("{}", qname2.full_name()), "Q{}local");
+        assert_eq!(format!("{}", qname3.full_name()), "Q{http://example.com/}local");
+        assert_eq!(format!("{}", qname4.full_name()), "ex:local");
     }
 
     #[test]
     fn double_to_string() {
+        let sc = crate::xdm::StaticContext::default();
         let xdm = Xdm::Double(65535032e2);
-        assert_eq!(xdm.string().unwrap(), "6.5535032E9")
+        assert_eq!(xdm.string(&sc).unwrap(), "6.5535032E9")
     }
 
     #[test]
     fn deep_equal1() {
-        assert!(Xdm::Double(f64::NAN).deep_equal(&Xdm::Double(f64::NAN)));
-        assert!(Xdm::EmptySequence.deep_equal(&Xdm::EmptySequence));
+        let sc = crate::xdm::StaticContext::default();
+        assert!(Xdm::Double(f64::NAN).deep_equal(&Xdm::Double(f64::NAN), &sc));
+        assert!(Xdm::EmptySequence.deep_equal(&Xdm::EmptySequence, &sc));
     }
 }
